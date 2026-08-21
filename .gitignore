@@ -1,0 +1,68 @@
+# ============================================================
+# STM32CubeIDE
+# ============================================================
+
+# Build output
+Debug/
+Release/
+
+# Other common build directories
+build/
+Build/
+
+# Compiled files
+*.o
+*.obj
+*.a
+*.lib
+*.elf
+*.axf
+*.bin
+*.hex
+*.map
+*.list
+*.lst
+*.d
+
+# Generated dependency / build files
+*.su
+*.cyclo
+
+
+# ============================================================
+# Eclipse / STM32CubeIDE workspace files
+# ============================================================
+
+# Workspace metadata - do NOT confuse this with project settings
+.metadata/
+
+# Eclipse temporary files
+*.tmp
+*.bak
+*.swp
+
+# Crash/error logs
+hs_err_pid*
+
+
+# ============================================================
+# Operating system files
+# ============================================================
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# macOS
+.DS_Store
+
+
+# ============================================================
+# Other editors
+# ============================================================
+
+# VS Code
+.vscode/
+
+# JetBrains
+.idea/
