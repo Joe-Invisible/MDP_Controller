@@ -49,6 +49,8 @@ extern "C" {
 
 /* USER CODE END EM */
 
+void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
+
 /* Exported functions prototypes ---------------------------------------------*/
 void Error_Handler(void);
 
@@ -61,6 +63,8 @@ void Error_Handler(void);
 #define MOTORB_IN1_GPIO_Port GPIOE
 #define MOTORB_IN2_Pin GPIO_PIN_6
 #define MOTORB_IN2_GPIO_Port GPIOE
+#define LED3_Pin GPIO_PIN_8
+#define LED3_GPIO_Port GPIOE
 #define MOTORC_IN2_Pin GPIO_PIN_9
 #define MOTORC_IN2_GPIO_Port GPIOE
 #define MOTORC_IN1_Pin GPIO_PIN_11
@@ -69,6 +73,10 @@ void Error_Handler(void);
 #define IMU_SCL_GPIO_Port GPIOB
 #define IMU_SDA_Pin GPIO_PIN_11
 #define IMU_SDA_GPIO_Port GPIOB
+#define SERVO_IN_Pin GPIO_PIN_6
+#define SERVO_IN_GPIO_Port GPIOC
+#define BUZZER_Pin GPIO_PIN_8
+#define BUZZER_GPIO_Port GPIOA
 #define MOTORB_H1_Pin GPIO_PIN_4
 #define MOTORB_H1_GPIO_Port GPIOB
 #define MOTORB_H2_Pin GPIO_PIN_5
@@ -77,6 +85,8 @@ void Error_Handler(void);
 #define MOTORC_H1_GPIO_Port GPIOB
 #define MOTORC_H2_Pin GPIO_PIN_7
 #define MOTORC_H2_GPIO_Port GPIOB
+#define USERBTN_Pin GPIO_PIN_0
+#define USERBTN_GPIO_Port GPIOE
 
 /* USER CODE BEGIN Private defines */
 
