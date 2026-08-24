@@ -2,6 +2,7 @@
 #define __OLED_H			  	 
 
 #include "stm32f4xx_hal.h"
+#include "oledutils.h"
 #define u8 uint8_t
 #define u16 uint16_t
 #define u32 uint32_t
@@ -34,6 +35,8 @@ extern u8 OLED_GRAM[128][8];
 #define OLED_Width			128
 
 //Oled control function
+
+
 void OLED_WR_Byte(u8 dat,u8 cmd);	    
 void OLED_Display_On(void);
 void OLED_Display_Off(void);

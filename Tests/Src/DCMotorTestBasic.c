@@ -7,6 +7,7 @@
 
 
 #include "DCMotorTestBasic.h"
+#include "oled.h"
 
 #define MOTORBPWMSRC htim9
 #define MOTORCPWMSRC htim1
@@ -59,6 +60,11 @@ void DCMotorTestRun() {
 	DCMotor_Brake(&rmotor);
 	HAL_Delay(2000);
 
-	DCMotor_GetEncoderCount(&lmotor);
-	DCMotor_GetEncoderCount(&rmotor);
+	uint16_t lcount = DCMotor_GetEncoderCount(&lmotor);
+	uint16_t rcount = DCMotor_GetEncoderCount(&rmotor);
+
+	OLED_Printf(10, 10, "%hu", lcount);
+	OLED_Printf(10, 20, "%hu", rcount);
+	OLED_Refresh_Gram();
+
 }
