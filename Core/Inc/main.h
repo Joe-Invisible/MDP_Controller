@@ -73,6 +73,14 @@ void Error_Handler(void);
 #define IMU_SCL_GPIO_Port GPIOB
 #define IMU_SDA_Pin GPIO_PIN_11
 #define IMU_SDA_GPIO_Port GPIOB
+#define OLED_DC_Pin GPIO_PIN_11
+#define OLED_DC_GPIO_Port GPIOD
+#define OLED_RES_Pin GPIO_PIN_12
+#define OLED_RES_GPIO_Port GPIOD
+#define OLED_SDA_Pin GPIO_PIN_13
+#define OLED_SDA_GPIO_Port GPIOD
+#define OLED_SCL_Pin GPIO_PIN_14
+#define OLED_SCL_GPIO_Port GPIOD
 #define SERVO_IN_Pin GPIO_PIN_6
 #define SERVO_IN_GPIO_Port GPIOC
 #define BUZZER_Pin GPIO_PIN_8
