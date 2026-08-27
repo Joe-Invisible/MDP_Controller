@@ -81,7 +81,7 @@ void OLED_DrawPoint(uint8_t x, uint8_t y, uint8_t t) {
  Show Char
  **************************************************************************/
 void OLED_ShowChar(uint8_t x, uint8_t y, uint8_t chr, uint8_t size,
-		uint8_t mode) {
+	uint8_t mode) {
 	uint8_t temp, t, t1;
 	uint8_t y0 = y;
 	chr = chr - ' ';
@@ -117,7 +117,7 @@ uint32_t oled_pow(uint8_t m, uint8_t n) {
  Show Two Number
  **************************************************************************/
 void OLED_ShowNumber(uint8_t x, uint8_t y, uint32_t num, uint8_t len,
-		uint8_t size) {
+	uint8_t size) {
 	uint8_t t, temp;
 	uint8_t enshow = 0;
 	for (t = 0; t < len; t++) {
@@ -136,7 +136,7 @@ void OLED_ShowNumber(uint8_t x, uint8_t y, uint32_t num, uint8_t len,
 /**************************************************************************
  Show The String
  **************************************************************************/
-void OLED_ShowString(uint8_t x, uint8_t y, const uint8_t *p) {
+void OLED_ShowString(uint8_t x, uint8_t y, const uint8_t* p) {
 #define MAX_CHAR_POSX 122
 #define MAX_CHAR_POSY 58          
 	while (*p != '\0') {
@@ -154,10 +154,64 @@ void OLED_ShowString(uint8_t x, uint8_t y, const uint8_t *p) {
 	}
 }
 
+/**************************************************************************
+ Show a 5x7 character using direct OLED_GRAM column writes.
+
+ x   : pixel column (0..127)
+ row : text row (0..7), each row is exactly one 8-pixel GRAM page
+
+ The font table is stored in the same bit orientation used by OLED_GRAM.
+ **************************************************************************/
+void OLED_ShowChar5x7(uint8_t x, uint8_t row, char chr) {
+	uint8_t gram_page;
+	const unsigned char* glyph;
+
+	if (row >= OLED_5X7_ROWS || x + OLED_5X7_CELL_WIDTH > OLED_Width)
+		return;
+
+	if (chr < ' ' || chr > '~')
+		chr = '?';
+
+	/* OLED_DrawPoint() maps screen row 0 to OLED_GRAM[][7]. */
+	gram_page = (OLED_5X7_ROWS - 1U) - row;
+	glyph = oled_asc2_0507[(uint8_t)chr - (uint8_t)' '];
+
+	for (uint8_t col = 0; col < OLED_5X7_GLYPH_WIDTH; col++)
+		OLED_GRAM[x + col][gram_page] = glyph[col];
+
+	/* Sixth column is inter-character spacing. */
+	OLED_GRAM[x + OLED_5X7_GLYPH_WIDTH][gram_page] = 0x00;
+}
+
+/**************************************************************************
+ Show a string using the optimized 5x7 renderer.
+
+ Text wraps at the right edge onto the next 8-pixel row. Rendering stops
+ at the bottom of the framebuffer; unlike the legacy OLED_ShowString(),
+ this function never clears or refreshes the physical display implicitly.
+ **************************************************************************/
+void OLED_ShowString5x7(uint8_t x, uint8_t row, const char* p) {
+	if (p == NULL || row >= OLED_5X7_ROWS)
+		return;
+
+	while (*p != '\0' && row < OLED_5X7_ROWS) {
+		if (x + OLED_5X7_CELL_WIDTH > OLED_Width) {
+			x = 0;
+			row++;
+			if (row >= OLED_5X7_ROWS)
+				break;
+		}
+
+		OLED_ShowChar5x7(x, row, *p);
+		x += OLED_5X7_CELL_WIDTH;
+		p++;
+	}
+}
+
 void OLED_Init(void) {
 	HAL_PWR_EnableBkUpAccess(); //Enable access to the RTC and Backup Register
 	__HAL_RCC_LSE_CONFIG(RCC_LSE_OFF); //turn OFF the LSE oscillator, LSERDY flag goes low after 6 LSE oscillator clock cycles.
-									   //LSE oscillator switch off to let PC13 PC14 PC15 be IO
+	//LSE oscillator switch off to let PC13 PC14 PC15 be IO
 
 	HAL_PWR_DisableBkUpAccess();
 

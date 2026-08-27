@@ -10,6 +10,6 @@
 
 void OLEDTestRun() {
 	OLED_Clear();
-	OLED_ShowString(10, 20, (const uint8_t*)"Hello World!");
+	OLED_ShowString5x7(0, 0, (const char*)"Hello World!");
 	OLED_Refresh_Gram();
 }

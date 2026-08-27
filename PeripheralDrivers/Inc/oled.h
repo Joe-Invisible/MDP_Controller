@@ -31,8 +31,21 @@ extern u8 OLED_GRAM[128][8];
 #define OLED_CMD  0	//Command
 #define OLED_DATA 1	//Data
 
-#define OLED_Height			64
-#define OLED_Width			128
+#define OLED_Height         64
+#define OLED_Width          128
+
+/* Compact 5x7 diagnostic font: 5 glyph columns + 1 spacing column,
+ * one 8-pixel-high OLED page per text row. */
+#define OLED_5X7_GLYPH_WIDTH    5U
+#define OLED_5X7_CELL_WIDTH     6U
+#define OLED_5X7_CELL_HEIGHT    8U
+#define OLED_5X7_COLS           (OLED_Width / OLED_5X7_CELL_WIDTH)
+#define OLED_5X7_ROWS           (OLED_Height / OLED_5X7_CELL_HEIGHT)
+
+/* Renderer IDs for higher-level code such as the OLED manager.
+ * The low-level driver always keeps both implementations available. */
+#define OLED_RENDERER_LEGACY    0U
+#define OLED_RENDERER_5X7       1U
 
 //Oled control function
 
@@ -47,6 +60,8 @@ void OLED_DrawPoint(u8 x,u8 y,u8 t);
 void OLED_ShowChar(u8 x,u8 y,u8 chr,u8 size,u8 mode);
 void OLED_ShowNumber(u8 x,u8 y,u32 num,u8 len,u8 size);
 void OLED_ShowString(u8 x,u8 y,const u8 *p);
+void OLED_ShowChar5x7(u8 x, u8 row, char chr);
+void OLED_ShowString5x7(u8 x, u8 row, const char *p);
 void OLED_ShowString16(u8 x,u8 y,const u8 *p);
 void OLED_Refresh_Line(void);
 
