@@ -6,7 +6,11 @@
  */
 
 #include "DCMotorTestBasic.h"
+#include "ServoTestBasic.h"
 
 void InvokeTest() {
-	DCMotorTestRun();
+	// DCMotorTestRun();
+	ServoTestRun();
+	// ServoCalibrationRun();
+	// ServoCentreFindRun();
 }
