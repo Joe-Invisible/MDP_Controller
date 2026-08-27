@@ -188,3 +188,7 @@ This repository is under active development as part of the MDP robot project.
 The control architecture is intentionally layered so that peripheral access, low-level feedback control, RTOS application code, and robot-level motion control can be developed and tested independently.
 
 Experimental scripts and measured datasets are retained where useful so that controller parameters and design decisions can be traced back to hardware measurements rather than treated as unexplained constants.
+=======
+This repository is under active development as part of the MDP robot project. The architecture and available drivers will continue to evolve as additional hardware and robot functionality are integrated.
+
+See [`WORKFLOW.md`](WORKFLOW.md) for the nvim + STM32CubeIDE development setup (external editor with clangd, building and debugging in the IDE).
