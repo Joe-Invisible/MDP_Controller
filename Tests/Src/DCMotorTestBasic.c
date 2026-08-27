@@ -7,7 +7,7 @@
 
 
 #include "DCMotorTestBasic.h"
-#include "oled.h"
+#include "oledutils.h"
 
 #define MOTORBPWMSRC htim9
 #define MOTORCPWMSRC htim1

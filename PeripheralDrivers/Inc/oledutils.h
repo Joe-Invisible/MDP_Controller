@@ -9,6 +9,7 @@
 #define INC_OLEDUTILS_H_
 
 #include <stdint.h>
+#include "oledutils.h"
 
 void OLED_Printf(uint8_t x, uint8_t y, const char *fmt, ...);
 
