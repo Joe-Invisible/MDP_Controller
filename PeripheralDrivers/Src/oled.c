@@ -37,11 +37,15 @@ void OLED_WR_Byte(uint8_t dat, uint8_t cmd) {
 /**************************************************************************
  Clear OLED
  **************************************************************************/
-void OLED_Clear(void) {
+void OLED_ClearGram(void) {
 	uint8_t i, n;
 	for (i = 0; i < 8; i++)
 		for (n = 0; n < 128; n++)
 			OLED_GRAM[n][i] = 0X00;
+}
+
+void OLED_Clear(void) {
+	OLED_ClearGram();
 	OLED_Refresh_Gram(); //Refresh
 }
 
@@ -81,7 +85,7 @@ void OLED_DrawPoint(uint8_t x, uint8_t y, uint8_t t) {
  Show Char
  **************************************************************************/
 void OLED_ShowChar(uint8_t x, uint8_t y, uint8_t chr, uint8_t size,
-	uint8_t mode) {
+		uint8_t mode) {
 	uint8_t temp, t, t1;
 	uint8_t y0 = y;
 	chr = chr - ' ';
@@ -117,7 +121,7 @@ uint32_t oled_pow(uint8_t m, uint8_t n) {
  Show Two Number
  **************************************************************************/
 void OLED_ShowNumber(uint8_t x, uint8_t y, uint32_t num, uint8_t len,
-	uint8_t size) {
+		uint8_t size) {
 	uint8_t t, temp;
 	uint8_t enshow = 0;
 	for (t = 0; t < len; t++) {
@@ -211,7 +215,7 @@ void OLED_ShowString5x7(uint8_t x, uint8_t row, const char* p) {
 void OLED_Init(void) {
 	HAL_PWR_EnableBkUpAccess(); //Enable access to the RTC and Backup Register
 	__HAL_RCC_LSE_CONFIG(RCC_LSE_OFF); //turn OFF the LSE oscillator, LSERDY flag goes low after 6 LSE oscillator clock cycles.
-	//LSE oscillator switch off to let PC13 PC14 PC15 be IO
+									   //LSE oscillator switch off to let PC13 PC14 PC15 be IO
 
 	HAL_PWR_DisableBkUpAccess();
 

@@ -26,7 +26,6 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "TestMain.h"
-#include "oled.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -99,7 +98,6 @@ int main(void)
   MX_TIM8_Init();
   MX_TIM14_Init();
   /* USER CODE BEGIN 2 */
-  OLED_Init();
 
 #if BRANCH_TO_TESTS
   InvokeTest();

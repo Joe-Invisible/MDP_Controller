@@ -44,8 +44,9 @@ extern u8 OLED_GRAM[128][8];
 
 /* Renderer IDs for higher-level code such as the OLED manager.
  * The low-level driver always keeps both implementations available. */
-#define OLED_RENDERER_LEGACY    0U
-#define OLED_RENDERER_5X7       1U
+// We need non-zero definition for unknown renderer names to fail in #if directives
+#define OLED_RENDERER_LEGACY    1U
+#define OLED_RENDERER_5X7       2U
 
 //Oled control function
 
@@ -55,6 +56,7 @@ void OLED_Display_On(void);
 void OLED_Display_Off(void);
 void OLED_Refresh_Gram(void);		   				   		    
 void OLED_Init(void);
+void OLED_ClearGram(void);
 void OLED_Clear(void);
 void OLED_DrawPoint(u8 x,u8 y,u8 t);
 void OLED_ShowChar(u8 x,u8 y,u8 chr,u8 size,u8 mode);

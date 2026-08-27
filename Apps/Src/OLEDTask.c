@@ -6,10 +6,24 @@
  */
 
 #include "OLEDTask.h"
+#include "OLEDManager.h"
+#include "OLEDManagerConfig.h"
+
 #include "cmsis_os.h"
+#include "oled.h"
+
+// A compile-time flag because for testing we might have already called OLED_Init earlier.
+#define OLED_ALREADY_INITIALIZED 1
 
 void OLEDTask(void* _) {
+	(void)_;
+
+	/* OLED hardware and framebuffer are owned by this task. */
+#if !(OLED_ALREADY_INITIALISED == 1)
+	OLED_Init();
+#endif
 	for (;;) {
-		osDelay(1);
+		OLED_ManagerRefresh();
+		osDelay(OLED_MANAGER_REFRESH_PERIOD_MS);
 	}
 }

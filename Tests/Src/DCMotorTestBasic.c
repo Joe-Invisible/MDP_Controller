@@ -63,8 +63,8 @@ void DCMotorTestRun() {
 	uint16_t lcount = DCMotor_GetEncoderCount(&lmotor);
 	uint16_t rcount = DCMotor_GetEncoderCount(&rmotor);
 
-	OLED_Printf(10, 10, "%hu", lcount);
-	OLED_Printf(10, 20, "%hu", rcount);
+	OLED_Printf(0, 0, "%hu", lcount);
+	OLED_Printf(0, 1, "%hu", rcount);
 	OLED_Refresh_Gram();
 
 }

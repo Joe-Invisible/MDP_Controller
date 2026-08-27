@@ -22,5 +22,5 @@ void OLED_Printf(uint8_t x, uint8_t y, const char *fmt, ...)
     vsnprintf(buffer, sizeof(buffer), fmt, args);
     va_end(args);
 
-    OLED_ShowString(x, y, (const uint8_t *)buffer);
+    OLED_ShowString5x7(x, y, (const char *)buffer);
 }
