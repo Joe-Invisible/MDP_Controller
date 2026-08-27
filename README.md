@@ -39,3 +39,5 @@ Copies of hardware used in this project are provided in `/zdocs`.
 ## Development
 
 This repository is under active development as part of the MDP robot project. The architecture and available drivers will continue to evolve as additional hardware and robot functionality are integrated.
+
+See [`WORKFLOW.md`](WORKFLOW.md) for the nvim + STM32CubeIDE development setup (external editor with clangd, building and debugging in the IDE).

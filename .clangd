@@ -1,0 +1,10 @@
+# Project clangd config for nvim. STM32CubeIDE remains the real build system;
+# this only feeds the editor's index/diagnostics.
+# Real flags come from compile_commands.json (./gen-compile-commands.sh).
+CompileFlags:
+  Remove:
+    - --specs=*
+    - -fcyclomatic-complexity
+    - -fstack-usage
+Diagnostics:
+  UnusedIncludes: None
