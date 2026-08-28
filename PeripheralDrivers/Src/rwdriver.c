@@ -13,6 +13,7 @@
 bool DCMotor_Init(
 		DCMotor* rm,
 		TIM_HandleTypeDef* pwmHtim,
+		bool flipDirection,
 		TIM_HandleTypeDef* encHtim,
 		uint32_t encCPR,
 		float wheelDiameter) {
@@ -24,6 +25,9 @@ bool DCMotor_Init(
 	// hard-coded CH1 and 2 for now.
 	rm->config.pwmChannel1 = TIM_CHANNEL_1;
 	rm->config.pwmChannel2 = TIM_CHANNEL_2;
+
+	rm->config.flipDirection = flipDirection ? 1 : 0;
+
 	rm->config.encHtim = encHtim;
 
 	rm->intrin.encCPR = encCPR;
@@ -84,7 +88,7 @@ void DCMotor_SetPWM(DCMotor* rm, int8_t dutyCycle) {
 	if (!rm) return;
 
 	// get dutyCycle sign by convention
-	int8_t direction = (dutyCycle >> sizeof(dutyCycle) * 7);
+	int8_t direction = rm->config.flipDirection ^ (dutyCycle >> sizeof(dutyCycle) * 7);
 	dutyCycle = dutyCycle < 0 ? -dutyCycle : dutyCycle;
 
 	// Calculate compare value

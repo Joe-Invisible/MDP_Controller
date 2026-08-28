@@ -37,6 +37,8 @@ typedef struct DCMotorConfg {
 	 */
 	uint32_t pwmChannel2;
 
+	uint32_t flipDirection;
+
 	/**
 	 * Encoder timer module
 	 */
@@ -93,7 +95,7 @@ typedef struct DCMotor {
 /**
  *
  */
-bool DCMotor_Init(DCMotor* rm, TIM_HandleTypeDef* pwmHtim, TIM_HandleTypeDef* encHtim, uint32_t encCPR, float wheelDiameter);
+bool DCMotor_Init(DCMotor* rm, TIM_HandleTypeDef* pwmHtim, bool flipDirection, TIM_HandleTypeDef* encHtim, uint32_t encCPR, float wheelDiameter);
 
 /**
  * Forces both PWM to 0 and stars PWM generation.
