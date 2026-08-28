@@ -5,12 +5,13 @@
  *      Author: Joe
  */
 
+#include <userbutton.h>
 #include "DCMotorTestBasic.h"
 #include "ServoTestBasic.h"
+#include "ICM20948Test.h"
 #include "OLEDTest.h"
 #include "oled.h"
-
-#include "userbutton.h"
+#include "led3.h"
 
 void InvokeTest() {
 	OLED_Init();
@@ -19,11 +20,12 @@ void InvokeTest() {
 	OLED_Refresh_Gram();
 	SW1_WhileNotPressed();
 
-	HAL_GPIO_WritePin(GPIOE, GPIO_PIN_8, GPIO_PIN_RESET);
+	LED_On();
 
-	// DCMotorTestRun();
-	// SW1_WhileNotPressed();
+	HAL_Delay(200); // Because Init is too fast
 
-	ServoTestRun();
+	ICM20948TestRun();
+
 	SW1_WhileNotPressed();
+
 }
