@@ -141,6 +141,8 @@
 #define ICM20948_GYRO_SMPLRT_DIV_DEFAULT    9U
 #define ICM20948_ACCEL_SMPLRT_DIV_DEFAULT   9U
 
+#define GYRO_SMPLRT_DIV	ICM20948_GYRO_SMPLRT_DIV_DEFAULT
+
 /* --------------------------------------------------------------------------
  * Measurement conversion
  * -------------------------------------------------------------------------- */
