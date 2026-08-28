@@ -30,10 +30,10 @@
  * narrow band around the nominal centre with a long dwell, so the wheels can
  * be judged straight while effectively stationary rather than mid-slew.
  */
-#define CTR_MIN_PULSE_US ((uint16_t)1400)
-#define CTR_MAX_PULSE_US ((uint16_t)1700)
-#define CTR_STEP_US ((uint16_t)10)
-#define CTR_STEP_DELAY_MS ((uint32_t)600)
+#define CTR_MIN_PULSE_US 	((uint16_t)1400)
+#define CTR_MAX_PULSE_US 	((uint16_t)1700)
+#define CTR_STEP_US 			((uint16_t)10)
+#define CTR_STEP_DELAY_MS 	((uint32_t)600)
 
 /**
  * Display rows. The font is 8x12, so rows sit 16 apart and a line holds at
@@ -42,9 +42,9 @@
  * leave the tail of the previous one on screen.
  */
 #define ROW_TITLE ((uint8_t)0)
-#define ROW_PHASE ((uint8_t)16)
-#define ROW_PULSE ((uint8_t)32)
-#define ROW_STEER ((uint8_t)48)
+#define ROW_PHASE ((uint8_t)1)
+#define ROW_PULSE ((uint8_t)2)
+#define ROW_STEER ((uint8_t)3)
 
 static void ServoShowPulse(Servo *sm) {
   OLED_Printf(0, ROW_PULSE, "PULSE %4u us ", Servo_GetPulseUs(sm));

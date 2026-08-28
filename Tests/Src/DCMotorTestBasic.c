@@ -44,8 +44,8 @@ void DCMotorTestRun() {
 	HAL_Delay(2000);
 
 	// 3 different speeds reverse
-	DCMotor_SetPWM(&lmotor, -75);
-	DCMotor_SetPWM(&rmotor, -75);
+	DCMotor_SetPWM(&lmotor, -60);
+	DCMotor_SetPWM(&rmotor, -60);
 	HAL_Delay(2000);
 
 	DCMotor_SetPWM(&lmotor, -90);
@@ -67,7 +67,7 @@ void DCMotorTestRun() {
 	uint16_t lcount = DCMotor_GetEncoderCount(&lmotor);
 	uint16_t rcount = DCMotor_GetEncoderCount(&rmotor);
 
-	OLED_Clear
+	OLED_Clear();
 	OLED_Printf(0, 0, "L:%hu", lcount);
 	OLED_Printf(0, 1, "R:%hu", rcount);
 	OLED_Printf(0, 2, "D:%d", (int)lcount - (int)rcount);

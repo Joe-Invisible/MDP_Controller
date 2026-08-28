@@ -6,6 +6,7 @@
  */
 
 #include "DCMotorTestBasic.h"
+#include "ServoTestBasic.h"
 #include "OLEDTest.h"
 #include "oled.h"
 
@@ -20,6 +21,9 @@ void InvokeTest() {
 
 	HAL_GPIO_WritePin(GPIOE, GPIO_PIN_8, GPIO_PIN_RESET);
 
-	DCMotorTestRun();
+	// DCMotorTestRun();
+	// SW1_WhileNotPressed();
+
+	ServoTestRun();
 	SW1_WhileNotPressed();
 }
