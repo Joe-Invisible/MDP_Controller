@@ -14,12 +14,9 @@ bool DCMotor_Init(
 		DCMotor* rm,
 		TIM_HandleTypeDef* pwmHtim,
 		bool flipDirection,
-		TIM_HandleTypeDef* encHtim,
-		uint32_t encCPR,
-		float wheelDiameter) {
+		TIM_HandleTypeDef* encHtim) {
 
 	if (!rm || !pwmHtim || !encHtim) return false;
-	if (encCPR <= 0 || wheelDiameter <= 0.0f) return false;
 
 	rm->config.pwmHtim = pwmHtim;
 	// hard-coded CH1 and 2 for now.
@@ -29,9 +26,6 @@ bool DCMotor_Init(
 	rm->config.flipDirection = flipDirection ? 1 : 0;
 
 	rm->config.encHtim = encHtim;
-
-	rm->intrin.encCPR = encCPR;
-	rm->intrin.wheelDiameter = wheelDiameter;
 
 	rm->state.encCount = 0;
 	rm->state.activeDutyCycle = 0;

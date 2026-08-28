@@ -95,7 +95,7 @@ typedef struct DCMotor {
 /**
  *
  */
-bool DCMotor_Init(DCMotor* rm, TIM_HandleTypeDef* pwmHtim, bool flipDirection, TIM_HandleTypeDef* encHtim, uint32_t encCPR, float wheelDiameter);
+bool DCMotor_Init(DCMotor* rm, TIM_HandleTypeDef* pwmHtim, bool flipDirection, TIM_HandleTypeDef* encHtim);
 
 /**
  * Forces both PWM to 0 and stars PWM generation.
