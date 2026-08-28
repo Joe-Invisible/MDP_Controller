@@ -45,9 +45,9 @@
  * different linkage and understates this one's travel about fourfold. The
  * stops depend on the chassis, not the servo, and must be measured per robot.
  */
-#define CHASSIS_STEER_MIN_PULSE_US ((uint16_t)850)
+#define CHASSIS_STEER_MIN_PULSE_US ((uint16_t)900)
 #define CHASSIS_STEER_CTR_PULSE_US ((uint16_t)1515)
-#define CHASSIS_STEER_MAX_PULSE_US ((uint16_t)2150)
+#define CHASSIS_STEER_MAX_PULSE_US ((uint16_t)2200)
 
 /**
  * Steering command range, by convention matching DCMotor_SetPWM.
