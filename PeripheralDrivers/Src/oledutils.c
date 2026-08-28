@@ -13,7 +13,7 @@
 
 #define OLED_TEXT_BUFFER_SIZE 32
 
-void OLED_Printf(uint8_t x, uint8_t y, const char *fmt, ...)
+void OLED_Printf(uint8_t x, uint8_t row, const char *fmt, ...)
 {
     char buffer[OLED_TEXT_BUFFER_SIZE];
 
@@ -22,5 +22,5 @@ void OLED_Printf(uint8_t x, uint8_t y, const char *fmt, ...)
     vsnprintf(buffer, sizeof(buffer), fmt, args);
     va_end(args);
 
-    OLED_ShowString5x7(x, y, (const char *)buffer);
+    OLED_ShowString5x7(x, row, (const char *)buffer);
 }

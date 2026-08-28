@@ -35,6 +35,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+// Branch to standalone OS-less test modules. Enters infinite loop after the test exits
 #define BRANCH_TO_TESTS 1
 /* USER CODE END PD */
 
