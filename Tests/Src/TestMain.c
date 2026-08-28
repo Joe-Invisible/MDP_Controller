@@ -16,9 +16,9 @@
 void InvokeTest() {
 	OLED_Init();
 	OLED_Clear();
-	OLED_ShowString5x7(0, 0, (const char*)"BTT: Press SW1 to start test.");
-	OLED_Refresh_Gram();
-	SW1_WhileNotPressed();
+//	OLED_ShowString5x7(0, 0, (const char*)"BTT: Press SW1 to start test.");
+//	OLED_Refresh_Gram();
+//	SW1_WhileNotPressed();
 
 	LED_On();
 

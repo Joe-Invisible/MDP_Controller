@@ -19,8 +19,8 @@
 void DCMotorTestRun() {
 	DCMotor lmotor = { 0 };
 	DCMotor rmotor = { 0 };
-	DCMotor_Init(&lmotor, &MOTORBPWMSRC, true, &MOTORBENC, MG512P30_QUAD_RESOLUTION, 65);
-	DCMotor_Init(&rmotor, &MOTORCPWMSRC, false, &MOTORCENC, MG512P30_QUAD_RESOLUTION, 65);
+	DCMotor_Init(&lmotor, &MOTORBPWMSRC, true, &MOTORBENC);
+	DCMotor_Init(&rmotor, &MOTORCPWMSRC, false, &MOTORCENC);
 
 	DCMotor_Enable(&lmotor);
 	DCMotor_Enable(&rmotor);
