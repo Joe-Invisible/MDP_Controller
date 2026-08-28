@@ -88,7 +88,7 @@ void DCMotor_SetPWM(DCMotor* rm, int8_t dutyCycle) {
 	if (!rm) return;
 
 	// get dutyCycle sign by convention
-	int8_t direction = rm->config.flipDirection ^ (dutyCycle >> sizeof(dutyCycle) * 7);
+	int8_t direction = rm->config.flipDirection ^ (((uint8_t)dutyCycle >> ((sizeof(dutyCycle) * 8) - 1)));
 	dutyCycle = dutyCycle < 0 ? -dutyCycle : dutyCycle;
 
 	// Calculate compare value
