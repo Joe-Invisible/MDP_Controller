@@ -74,7 +74,7 @@ typedef struct DCMotorState {
 	 * This value will be applied to the active channel.
 	 *
 	 */
-	int8_t activeDutyCycle;
+	float activeDutyCycle;
 
 	/**
 	 * 0: forward
