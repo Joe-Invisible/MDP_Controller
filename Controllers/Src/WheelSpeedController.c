@@ -109,7 +109,17 @@ void WheelSpeedController_SetTarget(
 
 	if (!controller) return;
 
+	float oldTarget = controller->targetSpeedCps;
+
 	controller->targetSpeedCps = speedCps;
+
+	// Reset PID when command changes direction. This prevents
+	// the stale positive integral from fighting the new reverse command.
+	if ((oldTarget > 0.0f && speedCps < 0.0f) ||
+	    (oldTarget < 0.0f && speedCps > 0.0f))
+	{
+	    PIDController_Reset(&controller->pid);
+	}
 
 	if (speedCps == 0.0f) return;
 
@@ -123,15 +133,6 @@ void WheelSpeedController_SetTarget(
 				controller->calibration.reverseSlope :
 				controller->calibration.forwardSlope;
 
-	// Reset PID when command changes direction. This prevents
-	// the stale positive integral from fighting the new reverse command.
-	float oldTarget = controller->targetSpeedCps;
-
-	if ((oldTarget > 0.0f && speedCps < 0.0f) ||
-	    (oldTarget < 0.0f && speedCps > 0.0f))
-	{
-	    PIDController_Reset(&controller->pid);
-	}
 }
 
 /**
