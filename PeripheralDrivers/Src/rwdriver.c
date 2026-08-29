@@ -7,6 +7,7 @@
 
 
 #include "rwdriver.h"
+#include "math.h"
 
 #define BRAKE_PWM_DUTY_CYCLE ((int8_t)100)
 
@@ -78,11 +79,16 @@ void DCMotor_Disable(DCMotor* rm) {
 	);
 }
 
-void DCMotor_SetPWM(DCMotor* rm, int8_t dutyCycle) {
+void DCMotor_SetPWM(DCMotor* rm, float dutyCycle) {
 	if (!rm) return;
 
+	// Clamp to defined percentage range
+	if (fabs(dutyCycle) > 100.0) {
+		dutyCycle = dutyCycle < 0.0f ? -100.0f : 100.0f;
+	}
+
 	// get dutyCycle sign by convention
-	int8_t direction = rm->config.flipDirection ^ (((uint8_t)dutyCycle >> ((sizeof(dutyCycle) * 8) - 1)));
+	int8_t direction = rm->config.flipDirection ^ (signbit(dutyCycle) != 0);
 	dutyCycle = dutyCycle < 0 ? -dutyCycle : dutyCycle;
 
 	// Calculate compare value

@@ -117,7 +117,7 @@ void DCMotor_Disable(DCMotor* rm);
 	 * +: Forward;
 	 * -: Reverse
  */
-void DCMotor_SetPWM(DCMotor* rm, int8_t dutyCycle);
+void DCMotor_SetPWM(DCMotor* rm, float dutyCycle);
 
 void DCMotor_Neutral(DCMotor* rm);
 
