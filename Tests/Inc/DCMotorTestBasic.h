@@ -12,5 +12,6 @@
 #include "rwdriver.h"
 
 void DCMotorTestRun();
+void DCMotorTestMinimumPWM();
 
 #endif /* INC_DCMOTORTESTBASIC_H_ */
