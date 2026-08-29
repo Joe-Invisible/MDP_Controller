@@ -18,7 +18,8 @@
 #define MOTORBENC htim3
 #define MOTORCENC htim4
 
-#define TEST_KP		0.020f
+// See kp_analysis in exp/
+#define TEST_KP		0.02f
 #define TEST_KI		0.0f
 
 /* Controller runs at 100 Hz. */
@@ -116,7 +117,7 @@ static void WheelSpeedControllerTest_RunTarget(
 
     uint32_t startTick   = HAL_GetTick();
     uint32_t lastControl = startTick;
-    uint32_t lastDisplay = startTick;
+    // uint32_t lastDisplay = startTick;
 
     while ((HAL_GetTick() - startTick) < TARGET_DURATION_MS)
     {
@@ -146,14 +147,10 @@ static void WheelSpeedControllerTest_RunTarget(
             debugSamples[debugSampleIndex].pwm = controller->outputPWM;
             debugSamples[debugSampleIndex].targetCps = controller->targetSpeedCps;
             debugSampleIndex++;
-            if (debugSampleIndex >= DEBUG_SAMPLE_COUNT) {
-            		// breakpoint anchor point
-            		debugSampleIndex++;
-            }
 #endif	/* DEBUGLOG */
         }
 
-
+#if DEBUGLOG == 0	/* Do not refresh display if logging debug data */
         /*
          * OLED refreshes are relatively slow, so do not perform
          * them at control-loop frequency.
@@ -189,6 +186,7 @@ static void WheelSpeedControllerTest_RunTarget(
 
             OLED_Refresh_Gram();
         }
+#endif	/* DEBUGLOG */
     }
 }
 
@@ -215,6 +213,7 @@ static void WheelSpeedControllerTest_RunMotor(
 
     for (uint32_t i = 0; i < NUM_TEST_TARGETS; i++)
     {
+#if DEBUGLOG == 0
         OLED_Clear();
         OLED_Printf(0, 0, "%s", motorName);
         OLED_Printf(
@@ -224,7 +223,7 @@ static void WheelSpeedControllerTest_RunMotor(
         OLED_Refresh_Gram();
 
         HAL_Delay(500U);
-
+#endif
         WheelSpeedControllerTest_RunTarget(
                 &controller,
                 testTargets[i]);
@@ -249,19 +248,19 @@ void WheelSpeedControllerTestRun() {
 
 	OLED_Clear();
 	OLED_Printf(0, 0, "WSCtrl Test");
-	OLED_Printf(0, 1, "SW1: Right Motor");
+	OLED_Printf(0, 1, "SW1: Left Motor");
 	OLED_Refresh_Gram();
 	// SW1_WhileNotPressed();
 
-    WheelSpeedControllerTest_RunMotor(&rmotor, &rightCalibration, "RIGHT");
+	WheelSpeedControllerTest_RunMotor(&lmotor, &leftCalibration, "LEFT");
 
     OLED_Clear();
     OLED_Printf(0, 0, "Right complete");
-    OLED_Printf(0, 1, "SW1: Left motor");
+    OLED_Printf(0, 1, "SW1: Right motor");
     OLED_Refresh_Gram();
 
     // SW1_WhileNotPressed();
-	WheelSpeedControllerTest_RunMotor(&lmotor, &leftCalibration, "LEFT");
+    WheelSpeedControllerTest_RunMotor(&rmotor, &rightCalibration, "RIGHT");
 
 
     OLED_Clear();
