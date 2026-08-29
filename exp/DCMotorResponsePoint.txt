@@ -1,0 +1,31 @@
+Name : responseLeftForward
+	Details:{{pwm = 100 'd', deltaCounts = 9566}, {pwm = 95 '_', deltaCounts = 8506}, {pwm = 90 'Z', deltaCounts = 7566}, {pwm = 85 'U', deltaCounts = 6564}, {pwm = 80 'P', deltaCounts = 5511}, {pwm = 75 'K', deltaCounts = 4496}, {pwm = 70 'F', deltaCounts = 3450}, {pwm = 65 'A', deltaCounts = 2418}, {pwm = 60 '<', deltaCounts = 1387}, {pwm = 55 '7', deltaCounts = 425}, {pwm = 50 '2', deltaCounts = 0}, {pwm = 45 '-', deltaCounts = 0}, {pwm = 40 '(', deltaCounts = 0}}
+	Default:0x2000595c <responseLeftForward>
+	Decimal:536893788
+	Hex:0x2000595c
+	Binary:100000000000000101100101011100
+	Octal:04000054534
+
+Name : responseLeftReverse
+	Details:{{pwm = -100 '\234', deltaCounts = -8967}, {pwm = -95 '¡', deltaCounts = -7951}, {pwm = -90 '¦', deltaCounts = -6999}, {pwm = -85 '«', deltaCounts = -6054}, {pwm = -80 '°', deltaCounts = -5091}, {pwm = -75 'µ', deltaCounts = -4143}, {pwm = -70 'º', deltaCounts = -3181}, {pwm = -65 '¿', deltaCounts = -2218}, {pwm = -60 'Ä', deltaCounts = -1262}, {pwm = -55 'É', deltaCounts = -300}, {pwm = -50 'Î', deltaCounts = 0}, {pwm = -45 'Ó', deltaCounts = 1}, {pwm = -40 'Ø', deltaCounts = 0}}
+	Default:0x20005990 <responseLeftReverse>
+	Decimal:536893840
+	Hex:0x20005990
+	Binary:100000000000000101100110010000
+	Octal:04000054620
+
+Name : responseRightForward
+	Details:{{pwm = 100 'd', deltaCounts = 8986}, {pwm = 95 '_', deltaCounts = 8020}, {pwm = 90 'Z', deltaCounts = 7060}, {pwm = 85 'U', deltaCounts = 6098}, {pwm = 80 'P', deltaCounts = 5130}, {pwm = 75 'K', deltaCounts = 4157}, {pwm = 70 'F', deltaCounts = 3182}, {pwm = 65 'A', deltaCounts = 2207}, {pwm = 60 '<', deltaCounts = 1245}, {pwm = 55 '7', deltaCounts = 380}, {pwm = 50 '2', deltaCounts = 0}, {pwm = 45 '-', deltaCounts = 0}, {pwm = 40 '(', deltaCounts = 0}}
+	Default:0x200059c4 <responseRightForward>
+	Decimal:536893892
+	Hex:0x200059c4
+	Binary:100000000000000101100111000100
+	Octal:04000054704
+
+Name : responseRightReverse
+	Details:{{pwm = -100 '\234', deltaCounts = -9194}, {pwm = -95 '¡', deltaCounts = -8255}, {pwm = -90 '¦', deltaCounts = -7256}, {pwm = -85 '«', deltaCounts = -6265}, {pwm = -80 '°', deltaCounts = -5268}, {pwm = -75 'µ', deltaCounts = -4261}, {pwm = -70 'º', deltaCounts = -3259}, {pwm = -65 '¿', deltaCounts = -2257}, {pwm = -60 'Ä', deltaCounts = -1264}, {pwm = -55 'É', deltaCounts = -343}, {pwm = -50 'Î', deltaCounts = 0}, {pwm = -45 'Ó', deltaCounts = 0}, {pwm = -40 'Ø', deltaCounts = 0}}
+	Default:0x200059f8 <responseRightReverse>
+	Decimal:536893944
+	Hex:0x200059f8
+	Binary:100000000000000101100111111000
+	Octal:04000054770
