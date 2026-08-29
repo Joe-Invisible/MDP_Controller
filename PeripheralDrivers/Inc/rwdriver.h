@@ -123,7 +123,7 @@ void DCMotor_Neutral(DCMotor* rm);
 
 void DCMotor_Brake(DCMotor* rm);
 
-uint16_t DCMotor_GetEncoderCount(DCMotor* rm);
+int16_t DCMotor_GetEncoderCount(DCMotor* rm);
 
 
 #endif /* INC_RWDRIVER_H_ */

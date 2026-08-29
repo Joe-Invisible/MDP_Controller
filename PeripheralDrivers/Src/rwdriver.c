@@ -93,11 +93,11 @@ void DCMotor_SetPWM(DCMotor* rm, int8_t dutyCycle) {
 	uint32_t activeChannel = -1;
 	uint32_t inactiveChannel = -1;
 	if (direction == 1) {
-		activeChannel = rm->config.pwmChannel1;
-		inactiveChannel = rm->config.pwmChannel2;
-	} else if (direction == 0) {
 		activeChannel = rm->config.pwmChannel2;
 		inactiveChannel = rm->config.pwmChannel1;
+	} else if (direction == 0) {
+		activeChannel = rm->config.pwmChannel1;
+		inactiveChannel = rm->config.pwmChannel2;
 	} else {
 		return;
 	}
@@ -140,7 +140,8 @@ void DCMotor_Brake(DCMotor *rm)
 			period);
 }
 
-uint16_t DCMotor_GetEncoderCount(DCMotor* rm) {
-	rm->state.encCount = (uint16_t)__HAL_TIM_GET_COUNTER(rm->config.encHtim);
+int16_t DCMotor_GetEncoderCount(DCMotor* rm) {
+	rm->state.encCount = __HAL_TIM_GET_COUNTER(rm->config.encHtim);
+	rm->state.encCount = rm->config.flipDirection ? -rm->state.encCount : rm->state.encCount;
 	return rm->state.encCount;
 }
