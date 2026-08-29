@@ -25,9 +25,10 @@
 #define WHEELSPEEDCONTROLLER_KI				0.0f
 
 /**
- * Check threshold for stationary wheel
+ * Check threshold for stationary wheel. Tune this according
+ * to the controller update frequency. 100Cps corresponds to 100Hz update.
  */
-#define WHEEL_STATIONARY_THRESHOLD_CPS		10
+#define WHEEL_STATIONARY_THRESHOLD_CPS		100
 
 /**
  * We store all calibration values as positive magnitudes.

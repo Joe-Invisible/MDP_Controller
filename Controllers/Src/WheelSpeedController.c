@@ -122,6 +122,16 @@ void WheelSpeedController_SetTarget(
 			controller->targetSpeedCps < 0.0f ?
 				controller->calibration.reverseSlope :
 				controller->calibration.forwardSlope;
+
+	// Reset PID when command changes direction. This prevents
+	// the stale positive integral from fighting the new reverse command.
+	float oldTarget = controller->targetSpeedCps;
+
+	if ((oldTarget > 0.0f && speedCps < 0.0f) ||
+	    (oldTarget < 0.0f && speedCps > 0.0f))
+	{
+	    PIDController_Reset(&controller->pid);
+	}
 }
 
 /**
@@ -143,6 +153,15 @@ void WheelSpeedController_Update(
 	controller->previousEncoderCount = current;
 
 	controller->measuredSpeedCps = (float)delta / dt;
+
+	// Handle zero target, prevents PID accumulated integral
+	// from producing nonzero PWM.
+	if (controller->targetSpeedCps == 0.0f) {
+		PIDController_Reset(&controller->pid);
+		controller->outputPWM = 0.0f;
+		DCMotor_SetPWM(controller->motor, 0.0f);
+		return;
+	}
 
 	float pffMagnitude = WheelSpeedController_ComputePFF(controller);
 	float ppi = WheelSpeedController_ComputePPI(controller, dt);
@@ -216,7 +235,7 @@ void WheelSpeedController_Stop(WheelSpeedController *controller)
     controller->measuredSpeedCps = 0.0f;
     controller->outputPWM = 0.0f;
 
-    // PIDController_Reset(&controller->pid);
+    PIDController_Reset(&controller->pid);
 
     DCMotor_SetPWM(controller->motor, 0.0f);
 
