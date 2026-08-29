@@ -1,6 +1,9 @@
 /*
  * WheelSpeedController.h
  *
+ * Closed-loop wheel speed controller using encoder counts as input.
+ * Pre-derived motor model required. See DCMotor_Linear_Response_Summary in exp/
+ *
  *  Created on: 2026年8月29日
  *      Author: Joe
  */
