@@ -24,7 +24,7 @@ void InvokeTest() {
 
 	HAL_Delay(200); // Because Init is too fast
 
-	ICM20948TestRun();
+	DCMotorTestMinimumPWM();
 
 	SW1_WhileNotPressed();
 
