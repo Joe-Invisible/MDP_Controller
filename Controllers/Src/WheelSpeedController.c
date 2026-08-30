@@ -9,6 +9,7 @@
 #include "rwdriver.h"
 #include <math.h>
 
+
 bool WheelSpeedController_Init(
         WheelSpeedController *controller,
         DCMotor *motor,
@@ -135,6 +136,14 @@ void WheelSpeedController_SetTarget(
 
 }
 
+bool WheelSpeedController_IsStationary(WheelSpeedController *controller) {
+	if (controller == NULL)
+		return false;
+
+	return fabsf(controller->measuredSpeedCps) <
+	WHEEL_STATIONARY_THRESHOLD_CPS;
+}
+
 /**
  * We use a motor model to estimate the required PWM value for commanded
  * speed, then use a PI controller to correct model error.
@@ -180,13 +189,11 @@ void WheelSpeedController_Update(
 	float pwm = pff + ppi;
 
 	/*
-	 * Apply deadband compensation except when stopped.
+	 * Apply deadband compensation except when braking.
 	 */
 	if (controller->targetSpeedCps != 0.0f)
 	{
-	    bool stationary =
-	            fabsf(controller->measuredSpeedCps) <
-	            WHEEL_STATIONARY_THRESHOLD_CPS;
+		bool stationary = WheelSpeedController_IsStationary(controller);
 
 	    float minPWM;
 

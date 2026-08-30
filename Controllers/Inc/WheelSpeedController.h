@@ -24,11 +24,12 @@
 #define WHEELSPEEDCONTROLLER_MIN_FEEDBACK 	-30.0f
 #define WHEELSPEEDCONTROLLER_MAX_FEEDBACK 	30.0f
 
-#define WHEELSPEEDCONTROLLER_KP				0.0f
+#define WHEELSPEEDCONTROLLER_KP				0.02f
 #define WHEELSPEEDCONTROLLER_KI				0.0f
 
+
 /**
- * Check threshold for stationary wheel. Tune this according
+ * Check threshold for stationary wheel. Set this according
  * to the controller update frequency. 100Cps corresponds to 100Hz update.
  */
 #define WHEEL_STATIONARY_THRESHOLD_CPS		100
@@ -50,6 +51,7 @@ typedef struct {
     float runForwardPWM;
     float runReversePWM;
 } WheelSpeedCalibration;
+
 
 typedef struct {
     DCMotor *motor;
@@ -81,6 +83,14 @@ void WheelSpeedController_SetTarget(
 void WheelSpeedController_Update(
     WheelSpeedController *controller,
     float dt);
+
+/**
+ * Returns whether the wheel is stationary
+ * based on the measured wheel speed below a
+ * set threshold to eliminate noise
+ */
+bool WheelSpeedController_IsStationary(
+	const WheelSpeedController *controller);
 
 /**
  * Stops commanding torque, this instruction leaves
