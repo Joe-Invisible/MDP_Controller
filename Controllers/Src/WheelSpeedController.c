@@ -160,7 +160,7 @@ void WheelSpeedController_Update(
 	if (controller->targetSpeedCps == 0.0f) {
 		PIDController_Reset(&controller->pid);
 		controller->outputPWM = 0.0f;
-		DCMotor_SetPWM(controller->motor, 0.0f);
+		DCMotor_Brake(controller->motor);
 		return;
 	}
 
