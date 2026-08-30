@@ -13,12 +13,6 @@
 #include <stdbool.h>
 #include "stm32f4xx_hal.h"
 
-/**
- * Quadrature mode encoding resolution of the MG512P30 motor.
- * 13 pulses/mrev * 4 counts/pulse * 30 mrev/orev = 1560
- */
-#define MG512P30_QUAD_RESOLUTION ((uint32_t)1560)
-#define REAR_WHEEL_DIAMETER
 
 /**
  * Peripheral Configuration Parameters
@@ -46,19 +40,6 @@ typedef struct DCMotorConfg {
 
 } DCMotorConfg;
 
-/**
- * Mechanical Parameters of the Motor (and mounted wheel)
- */
-typedef struct DCMotorIntrn {
-	/**
-	 * Count per revolution of the encoder, i.e., the resolution
-	 */
-	uint32_t encCPR;
-	/**
-	 * Diameter of the wheel mounted to the motor, in millimeters.
-	 */
-	float wheelDiameter;
-} DCMotorIntrn;
 
 /**
  * Application-level runtime states of the Motor.
@@ -88,7 +69,6 @@ typedef struct DCMotorState {
 
 typedef struct DCMotor {
 	DCMotorConfg config;
-	DCMotorIntrn intrin;
 	DCMotorState state;
 } DCMotor;
 
