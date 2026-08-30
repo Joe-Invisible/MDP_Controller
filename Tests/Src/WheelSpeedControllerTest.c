@@ -33,41 +33,6 @@
 
 
 /*
- * Calibration obtained from the motor response tests.
- *
- * Offsets and slopes are stored as positive magnitudes.
- */
-static const WheelSpeedCalibration leftCalibration = {
-    .forwardSlope      = 203.88f,
-    .forwardOffset     = 53.03f,
-
-    .reverseSlope      = 191.88f,
-    .reverseOffset     = 53.44f,
-
-    .startForwardPWM   = 55.0f,
-    .startReversePWM   = 56.0f,
-
-    .runForwardPWM     = 54.0f,
-    .runReversePWM     = 55.0f
-};
-
-
-static const WheelSpeedCalibration rightCalibration = {
-    .forwardSlope      = 192.56f,
-    .forwardOffset     = 53.37f,
-
-    .reverseSlope      = 198.32f,
-    .reverseOffset     = 53.49f,
-
-    .startForwardPWM   = 56.0f,
-    .startReversePWM   = 56.0f,
-
-    .runForwardPWM     = 54.0f,
-    .runReversePWM     = 55.0f
-};
-
-
-/*
  * Speeds are deliberately kept well inside the experimentally
  * measured operating range for this initial test.
  */
@@ -85,7 +50,7 @@ static const float testTargets[] = {
 #define NUM_TEST_TARGETS \
     (sizeof(testTargets) / sizeof(testTargets[0]))
 
-#define DEBUGLOG 1
+#define DEBUGLOG 0
 
 #if DEBUGLOG == 1
 typedef struct {
@@ -117,7 +82,7 @@ static void WheelSpeedControllerTest_RunTarget(
 
     uint32_t startTick   = HAL_GetTick();
     uint32_t lastControl = startTick;
-    // uint32_t lastDisplay = startTick;
+    uint32_t lastDisplay = startTick;
 
     while ((HAL_GetTick() - startTick) < TARGET_DURATION_MS)
     {

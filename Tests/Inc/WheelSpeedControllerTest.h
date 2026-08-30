@@ -9,6 +9,7 @@
 #define INC_WHEELSPEEDCONTROLLERTEST_H_
 
 #include "WheelSpeedController.h"
+#include "WheelSpeedControllerConfig.h"
 #include "rwdriver.h"
 
 void WheelSpeedControllerTestRun();
