@@ -16,6 +16,11 @@
 static float MotionController_GetMmPerCount(
     const MotionController *controller)
 {
+	/*
+	 * Why are we recomputing a constant each time?
+	 * Does the wheel grow as the robot moves?
+	 * Relativistic physics?
+	 */
     return MOTION_PI *
            controller->kinematics->rearWheelDiameterMm /
            (float)controller->kinematics->rearEncoderCountsPerRev;
