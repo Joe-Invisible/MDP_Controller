@@ -167,6 +167,8 @@ static void WheelSpeedControllerTest_RunMotor(
             &controller,
             motor,
 			TEST_KP, TEST_KI,
+			WHEELSPEEDCONTROLLER_MIN_FEEDBACK,
+			WHEELSPEEDCONTROLLER_MAX_FEEDBACK,
             calibration))
     {
         OLED_Clear();

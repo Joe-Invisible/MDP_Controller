@@ -14,6 +14,7 @@ bool WheelSpeedController_Init(
         WheelSpeedController *controller,
         DCMotor *motor,
 		float kp, float ki,
+		float minFeedback, float maxFeedback,
         const WheelSpeedCalibration *calibration)
 {
     if (controller == NULL ||
@@ -47,7 +48,7 @@ bool WheelSpeedController_Init(
     if (!PIDController_Init(
     		&controller->pid,
 		kp, ki, 0.0f,
-		WHEELSPEEDCONTROLLER_MIN_FEEDBACK, WHEELSPEEDCONTROLLER_MAX_FEEDBACK))
+		minFeedback, maxFeedback))
     		return false;
 
     /* Ensure the motor starts in a known stopped state. */
@@ -136,7 +137,7 @@ void WheelSpeedController_SetTarget(
 
 }
 
-bool WheelSpeedController_IsStationary(WheelSpeedController *controller) {
+bool WheelSpeedController_IsStationary(const WheelSpeedController *controller) {
 	if (controller == NULL)
 		return false;
 

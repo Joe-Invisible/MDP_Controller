@@ -16,17 +16,6 @@
 #include "rwdriver.h"
 #include <stdint.h>
 
-/**
- * PID Controller parameters
- */
-// These constants defines how much at most the PID controller may
-// correct the model estimate
-#define WHEELSPEEDCONTROLLER_MIN_FEEDBACK 	-30.0f
-#define WHEELSPEEDCONTROLLER_MAX_FEEDBACK 	30.0f
-
-#define WHEELSPEEDCONTROLLER_KP				0.02f
-#define WHEELSPEEDCONTROLLER_KI				0.0f
-
 
 /**
  * Check threshold for stationary wheel. Set this according
@@ -74,6 +63,7 @@ bool WheelSpeedController_Init(
     WheelSpeedController *controller,
     DCMotor *motor,
 	float kp, float ki,
+	float minFeedback, float maxFeedback,
     const WheelSpeedCalibration *calibration);
 
 void WheelSpeedController_SetTarget(
