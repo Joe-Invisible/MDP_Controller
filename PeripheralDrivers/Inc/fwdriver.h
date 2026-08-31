@@ -52,8 +52,8 @@
 /**
  * Steering command range, by convention matching DCMotor_SetPWM.
  */
-#define SERVO_STEER_MIN ((int8_t)-100)
-#define SERVO_STEER_MAX ((int8_t)100)
+#define SERVO_STEER_MIN (-100.0f)
+#define SERVO_STEER_MAX (100.0f)
 
 /**
  * Peripheral Configuration Parameters
@@ -107,8 +107,11 @@ typedef struct ServoIntrn {
 typedef struct ServoState {
   /**
    * Last commanded pulse width, in microseconds.
+   * Type of this field has been changed from integer type
+   * to accurately reflect the decimal-preserving CCR value
+   * calculation (API allows floating point percentages).
    */
-  uint16_t pulseUs;
+  float pulseUs;
 
   /**
    * Range -100~+100
@@ -117,7 +120,7 @@ typedef struct ServoState {
    * +: the other
    * 0: centred
    */
-  int8_t steer;
+  float steer;
 
 } ServoState;
 
@@ -162,7 +165,7 @@ void Servo_Disable(Servo *sm);
  * +100: maxPulseUs
  * Values outside the range are clamped.
  */
-void Servo_SetSteering(Servo *sm, int8_t steer);
+void Servo_SetSteering(Servo *sm, float steer);
 
 /**
  * Sets the pulse width directly, in microseconds, clamped to the ABSOLUTE
@@ -172,7 +175,7 @@ void Servo_SetSteering(Servo *sm, int8_t steer);
  * limits currently believed correct. Normal motion commands must use
  * Servo_SetSteering instead.
  */
-void Servo_SetPulseUs(Servo *sm, uint16_t pulseUs);
+void Servo_SetPulseUs(Servo *sm, float pulseUs);
 
 void Servo_Centre(Servo *sm);
 

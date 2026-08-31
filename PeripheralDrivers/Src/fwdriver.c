@@ -1,4 +1,5 @@
 #include "fwdriver.h"
+#include <math.h>
 
 /**
  * Converts a pulse width in microseconds to a timer compare value.
@@ -10,9 +11,9 @@
  * With the current TIM8 configuration (72MHz / 72 = 1MHz, ARR = 19999) one
  * tick is 1us and this returns pulseUs unchanged.
  */
-static uint32_t ServoPulseToCompare(TIM_HandleTypeDef *htim, uint16_t pulseUs) {
+static uint32_t ServoPulseToCompare(TIM_HandleTypeDef *htim, float pulseUs) {
   uint32_t period = __HAL_TIM_GET_AUTORELOAD(htim) + 1U;
-  return ((uint32_t)pulseUs * period) / SERVO_FRAME_PERIOD_US;
+  return (uint32_t)lroundf((pulseUs * period) / SERVO_FRAME_PERIOD_US);
 }
 
 bool Servo_Init(Servo *sm, TIM_HandleTypeDef *pwmHtim, uint32_t pwmChannel,
@@ -65,7 +66,7 @@ void Servo_Disable(Servo *sm) {
   HAL_TIM_PWM_Stop(sm->config.pwmHtim, sm->config.pwmChannel);
 }
 
-void Servo_SetPulseUs(Servo *sm, uint16_t pulseUs) {
+void Servo_SetPulseUs(Servo *sm, float pulseUs) {
   if (!sm)
     return;
 
@@ -83,7 +84,7 @@ void Servo_SetPulseUs(Servo *sm, uint16_t pulseUs) {
                         ServoPulseToCompare(sm->config.pwmHtim, pulseUs));
 }
 
-void Servo_SetSteering(Servo *sm, int8_t steer) {
+void Servo_SetSteering(Servo *sm, float steer) {
   if (!sm)
     return;
 
@@ -100,17 +101,17 @@ void Servo_SetSteering(Servo *sm, int8_t steer) {
   // uint16_t, so the intermediate product overflows the narrower type and
   // the mixed signedness would otherwise convert badly.
   int32_t centre = (int32_t)sm->intrin.centrePulseUs;
-  int32_t pulseUs;
+  float pulseUs;
 
   if (steer >= 0) {
-    int32_t span = (int32_t)sm->intrin.maxPulseUs - centre;
-    pulseUs = centre + ((int32_t)steer * span) / SERVO_STEER_MAX;
+    float span = (int32_t)sm->intrin.maxPulseUs - centre;
+    pulseUs = (float)centre + (steer * span) / SERVO_STEER_MAX;
   } else {
-    int32_t span = centre - (int32_t)sm->intrin.minPulseUs;
-    pulseUs = centre - ((int32_t)-steer * span) / SERVO_STEER_MAX;
+    float span = centre - (int32_t)sm->intrin.minPulseUs;
+    pulseUs = (float)centre - (-steer * span) / SERVO_STEER_MAX;
   }
 
-  Servo_SetPulseUs(sm, (uint16_t)pulseUs);
+  Servo_SetPulseUs(sm, pulseUs);
 
   // Recorded after the call, which has no way to know which steering
   // command it came from.
