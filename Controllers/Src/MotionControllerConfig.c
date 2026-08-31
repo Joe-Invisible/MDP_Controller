@@ -16,5 +16,5 @@
 
 const RobotKinematics kinematics = {
 		.rearEncoderCountsPerRev = MG512P30_QUAD_RESOLUTION,
-		.rearWheelDiameterMm = 12.0,
+		.rearWheelDiameterMm = WHEEL_DIAMETER_MM,
 };

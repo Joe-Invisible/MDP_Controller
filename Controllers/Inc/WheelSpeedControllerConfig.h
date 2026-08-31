@@ -10,6 +10,16 @@
 
 #include "WheelSpeedController.h"
 
+/**
+ * PID Controller parameters
+ */
+// These constants defines how much at most the PID controller may
+// correct the model estimate
+#define WHEELSPEEDCONTROLLER_MIN_FEEDBACK 	-30.0f
+#define WHEELSPEEDCONTROLLER_MAX_FEEDBACK 	30.0f
+
+#define WHEELSPEEDCONTROLLER_KP				0.02f
+#define WHEELSPEEDCONTROLLER_KI				0.0f
 
 /*
  * Calibration obtained from the motor response tests.
