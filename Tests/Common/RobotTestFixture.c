@@ -52,6 +52,9 @@ bool RobotTestFixture_InitFrontWheels(RobotTestFixture *fixture) {
 			CHASSIS_STEER_MAX_PULSE_US))
 		return false;
 
+	if (!Servo_Enable(&fixture->steeringServo))
+		return false;
+
 	return true;
 }
 
