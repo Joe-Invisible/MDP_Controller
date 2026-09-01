@@ -378,7 +378,7 @@ bool MotionController_Update(
 
     Servo_SetSteering(
         controller->steeringServo,
-        (int8_t)controller->steeringCommand);
+        controller->steeringCommand);
 
     /*
      * Low-level speed loops remain responsible for motor PWM.
