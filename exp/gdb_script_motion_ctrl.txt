@@ -1,8 +1,8 @@
 set print elements unlimited
 set print repeats unlimited
 
-set logging file right_kp_0.02_11.4V.txt
+set logging file motionControlTest_no_fb_11.4v.txt
 set logging overwrite on
 set logging enabled on
 
-p *debugSamples@2400
+p *motionControllerTestLog@512
