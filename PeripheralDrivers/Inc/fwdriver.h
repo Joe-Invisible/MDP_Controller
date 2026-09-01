@@ -106,10 +106,8 @@ typedef struct ServoIntrn {
  */
 typedef struct ServoState {
   /**
-   * Last commanded pulse width, in microseconds.
-   * Type of this field has been changed from integer type
-   * to accurately reflect the decimal-preserving CCR value
-   * calculation (API allows floating point percentages).
+   * Last commanded pulse width, in microseconds,
+   * before timer compare quantization.
    */
   float pulseUs;
 
