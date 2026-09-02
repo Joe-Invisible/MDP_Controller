@@ -12,23 +12,28 @@
 
 #define MOTION_PI 3.14159265358979323846f
 
-/*
- * For experiment purposes only
- */
+ /*
+  * For experiment purposes only
+  */
 #define TMP_2000CPS_BRAKING_DISTANCE_MM (22.0f)
 
 
 static float MotionController_GetMmPerCount(
     const MotionController *controller)
 {
-	/*
-	 * Why are we recomputing a constant each time?
-	 * Does the wheel grow as the robot moves?
-	 * Relativistic physics?
-	 */
+    /*
+     * Why are we recomputing a constant each time?
+     * Does the wheel grow as the robot moves?
+     * Relativistic physics?
+     */
     return MOTION_PI *
-           controller->kinematics->rearWheelDiameterMm /
-           (float)controller->kinematics->rearEncoderCountsPerRev;
+        controller->kinematics->rearWheelDiameterMm /
+        (float)controller->kinematics->rearEncoderCountsPerRev;
+}
+
+static float MotionController_GetEffectiveSteeringAngleRad(
+    const MotionController* controller) {
+    return 0.0f;
 }
 
 
@@ -38,6 +43,9 @@ static void MotionController_ResetOdometry(
     controller->leftTravelMm = 0.0f;
     controller->rightTravelMm = 0.0f;
     controller->travelledDistanceMm = 0.0f;
+
+    controller->desiredWheelTravelDifferenceMm = 0.0f;
+    controller->wheelSyncErrorMm = 0.0f;
 
     controller->previousLeftEncoderCount =
         DCMotor_GetEncoderCount(controller->leftWheel->motor);
@@ -71,27 +79,69 @@ static void MotionController_UpdateOdometry(
     controller->previousLeftEncoderCount = currentLeft;
     controller->previousRightEncoderCount = currentRight;
 
-    /*
-     * Keep the relationship error observable even while braking.
-     */
-    controller->wheelSyncErrorMm =
-        (controller->rightTravelMm -
-         controller->leftTravelMm)
-        - controller->desiredWheelTravelDifferenceMm;
-
     float mmPerCount =
         MotionController_GetMmPerCount(controller);
 
-    controller->leftTravelMm +=
+    float deltaLeftMm =
         (float)deltaLeft * mmPerCount;
 
-    controller->rightTravelMm +=
+    float deltaRightMm =
         (float)deltaRight * mmPerCount;
+
+    /*
+     * Signed displacement of the rear-axle centre.
+     */
+    float deltaCentreMm =
+        0.5f * (deltaLeftMm + deltaRightMm);
+
+    /*
+     * The encoder increments measured here correspond
+     * approximately to motion performed under the steering
+     * command from the previous controller update.
+     */
+    float steeringAngleRad =
+        MotionController_GetEffectiveSteeringAngleRad(
+            controller);
+
+    float curvaturePerMm =
+        tanf(steeringAngleRad) /
+        controller->kinematics->wheelbaseMm;
+
+    /*
+     * Bicycle-model rear-wheel relationship:
+     *
+     *   dR - dL = W * kappa * ds
+     *
+     * Accumulate the relationship expected from the
+     * commanded path curvature.
+     */
+    controller->desiredWheelTravelDifferenceMm +=
+        controller->kinematics->rearTrackWidthMm *
+        curvaturePerMm *
+        deltaCentreMm;
+
+    controller->leftTravelMm += deltaLeftMm;
+    controller->rightTravelMm += deltaRightMm;
 
     controller->travelledDistanceMm =
         0.5f *
         (controller->leftTravelMm +
-         controller->rightTravelMm);
+            controller->rightTravelMm);
+
+    /*
+     * Compare actual rear-wheel relationship with
+     * the relationship required by the commanded path.
+     *
+     * Positive error:
+     *     right traveled farther than required.
+     *
+     * Negative error:
+     *     right traveled less far than required.
+     */
+    controller->wheelSyncErrorMm =
+        (controller->rightTravelMm -
+            controller->leftTravelMm)
+        - controller->desiredWheelTravelDifferenceMm;
 }
 
 
@@ -144,12 +194,12 @@ bool MotionController_Init(
 	Servo *steeringServo,
 	ICM20948 *imu,
 	const RobotKinematics *kinematics,
-	float headingKp,
-	float headingKi,
-	float headingKd,
-	float maxSteeringCorrection,
-	float wheelSyncKpCpsPerMm,
-	float maxWheelSyncCorrectionCps,
+    float headingKp,
+    float headingKi,
+    float headingKd,
+    float maxSteeringCorrection,
+    float wheelSyncKpCpsPerMm,
+    float maxWheelSyncCorrectionCps,
 	int8_t steeringPolarity)
 {
     if (controller == NULL ||
@@ -165,8 +215,9 @@ bool MotionController_Init(
     }
 
     if (kinematics->rearEncoderCountsPerRev == 0U ||
-        kinematics->rearWheelDiameterMm <= 0.0f)
-    {
+        kinematics->rearWheelDiameterMm <= 0.0f ||
+        kinematics->wheelbaseMm <= 0.0f ||
+        kinematics->rearTrackWidthMm <= 0.0f) {
         return false;
     }
 
@@ -207,11 +258,11 @@ bool MotionController_Init(
     controller->mode = MOTIONCONTROLLER_IDLE;
 
     if (!PIDController_Init(
-            &controller->headingPID,
-            headingKp,
-            headingKi,
-            headingKd,
-            -maxSteeringCorrection,
+        &controller->headingPID,
+        headingKp,
+        headingKi,
+        headingKd,
+        -maxSteeringCorrection,
             maxSteeringCorrection))
     {
         return false;
@@ -253,8 +304,10 @@ bool MotionController_MoveStraight(
     controller->steeringCommand = 0.0f;
 
     /*
-     * Straight motion requires equal accumulated rear-wheel
-     * travel, hence the desired R-L travel difference is zero.
+     * The desired wheel relationship starts at zero.
+     * It may subsequently become non-zero while the
+     * heading controller steers the robot back toward
+     * the requested straight path.
      */
     controller->desiredWheelTravelDifferenceMm = 0.0f;
     controller->wheelSyncErrorMm = 0.0f;
@@ -282,31 +335,31 @@ bool MotionController_MoveStraight(
 bool MotionController_Brake(MotionController *controller) {
 	if (controller == NULL)
 	{
-		return false;
-	}
+        return false;
+    }
 
-	if (controller->mode == MOTIONCONTROLLER_BRAKING) {
-		return true;		// no-op
-	}
+    if (controller->mode == MOTIONCONTROLLER_BRAKING) {
+        return true;		// no-op
+    }
 
-	MotionController_BeginBraking(controller);
+    MotionController_BeginBraking(controller);
 
-	return true;
+    return true;
 }
 
 static bool MotionController_UpdateYawEstimate(MotionController *controller, float dt) {
-	ICM20948Measurement measurement;
-	if (!ICM20948_ReadMeasurement(controller->imu, &measurement)) {
-		return false;
-	}
-	/*
-	 * Relative yaw:
-	 *
-	 *     yaw[k+1] = yaw[k] + gyroZ * dt
-	 */
-	controller->yawDeg += measurement.gyroDps.z * dt;
+    ICM20948Measurement measurement;
+    if (!ICM20948_ReadMeasurement(controller->imu, &measurement)) {
+        return false;
+    }
+    /*
+     * Relative yaw:
+     *
+     *     yaw[k+1] = yaw[k] + gyroZ * dt
+     */
+    controller->yawDeg += measurement.gyroDps.z * dt;
 
-	return true;
+    return true;
 }
 
 static float MotionController_Clamp(
@@ -328,15 +381,51 @@ static void MotionController_UpdateWheelSynchronisation(
     MotionController *controller)
 {
     /*
-     * Positive difference:
-     *     right wheel has traveled farther than left.
+     * --------------------------------------------------------
+     * KINEMATIC FEEDFORWARD
+     * --------------------------------------------------------
      *
-     * Negative difference:
-     *     right wheel has traveled less than left.
+     * Bicycle model:
+     *
+     *     kappa = tan(delta) / L
+     *
+     * Rear-wheel path-speed relationship:
+     *
+     *     vL = v * (1 - W*kappa/2)
+     *     vR = v * (1 + W*kappa/2)
+     */
+    float steeringAngleRad =
+        MotionController_GetEffectiveSteeringAngleRad(
+            controller);
+
+    float curvaturePerMm =
+        tanf(steeringAngleRad) /
+        controller->kinematics->wheelbaseMm;
+
+    float halfTrackCurvature =
+        0.5f *
+        controller->kinematics->rearTrackWidthMm *
+        curvaturePerMm;
+
+    float leftBaseTargetCps =
+        controller->targetSpeedCps *
+        (1.0f - halfTrackCurvature);
+
+    float rightBaseTargetCps =
+        controller->targetSpeedCps *
+        (1.0f + halfTrackCurvature);
+
+    /*
+     * --------------------------------------------------------
+     * RELATIONSHIP FEEDBACK
+     * --------------------------------------------------------
+     *
+     * e_sync =
+     *     actual(R-L) - desired(R-L)
      */
     controller->wheelSyncErrorMm =
         (controller->rightTravelMm -
-         controller->leftTravelMm)
+            controller->leftTravelMm)
         - controller->desiredWheelTravelDifferenceMm;
 
     /*
@@ -350,40 +439,42 @@ static void MotionController_UpdateWheelSynchronisation(
         controller->wheelSyncErrorMm;
 
     /*
-     * The configured limit prevents excessive wheel-speed
-     * separation.
+     * Prevent the synchronizer from overwhelming the
+     * geometric base targets or reversing one wheel.
      *
-     * Also constrain the correction to the magnitude of the
-     * nominal target so that synchronization can never reverse
-     * one wheel relative to the commanded motion direction.
+     * Once steering makes the two base targets unequal,
+     * the smaller base-target magnitude is the limiting one.
      */
+    float smallestBaseTargetMagnitudeCps =
+        fminf(
+            fabsf(leftBaseTargetCps),
+            fabsf(rightBaseTargetCps));
+
     float correctionLimitCps =
         fminf(
             controller->maxWheelSyncCorrectionCps,
-            fabsf(controller->targetSpeedCps));
+            smallestBaseTargetMagnitudeCps);
 
-    correctionCps = MotionController_Clamp(
-        correctionCps,
-        -correctionLimitCps,
-        correctionLimitCps);
+    correctionCps =
+        MotionController_Clamp(
+            correctionCps,
+            -correctionLimitCps,
+            correctionLimitCps);
 
     controller->wheelSyncCorrectionCps =
         correctionCps;
 
     /*
-     * Symmetric correction preserves the nominal mean target:
-     *
-     *   (vL* + vR*) / 2 = targetSpeedCps
+     * Geometry determines the nominal left/right relationship.
+     * The synchronizer only corrects deviations from it.
      */
     WheelSpeedController_SetTarget(
         controller->leftWheel,
-        controller->targetSpeedCps +
-        correctionCps);
+        leftBaseTargetCps + correctionCps);
 
     WheelSpeedController_SetTarget(
         controller->rightWheel,
-        controller->targetSpeedCps -
-        correctionCps);
+        rightBaseTargetCps - correctionCps);
 }
 
 bool MotionController_Update(
@@ -431,10 +522,10 @@ bool MotionController_Update(
         MotionController_UpdateYawEstimate(controller, dt);
 
         bool leftStationary = WheelSpeedController_IsStationary(
-        		controller->leftWheel);
+            controller->leftWheel);
 
         bool rightStationary = WheelSpeedController_IsStationary(
-        		controller->rightWheel);
+            controller->rightWheel);
 
         if (leftStationary && rightStationary)
         {
@@ -468,18 +559,18 @@ bool MotionController_Update(
     // different completion conditions depending on state.
     if (progressMm >= controller->targetDistanceMm - TMP_2000CPS_BRAKING_DISTANCE_MM)
     {
-    		MotionController_BeginBraking(controller);
+        MotionController_BeginBraking(controller);
         return true;
     }
 
-	if (!MotionController_UpdateYawEstimate(controller, dt)) {
-		/*
-		 * Heading feedback has failed.
-		 * Stop rather than continuing open-loop.
-		 */
-		MotionController_Stop(controller);
-		return false;
-	}
+    if (!MotionController_UpdateYawEstimate(controller, dt)) {
+        /*
+         * Heading feedback has failed.
+         * Stop rather than continuing open-loop.
+         */
+        MotionController_Stop(controller);
+        return false;
+    }
 
     /*
      * Desired relative heading for straight travel is 0 deg.
@@ -487,9 +578,9 @@ bool MotionController_Update(
     float headingError = -controller->yawDeg;
 
     float correction = PIDController_Update(
-            &controller->headingPID,
-            headingError,
-            dt);
+        &controller->headingPID,
+        headingError,
+        dt);
 
     /*
      * When reversing, a given steering angle produces the
