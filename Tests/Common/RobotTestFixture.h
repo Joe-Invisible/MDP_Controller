@@ -50,8 +50,9 @@ bool RobotTestFixture_InitWheelControllers(
     RobotTestFixture *fixture);
 
 bool RobotTestFixture_InitMotionController(
-    RobotTestFixture *fixture,
+	RobotTestFixture *fixture,
 	float headingKp, float headingKi, float headingKd,
-	float maxSteeringCorrection);
+	float maxSteeringCorrection,
+	float wheelSyncKpCpsPerMm, float maxWheelSyncCorrectionCps);
 
 #endif /* COMMON_ROBOTTESTFIXTURE_H_ */

@@ -50,7 +50,7 @@ static const float testTargets[] = {
 #define NUM_TEST_TARGETS \
     (sizeof(testTargets) / sizeof(testTargets[0]))
 
-#define DEBUGLOG 0
+#define DEBUGLOG 1
 
 #if DEBUGLOG == 1
 typedef struct {
@@ -219,7 +219,7 @@ void WheelSpeedControllerTestRun() {
 	OLED_Refresh_Gram();
 	// SW1_WhileNotPressed();
 
-	WheelSpeedControllerTest_RunMotor(&lmotor, &leftCalibration, "LEFT");
+	WheelSpeedControllerTest_RunMotor(&rmotor, &rightCalibration, "LEFT");
 
     OLED_Clear();
     OLED_Printf(0, 0, "Right complete");

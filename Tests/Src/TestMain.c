@@ -11,6 +11,7 @@
 #include "ICM20948Test.h"
 #include "OLEDTest.h"
 #include "WheelSpeedControllerTest.h"
+#include "MotionControllerTest.h"
 #include "oled.h"
 #include "led3.h"
 
@@ -22,7 +23,7 @@ void InvokeTest() {
 
 	HAL_Delay(200); // Because Init is too fast
 
-	WheelSpeedControllerTestRun();
+	MotionControllerTestRun();
 
 	SW1_WhileNotPressed();
 
