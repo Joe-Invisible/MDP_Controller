@@ -264,10 +264,6 @@ bool MotionController_MoveStraight(
 
     MotionController_ResetOdometry(controller);
 
-    PIDController_Reset(&controller->headingPID);
-
-    MotionController_ResetOdometry(controller);
-
     Servo_Centre(controller->steeringServo);
 
     WheelSpeedController_SetTarget(
