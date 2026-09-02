@@ -10,19 +10,48 @@
 
 #include "stm32f4xx_hal.h"
 
-typedef enum SW1_State_t {
-	SW1_Idle = GPIO_PIN_SET,
-	SW1_Enabled = GPIO_PIN_RESET,
+typedef enum SW1_State_t
+{
+    SW1_Idle = GPIO_PIN_SET,
+    SW1_Enabled = GPIO_PIN_RESET,
 } SW1_State_t;
 
-/**
- * SW delay loop that blocks when SW1 is not pressed
- */
-void SW1_WhileNotPressed();
 
 /**
- * Read GPIO state of SW1
+ * @brief Read the instantaneous GPIO state of SW1.
+ *
+ * This function performs no debouncing and does not block.
+ * Use it when SW1 must be polled from an existing loop.
  */
-SW1_State_t SW1_ReadState();
+SW1_State_t SW1_ReadState(void);
+
+
+/**
+ * @brief Block until SW1 has been stably pressed.
+ */
+void SW1_WaitForPress(void);
+
+
+/**
+ * @brief Block until SW1 has been stably released.
+ */
+void SW1_WaitForRelease(void);
+
+
+/**
+ * @brief Block for one complete debounced button action:
+ *        press followed by release.
+ */
+void SW1_WaitForPressAndRelease(void);
+
+
+/**
+ * @brief Compatibility wrapper for existing code.
+ *
+ * Blocks while SW1 is not pressed and returns once a stable
+ * press has been detected.
+ */
+void SW1_WhileNotPressed(void);
+
 
 #endif /* INC_USERBUTTON_H_ */
