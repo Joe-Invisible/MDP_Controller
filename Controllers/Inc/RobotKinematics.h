@@ -11,8 +11,10 @@
 #include <stdint.h>
 
 typedef struct RobotKinematics {
-	uint16_t rearEncoderCountsPerRev;
-	float	rearWheelDiameterMm;
+	uint16_t 	rearEncoderCountsPerRev;
+	float		rearWheelDiameterMm;
+	float		wheelbaseMm;
+	float		rearTrackWidthMm;
 } RobotKinematics;
 
 #endif /* INC_ROBOTKINEMATICS_H_ */
