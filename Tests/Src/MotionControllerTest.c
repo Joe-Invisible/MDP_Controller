@@ -57,12 +57,20 @@
 #define HEADING_CTRL_KI		(0.0f)
 
 
-#define DEBUGLOG 1
+#define DEBUGLOG 0
 
 #define MOTION_TEST_MM_PER_COUNT \
     (3.14159265358979323846f * MOTION_TEST_WHEEL_DIAMETER_MM \
      / MOTION_TEST_ENCODER_CPR)
 
+/* -------------------------------------------------------------------------- */
+/* Local diagnostic state                                                     */
+/* -------------------------------------------------------------------------- */
+
+static float motionControllerTestLeftDistanceMm = 0.0f;
+static float motionControllerTestRightDistanceMm = 0.0f;
+
+#if DEBUGLOG == 1
 /* -------------------------------------------------------------------------- */
 /* Debugger log                                                               */
 /* -------------------------------------------------------------------------- */
@@ -110,14 +118,6 @@ volatile MotionControllerTestLogSample
 motionControllerTestLog[MOTION_TEST_LOG_CAPACITY];
 
 volatile uint32_t motionControllerTestLogCount = 0U;
-
-
-/* -------------------------------------------------------------------------- */
-/* Local diagnostic state                                                     */
-/* -------------------------------------------------------------------------- */
-
-static float motionControllerTestLeftDistanceMm = 0.0f;
-static float motionControllerTestRightDistanceMm = 0.0f;
 
 
 /* -------------------------------------------------------------------------- */
@@ -221,6 +221,7 @@ static void MotionControllerTest_LogSample(
     motionControllerTestLogCount++;
 }
 
+#endif	/* DEBUGLOG */
 
 /* -------------------------------------------------------------------------- */
 /* Initialisation                                                             */
@@ -283,7 +284,9 @@ void MotionControllerTestRun(void)
 
     OLED_Clear();
 
+#if DEBUGLOG == 1
     MotionControllerTest_ResetLog();
+#endif
 
     MotionController_MoveStraight(
         &fixture.motionController,
@@ -292,7 +295,9 @@ void MotionControllerTestRun(void)
 
     uint32_t startTick = HAL_GetTick();
     uint32_t lastControlTick = startTick;
-    // uint32_t lastDisplayTick = startTick;
+#if DEBUGLOG == 0
+    uint32_t lastDisplayTick = startTick;
+#endif	/* DEBUGLOG, to avoid unused variable warning */
 
     bool timedOut = false;
 
@@ -320,6 +325,7 @@ void MotionControllerTestRun(void)
                 &fixture.motionController,
                 MOTION_TEST_CONTROL_PERIOD_S);
 
+#if DEBUGLOG == 1
             /*
              * Log immediately after the controller update so all values
              * correspond to the same completed control iteration.
@@ -327,7 +333,9 @@ void MotionControllerTestRun(void)
             MotionControllerTest_LogSample(
                 &fixture,
                 now - startTick);
+#endif	/* DEBUGLOG */
         }
+
 #if DEBUGLOG == 0
         /*
          * OLED is intentionally updated much more slowly than the controller.
@@ -380,10 +388,11 @@ void MotionControllerTestRun(void)
                 MotionController_Update(
                     &fixture.motionController,
                     MOTION_TEST_CONTROL_PERIOD_S);
-
+#if DEBUGLOG == 1
                 MotionControllerTest_LogSample(
                     &fixture,
                     now - startTick);
+#endif
             }
         }
 
@@ -412,13 +421,13 @@ void MotionControllerTestRun(void)
         0, 2,
         "Yaw:%6.2f",
         fixture.motionController.yawDeg);
-
+#if DEBUGLOG == 1
     OLED_Printf(
         0, 3,
         "N:%lu%s",
         motionControllerTestLogCount,
         timedOut ? " TIMEOUT" : "");
-
+#endif /* DEBUGLOG */
     OLED_Refresh_Gram();
 
     /*

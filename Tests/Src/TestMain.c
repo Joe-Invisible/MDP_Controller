@@ -12,6 +12,7 @@
 #include "OLEDTest.h"
 #include "WheelSpeedControllerTest.h"
 #include "MotionControllerTest.h"
+#include "SteeringGeometryCalibrationTest.h"
 #include "oled.h"
 #include "led3.h"
 
@@ -21,10 +22,10 @@ void InvokeTest() {
 
 	LED_On();
 
-	HAL_Delay(200); // Because Init is too fast
+	SteeringGeometryCalibrationTestRun();
 
-	MotionControllerTestRun();
 
-	SW1_WhileNotPressed();
-
+	while (1) {
+		// Test ended. Loop forever.
+	}
 }
