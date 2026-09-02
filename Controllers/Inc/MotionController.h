@@ -62,6 +62,32 @@ typedef struct
 	PIDController headingPID;
 
 	/*
+	 * Rear-wheel synchronization controller.
+	 *
+	 * Error convention:
+	 *
+	 *   e_sync =
+	 *       (rightTravelMm - leftTravelMm)
+	 *       - desiredWheelTravelDifferenceMm
+	 *
+	 * The controller produces a symmetric speed correction:
+	 *
+	 *   leftTarget  = nominalTarget + correction
+	 *   rightTarget = nominalTarget - correction
+	 *
+	 * For straight motion, we would want the
+	 * difference to be zero, but for curved motions
+	 * this difference should be derived from the robot
+	 * model.
+	 */
+	float wheelSyncKpCpsPerMm;
+	float maxWheelSyncCorrectionCps;
+
+	float desiredWheelTravelDifferenceMm;
+	float wheelSyncErrorMm;
+	float wheelSyncCorrectionCps;
+
+	/*
 	 * +1 or -1 depending on physical steering / IMU orientation.
 	 */
 	int8_t steeringPolarity;
@@ -115,6 +141,8 @@ bool MotionController_Init(
 	float headingKi,
 	float headingKd,
 	float maxSteeringCorrection,
+	float wheelSyncKpCpsPerMm,
+	float maxWheelSyncCorrectionCps,
 	int8_t steeringPolarity);
 
 /**

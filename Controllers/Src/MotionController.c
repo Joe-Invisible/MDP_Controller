@@ -12,6 +12,11 @@
 
 #define MOTION_PI 3.14159265358979323846f
 
+/*
+ * For experiment purposes only
+ */
+#define TMP_2000CPS_BRAKING_DISTANCE_MM (22.0f)
+
 
 static float MotionController_GetMmPerCount(
     const MotionController *controller)
@@ -66,6 +71,14 @@ static void MotionController_UpdateOdometry(
     controller->previousLeftEncoderCount = currentLeft;
     controller->previousRightEncoderCount = currentRight;
 
+    /*
+     * Keep the relationship error observable even while braking.
+     */
+    controller->wheelSyncErrorMm =
+        (controller->rightTravelMm -
+         controller->leftTravelMm)
+        - controller->desiredWheelTravelDifferenceMm;
+
     float mmPerCount =
         MotionController_GetMmPerCount(controller);
 
@@ -87,6 +100,13 @@ static void MotionController_BeginBraking(
 {
     WheelSpeedController_SetTarget(controller->leftWheel, 0.0f);
     WheelSpeedController_SetTarget(controller->rightWheel, 0.0f);
+
+    /*
+     * Wheel synchronisation no longer commands speed
+     * corrections once braking begins.
+     */
+    controller->wheelSyncCorrectionCps = 0.0f;
+    // We preserve first the wheelSyncErrorMm for diagnostics purpose.
 
     Servo_Centre(controller->steeringServo);
 
@@ -118,17 +138,19 @@ static void MotionController_FinishBraking(
 }
 
 bool MotionController_Init(
-    MotionController *controller,
-    WheelSpeedController *leftWheel,
-    WheelSpeedController *rightWheel,
-    Servo *steeringServo,
-    ICM20948 *imu,
-    const RobotKinematics *kinematics,
-    float headingKp,
-    float headingKi,
-    float headingKd,
-    float maxSteeringCorrection,
-    int8_t steeringPolarity)
+	MotionController *controller,
+	WheelSpeedController *leftWheel,
+	WheelSpeedController *rightWheel,
+	Servo *steeringServo,
+	ICM20948 *imu,
+	const RobotKinematics *kinematics,
+	float headingKp,
+	float headingKi,
+	float headingKd,
+	float maxSteeringCorrection,
+	float wheelSyncKpCpsPerMm,
+	float maxWheelSyncCorrectionCps,
+	int8_t steeringPolarity)
 {
     if (controller == NULL ||
         leftWheel == NULL ||
@@ -160,6 +182,12 @@ bool MotionController_Init(
         return false;
     }
 
+    if (wheelSyncKpCpsPerMm < 0.0f ||
+        maxWheelSyncCorrectionCps < 0.0f)
+    {
+        return false;
+    }
+
     *controller = (MotionController){0};
 
     controller->leftWheel = leftWheel;
@@ -169,6 +197,12 @@ bool MotionController_Init(
     controller->kinematics = kinematics;
 
     controller->steeringPolarity = steeringPolarity;
+
+    controller->wheelSyncKpCpsPerMm =
+        wheelSyncKpCpsPerMm;
+
+    controller->maxWheelSyncCorrectionCps =
+        maxWheelSyncCorrectionCps;
 
     controller->mode = MOTIONCONTROLLER_IDLE;
 
@@ -218,6 +252,18 @@ bool MotionController_MoveStraight(
     controller->yawDeg = 0.0f;
     controller->steeringCommand = 0.0f;
 
+    /*
+     * Straight motion requires equal accumulated rear-wheel
+     * travel, hence the desired R-L travel difference is zero.
+     */
+    controller->desiredWheelTravelDifferenceMm = 0.0f;
+    controller->wheelSyncErrorMm = 0.0f;
+    controller->wheelSyncCorrectionCps = 0.0f;
+
+    PIDController_Reset(&controller->headingPID);
+
+    MotionController_ResetOdometry(controller);
+
     PIDController_Reset(&controller->headingPID);
 
     MotionController_ResetOdometry(controller);
@@ -252,6 +298,97 @@ bool MotionController_Brake(MotionController *controller) {
 	return true;
 }
 
+static bool MotionController_UpdateYawEstimate(MotionController *controller, float dt) {
+	ICM20948Measurement measurement;
+	if (!ICM20948_ReadMeasurement(controller->imu, &measurement)) {
+		return false;
+	}
+	/*
+	 * Relative yaw:
+	 *
+	 *     yaw[k+1] = yaw[k] + gyroZ * dt
+	 */
+	controller->yawDeg += measurement.gyroDps.z * dt;
+
+	return true;
+}
+
+static float MotionController_Clamp(
+    float value,
+    float min,
+    float max)
+{
+    if (value > max)
+        return max;
+
+    if (value < min)
+        return min;
+
+    return value;
+}
+
+
+static void MotionController_UpdateWheelSynchronisation(
+    MotionController *controller)
+{
+    /*
+     * Positive difference:
+     *     right wheel has traveled farther than left.
+     *
+     * Negative difference:
+     *     right wheel has traveled less than left.
+     */
+    controller->wheelSyncErrorMm =
+        (controller->rightTravelMm -
+         controller->leftTravelMm)
+        - controller->desiredWheelTravelDifferenceMm;
+
+    /*
+     * P-only outer synchronization controller.
+     *
+     * Units:
+     *     [CPS/mm] * [mm] = [CPS]
+     */
+    float correctionCps =
+        controller->wheelSyncKpCpsPerMm *
+        controller->wheelSyncErrorMm;
+
+    /*
+     * The configured limit prevents excessive wheel-speed
+     * separation.
+     *
+     * Also constrain the correction to the magnitude of the
+     * nominal target so that synchronization can never reverse
+     * one wheel relative to the commanded motion direction.
+     */
+    float correctionLimitCps =
+        fminf(
+            controller->maxWheelSyncCorrectionCps,
+            fabsf(controller->targetSpeedCps));
+
+    correctionCps = MotionController_Clamp(
+        correctionCps,
+        -correctionLimitCps,
+        correctionLimitCps);
+
+    controller->wheelSyncCorrectionCps =
+        correctionCps;
+
+    /*
+     * Symmetric correction preserves the nominal mean target:
+     *
+     *   (vL* + vR*) / 2 = targetSpeedCps
+     */
+    WheelSpeedController_SetTarget(
+        controller->leftWheel,
+        controller->targetSpeedCps +
+        correctionCps);
+
+    WheelSpeedController_SetTarget(
+        controller->rightWheel,
+        controller->targetSpeedCps -
+        correctionCps);
+}
 
 bool MotionController_Update(
     MotionController *controller,
@@ -290,6 +427,13 @@ bool MotionController_Update(
             controller->rightWheel,
             dt);
 
+        /**
+         * Continue to measure yaw,
+         * Could be useful for inspecting yaw
+         * caused by asymmetric braking.
+         */
+        MotionController_UpdateYawEstimate(controller, dt);
+
         bool leftStationary = WheelSpeedController_IsStationary(
         		controller->leftWheel);
 
@@ -326,32 +470,20 @@ bool MotionController_Update(
 
     // future progress check: a mutex routing to
     // different completion conditions depending on state.
-    if (progressMm >= controller->targetDistanceMm)
+    if (progressMm >= controller->targetDistanceMm - TMP_2000CPS_BRAKING_DISTANCE_MM)
     {
     		MotionController_BeginBraking(controller);
         return true;
     }
 
-    ICM20948Measurement measurement;
-
-    if (!ICM20948_ReadMeasurement(
-            controller->imu,
-            &measurement))
-    {
-        /*
-         * Heading feedback has failed.
-         * Stop rather than continuing open-loop.
-         */
-        MotionController_Stop(controller);
-        return false;
-    }
-
-    /*
-     * Relative yaw:
-     *
-     *     yaw[k+1] = yaw[k] + gyroZ * dt
-     */
-    controller->yawDeg += measurement.gyroDps.z * dt;
+	if (!MotionController_UpdateYawEstimate(controller, dt)) {
+		/*
+		 * Heading feedback has failed.
+		 * Stop rather than continuing open-loop.
+		 */
+		MotionController_Stop(controller);
+		return false;
+	}
 
     /*
      * Desired relative heading for straight travel is 0 deg.
@@ -379,6 +511,16 @@ bool MotionController_Update(
     Servo_SetSteering(
         controller->steeringServo,
         controller->steeringCommand);
+
+    /*
+     * --------------------------------------------------------
+     * REAR-WHEEL SYNCHRONISATION
+     * --------------------------------------------------------
+     *
+     * Convert accumulated wheel relationship error into
+     * corrected left/right speed targets.
+     */
+    MotionController_UpdateWheelSynchronisation(controller);
 
     /*
      * Low-level speed loops remain responsible for motor PWM.
