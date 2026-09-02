@@ -9,8 +9,9 @@
 
 #define MG512P30_QUAD_RESOLUTION		1560U
 #define WHEELBASE_MM					150.0f
-#define FRONT_TRACK_WIDTH_MM			165.0f
-#define REAR_TRACK_WIDTH_MM			164.0f
+#define WHEEL_WIDTH_MM				20.0f
+#define ROBOT_REAR_WIDTH_MM			185.0f
+#define REAR_TRACK_WIDTH_MM			(ROBOT_REAR_WIDTH_MM - (WHEEL_WIDTH_MM))
 /**
  * Effective wheel diameter under load.
  */
