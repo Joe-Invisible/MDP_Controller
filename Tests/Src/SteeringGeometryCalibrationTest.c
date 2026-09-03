@@ -84,17 +84,19 @@
  */
 static const float calCommands[] =
 {
-    -30.0f,
-    -20.0f,
-    -15.0f,
+    -12.0f,
     -10.0f,
-     -5.0f,
+     -8.0f,
+     -6.0f,
+     -4.0f,
+     -2.0f,
       0.0f,
-      5.0f,
+      2.0f,
+      4.0f,
+      6.0f,
+      8.0f,
      10.0f,
-     15.0f,
-     20.0f,
-     30.0f,
+     12.0f,
 };
 
 
@@ -107,8 +109,8 @@ static const float calCommands[] =
  * measured range so that the two sweeps exercise opposite
  * linkage histories.
  */
-#define CAL_ASCENDING_PRECONDITION      (-40.0f)
-#define CAL_DESCENDING_PRECONDITION     ( 40.0f)
+#define CAL_ASCENDING_PRECONDITION      (-15.0f)
+#define CAL_DESCENDING_PRECONDITION     ( 15.0f)
 
 
 /* ------------------------------------------------------------
@@ -780,6 +782,9 @@ void SteeringGeometryCalibrationTestRun(void)
         return;
     }
 
+    Servo_Centre(&fixture.steeringServo);
+    HAL_Delay(CAL_SERVO_SETTLE_MS);
+
     /*
      * Ascending:
      *
@@ -794,6 +799,9 @@ void SteeringGeometryCalibrationTestRun(void)
     SteeringCal_RunSweep(
         &fixture,
         +1);
+
+    Servo_Centre(&fixture.steeringServo);
+    HAL_Delay(CAL_SERVO_SETTLE_MS);
 
     SteeringCal_RunSweep(
         &fixture,

@@ -80,7 +80,7 @@ typedef struct SteeringGeometryCalibrationResult
 } SteeringGeometryCalibrationResult;
 
 
-#define STEERING_GEOMETRY_CAL_RESULT_COUNT 22U
+#define STEERING_GEOMETRY_CAL_RESULT_COUNT 26U
 
 
 extern volatile SteeringGeometryCalibrationResult

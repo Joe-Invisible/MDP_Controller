@@ -11,6 +11,7 @@
 #include "ICM20948Test.h"
 #include "OLEDTest.h"
 #include "WheelSpeedControllerTest.h"
+#include "SteeringControllerTest.h"
 #include "MotionControllerTest.h"
 #include "SteeringGeometryCalibrationTest.h"
 #include "oled.h"
@@ -22,8 +23,7 @@ void InvokeTest() {
 
 	LED_On();
 
-	SteeringGeometryCalibrationTestRun();
-
+	SteeringControllerTestRun();
 
 	while (1) {
 		// Test ended. Loop forever.

@@ -84,6 +84,18 @@ bool RobotTestFixture_InitWheelControllers(RobotTestFixture *fixture) {
 	return true;
 }
 
+bool RobotTestFixture_InitSteeringController(RobotTestFixture *fixture) {
+	if (fixture == NULL) return false;
+
+	if (!SteeringController_Init(
+			&fixture->steeringController, &fixture->steeringServo, &steeringCalibration))
+	{
+		return false;
+	}
+
+	return true;
+}
+
 bool RobotTestFixture_InitMotionController(
 		RobotTestFixture *fixture,
 		float headingKp, float headingKi, float headingKd,

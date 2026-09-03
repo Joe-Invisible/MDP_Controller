@@ -20,6 +20,9 @@
 #include "WheelSpeedController.h"
 #include "WheelSpeedControllerConfig.h"
 
+#include "SteeringController.h"
+#include "SteeringControllerConfig.h"
+
 #include "MotionController.h"
 #include "MotionControllerConfig.h"
 
@@ -31,6 +34,8 @@ typedef struct RobotTestFixture {
 
 	WheelSpeedController leftWheelController;
 	WheelSpeedController rightWheelController;
+
+	SteeringController steeringController;
 
 	MotionController motionController;
 
@@ -48,6 +53,9 @@ bool RobotTestFixture_InitFrontWheels(
 
 bool RobotTestFixture_InitWheelControllers(
     RobotTestFixture *fixture);
+
+bool RobotTestFixture_InitSteeringController(
+	RobotTestFixture *fixture);
 
 bool RobotTestFixture_InitMotionController(
 	RobotTestFixture *fixture,
