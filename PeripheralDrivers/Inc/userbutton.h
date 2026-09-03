@@ -46,7 +46,12 @@ void SW1_WaitForPressAndRelease(void);
 
 
 /**
- * @brief Compatibility wrapper for existing code.
+ * @deprecated
+ * @brief Compatibility wrapper for existing code. New code
+ * 		  that intends to start some procedure based on SW1
+ * 		  press should use SW1_WaitForPressAndRelease() in-
+ * 		  stead, so that subsequent polls do not get trigg-
+ * 		  ered unexpectedly.
  *
  * Blocks while SW1 is not pressed and returns once a stable
  * press has been detected.
