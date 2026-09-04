@@ -194,10 +194,9 @@ bool MotionController_Init(
     float headingKp,
     float headingKi,
     float headingKd,
-    float maxSteeringCorrection,
+    float maxHeadingSteeringAngleRad,
     float wheelSyncKpCpsPerMm,
-    float maxWheelSyncCorrectionCps,
-    int8_t steeringPolarity)
+    float maxWheelSyncCorrectionCps)
 {
 	if (controller == NULL ||
 	    leftWheel == NULL ||
@@ -218,14 +217,33 @@ bool MotionController_Init(
         return false;
     }
 
-    if (maxSteeringCorrection <= 0.0f ||
-        maxSteeringCorrection > 100.0f)
+    float minEffectiveAngleRad =
+        SteeringController_GetMinEffectiveAngleRad(
+            steering);
+
+    float maxEffectiveAngleRad =
+        SteeringController_GetMaxEffectiveAngleRad(
+            steering);
+
+    /*
+     * Straight-line heading control must be able to correct
+     * in either direction, so use only the range available
+     * symmetrically about zero.
+     */
+    if (minEffectiveAngleRad >= 0.0f ||
+        maxEffectiveAngleRad <= 0.0f)
     {
         return false;
     }
 
-    if (steeringPolarity != 1 &&
-        steeringPolarity != -1)
+    float maxSymmetricSteeringAngleRad =
+        fminf(
+            -minEffectiveAngleRad,
+            maxEffectiveAngleRad);
+
+    if (maxHeadingSteeringAngleRad <= 0.0f ||
+        maxHeadingSteeringAngleRad >
+            maxSymmetricSteeringAngleRad)
     {
         return false;
     }
@@ -244,8 +262,6 @@ bool MotionController_Init(
     controller->imu = imu;
     controller->kinematics = kinematics;
 
-    controller->steeringPolarity = steeringPolarity;
-
     controller->wheelSyncKpCpsPerMm =
         wheelSyncKpCpsPerMm;
 
@@ -259,8 +275,8 @@ bool MotionController_Init(
         headingKp,
         headingKi,
         headingKd,
-        -maxSteeringCorrection,
-            maxSteeringCorrection))
+        -maxHeadingSteeringAngleRad,
+		maxHeadingSteeringAngleRad))
     {
         return false;
     }
@@ -569,31 +585,35 @@ bool MotionController_Update(
     }
 
     /*
-     * Desired relative heading for straight travel is 0 deg.
+     * Desired relative heading for straight travel is zero.
+     *
+     * Keep the heading controller internally in radians:
+     *
+     *     error [rad]
+     *         -> PID
+     *         -> target effective steering angle [rad]
      */
-    float headingError = -controller->yawDeg;
+    float headingErrorRad =
+        -controller->yawDeg *
+        (MOTION_PI / 180.0f);
 
-    float correction = PIDController_Update(
-        &controller->headingPID,
-        headingError,
-        dt);
+    float steeringAngleCorrectionRad =
+        PIDController_Update(
+            &controller->headingPID,
+            headingErrorRad,
+            dt);
 
     /*
-     * When reversing, a given steering angle produces the
-     * opposite yaw direction. motionDirection compensates
-     * for that sign reversal.
-     *
-     * steeringPolarity accounts for the physical servo and
-     * IMU axis orientation on this chassis.
+     * For reverse travel, the same physical steering angle
+     * generates the opposite yaw direction.
      */
-    float steeringCommand =
-        correction *
-        (float)controller->steeringPolarity *
+    float targetSteeringAngleRad =
+        steeringAngleCorrectionRad *
         (float)controller->motionDirection;
 
-    SteeringController_SetCommand(
+    SteeringController_SetEffectiveAngleRad(
         controller->steering,
-        steeringCommand);
+        targetSteeringAngleRad);
     /*
      * --------------------------------------------------------
      * REAR-WHEEL SYNCHRONISATION

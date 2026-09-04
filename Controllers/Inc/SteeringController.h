@@ -19,7 +19,6 @@
 
 #include "fwdriver.h"
 
-
 typedef struct
 {
     float command;
@@ -51,6 +50,16 @@ typedef struct
     float minCommand;
     float maxCommand;
 
+
+    /*
+     * Minimum effective-angle reversal required before
+     * switching to the opposite major hysteresis branch.
+     *
+     * Small target reversals inside this band are held on
+     * the current branch.
+     */
+    float reversalDeadbandRad;
+
 } SteeringControllerCalibration;
 
 
@@ -73,6 +82,22 @@ typedef struct
     float effectiveAngleRad;
 
     /*
+     * Requested effective bicycle-model steering angle.
+     *
+     * This may differ temporarily from effectiveAngleRad when
+     * the mechanism cannot immediately reach the requested
+     * position.
+     */
+    float targetEffectiveAngleRad;
+
+    /*
+     * Effective-angle range that can be reached on either
+     * calibrated hysteresis branch.
+     */
+    float minEffectiveAngleRad;
+    float maxEffectiveAngleRad;
+
+    /*
      * Direction of the most recent steering-command motion:
      *
      *   +1 = increasing command
@@ -90,6 +115,8 @@ typedef struct
      */
     bool backlashActive;
     float backlashHoldAngleRad;
+
+    bool reversalPending;
 
 } SteeringController;
 
@@ -123,6 +150,40 @@ void SteeringController_SetCommand(
     SteeringController *controller,
     float command);
 
+/**
+ * @brief Request an effective bicycle-model steering angle.
+ *
+ * The requested angle is clamped to the range that is
+ * reachable on both calibrated hysteresis branches.
+ *
+ * The controller selects the appropriate calibration branch
+ * from the required direction of physical steering motion,
+ * performs the inverse calibration, and commands the servo.
+ */
+void SteeringController_SetEffectiveAngleRad(
+    SteeringController *controller,
+    float targetAngleRad);
+
+/**
+ * @brief Return the currently requested effective steering
+ *        angle, in radians.
+ */
+float SteeringController_GetTargetEffectiveAngleRad(
+    const SteeringController *controller);
+
+/**
+ * @brief Return the minimum bidirectionally controllable
+ *        effective steering angle.
+ */
+float SteeringController_GetMinEffectiveAngleRad(
+    const SteeringController *controller);
+
+/**
+ * @brief Return the maximum bidirectionally controllable
+ *        effective steering angle.
+ */
+float SteeringController_GetMaxEffectiveAngleRad(
+    const SteeringController *controller);
 
 /**
  * @brief Command the nominal servo centre.
@@ -167,5 +228,11 @@ bool SteeringController_IsBacklashActive(
 int8_t SteeringController_GetMovementDirection(
     const SteeringController *controller);
 
+/**
+ * @brief Return whether the requested angle is pending
+ * 		due to the configured reversal deadband.
+ */
+bool SteeringController_IsReversalPending(
+    const SteeringController *controller);
 
 #endif /* INC_STEERINGCONTROLLER_H_ */

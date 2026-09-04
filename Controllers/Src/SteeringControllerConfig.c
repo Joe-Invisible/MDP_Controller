@@ -22,6 +22,8 @@
 #define STEERING_CAL_MAX_COMMAND      ( 12.0f)
 
 
+#define REVERSAL_DEADBAN_RAD			(0.0005f)
+
 /*
  * Increasing-command branch:
  *
@@ -114,4 +116,7 @@ steeringCalibration =
 
     .maxCommand =
         STEERING_CAL_MAX_COMMAND,
+
+	.reversalDeadbandRad =
+		REVERSAL_DEADBAN_RAD,
 };

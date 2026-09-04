@@ -10,7 +10,6 @@
 #include <math.h>
 #include <stddef.h>
 
-
 /* ------------------------------------------------------------
  * Internal helpers
  * ------------------------------------------------------------ */
@@ -118,6 +117,85 @@ static float SteeringController_Interpolate(
      * Boundary checks above make this unreachable.
      */
     return points[count - 1U].effectiveAngleRad;
+}
+
+
+/*
+ * Inverse of SteeringController_Interpolate().
+ *
+ * Calibration points are stored in increasing command order,
+ * while effective angle is monotonically non-increasing.
+ */
+static float SteeringController_InterpolateCommand(
+    const SteeringCalibrationPoint *points,
+    uint32_t count,
+    float effectiveAngleRad)
+{
+    /*
+     * Highest effective angle occurs at the lowest command.
+     */
+    if (effectiveAngleRad >= points[0].effectiveAngleRad)
+    {
+        return points[0].command;
+    }
+
+    /*
+     * Lowest effective angle occurs at the highest command.
+     */
+    if (effectiveAngleRad <=
+        points[count - 1U].effectiveAngleRad)
+    {
+        return points[count - 1U].command;
+    }
+
+    for (uint32_t i = 0U;
+         i < count - 1U;
+         i++)
+    {
+        const SteeringCalibrationPoint *lowerCommand =
+            &points[i];
+
+        const SteeringCalibrationPoint *upperCommand =
+            &points[i + 1U];
+
+        /*
+         * Angle decreases as command increases.
+         *
+         * The equality here deliberately chooses the first
+         * command at which a flat calibration section reaches
+         * the requested angle.
+         */
+        if (effectiveAngleRad >=
+            upperCommand->effectiveAngleRad)
+        {
+            float angleSpan =
+                upperCommand->effectiveAngleRad -
+                lowerCommand->effectiveAngleRad;
+
+            /*
+             * A flat section can occur after smoothing.
+             * Equality would normally have been caught by the
+             * preceding segment; retain a safe fallback.
+             */
+            if (angleSpan == 0.0f)
+            {
+                return lowerCommand->command;
+            }
+
+            float fraction =
+                (effectiveAngleRad -
+                 lowerCommand->effectiveAngleRad) /
+                angleSpan;
+
+            return
+                lowerCommand->command +
+                fraction *
+                (upperCommand->command -
+                 lowerCommand->command);
+        }
+    }
+
+    return points[count - 1U].command;
 }
 
 
@@ -322,6 +400,43 @@ bool SteeringController_Init(
         return false;
     }
 
+    float increasingMinAngleRad =
+        calibration->increasingPoints[
+            calibration->increasingPointCount - 1U
+        ].effectiveAngleRad;
+
+    float increasingMaxAngleRad =
+        calibration->increasingPoints[0].
+            effectiveAngleRad;
+
+    float decreasingMinAngleRad =
+        calibration->decreasingPoints[
+            calibration->decreasingPointCount - 1U
+        ].effectiveAngleRad;
+
+    float decreasingMaxAngleRad =
+        calibration->decreasingPoints[0].
+            effectiveAngleRad;
+
+    float minEffectiveAngleRad =
+        fmaxf(
+            increasingMinAngleRad,
+            decreasingMinAngleRad);
+
+    float maxEffectiveAngleRad =
+        fminf(
+            increasingMaxAngleRad,
+            decreasingMaxAngleRad);
+
+    if (minEffectiveAngleRad >
+        maxEffectiveAngleRad)
+    {
+        /*
+         * No angle exists that is controllable on both branches.
+         */
+        return false;
+    }
+
     *controller =
         (SteeringController){0};
 
@@ -331,6 +446,16 @@ bool SteeringController_Init(
     controller->calibration =
         calibration;
 
+    controller->minEffectiveAngleRad =
+        minEffectiveAngleRad;
+
+    controller->maxEffectiveAngleRad =
+        maxEffectiveAngleRad;
+
+    controller->effectiveAngleRad = 0.0f;
+    controller->targetEffectiveAngleRad = 0.0f;
+
+    controller->reversalPending = false;
     /*
      * Establish the initial model reference.
      *
@@ -360,17 +485,10 @@ bool SteeringController_Init(
 }
 
 
-void SteeringController_SetCommand(
+static void SteeringController_ApplyCommand(
     SteeringController *controller,
     float command)
 {
-    if (controller == NULL ||
-        controller->servo == NULL ||
-        controller->calibration == NULL)
-    {
-        return;
-    }
-
     /*
      * For now we deliberately keep the actuator inside the
      * experimentally calibrated model range.
@@ -398,6 +516,153 @@ void SteeringController_SetCommand(
 }
 
 
+void SteeringController_SetCommand(
+    SteeringController *controller,
+    float command)
+{
+    if (controller == NULL ||
+        controller->servo == NULL ||
+        controller->calibration == NULL)
+    {
+        return;
+    }
+
+    SteeringController_ApplyCommand(
+        controller,
+        command);
+
+    controller->targetEffectiveAngleRad =
+        controller->effectiveAngleRad;
+
+    controller->reversalPending = false;
+}
+
+static void SteeringController_SetEffectiveAngleRadInternal(
+    SteeringController *controller,
+    float targetAngleRad,
+    bool forceReversal)
+{
+    if (controller == NULL ||
+        controller->servo == NULL ||
+        controller->calibration == NULL)
+    {
+        return;
+    }
+
+    float clampedTargetAngleRad =
+        SteeringController_Clamp(
+            targetAngleRad,
+            controller->minEffectiveAngleRad,
+            controller->maxEffectiveAngleRad);
+
+    /*
+     * Always retain the requested target, even when we decide
+     * not to move yet.
+     *
+     * This means targetEffectiveAngleRad may legitimately
+     * differ from effectiveAngleRad.
+     */
+    controller->targetEffectiveAngleRad =
+        clampedTargetAngleRad;
+
+    float angleErrorRad =
+        clampedTargetAngleRad -
+        controller->effectiveAngleRad;
+
+    int8_t requiredCommandDirection;
+
+    if (angleErrorRad < 0.0f)
+    {
+        /*
+         * Need decreasing effective angle.
+         *
+         * Effective angle decreases as raw command increases.
+         */
+        requiredCommandDirection = +1;
+    }
+    else if (angleErrorRad > 0.0f)
+    {
+        /*
+         * Need increasing effective angle.
+         *
+         * Effective angle increases as raw command decreases.
+         */
+        requiredCommandDirection = -1;
+    }
+    else
+    {
+        controller->reversalPending = false;
+
+        /*
+         * After Init(), movementDirection == 0 means our
+         * zero-angle state is only a nominal reference.
+         *
+         * Establish the decreasing-command branch so that
+         * physical centre corresponds to the calibrated
+         * command around -9.525.
+         */
+        if (controller->movementDirection == 0)
+        {
+            requiredCommandDirection = -1;
+        }
+        else
+        {
+            return;
+        }
+    }
+
+    /*
+     * If this target would reverse the established raw-command
+     * direction, do not immediately jump to the opposite major
+     * hysteresis branch for a tiny requested reversal.
+     *
+     * Instead hold the current actuator command and effective
+     * angle until the requested effective-angle change becomes
+     * significant enough.
+     */
+    if (!forceReversal &&
+        controller->movementDirection != 0 &&
+        requiredCommandDirection !=
+            controller->movementDirection &&
+        fabsf(angleErrorRad) <
+            controller->calibration->reversalDeadbandRad)
+    {
+        controller->reversalPending = true;
+        return;
+    }
+
+    controller->reversalPending = false;
+
+    uint32_t pointCount = 0U;
+
+    const SteeringCalibrationPoint *branch =
+        SteeringController_GetBranch(
+            controller,
+            requiredCommandDirection,
+            &pointCount);
+
+    float requiredCommand =
+        SteeringController_InterpolateCommand(
+            branch,
+            pointCount,
+            clampedTargetAngleRad);
+
+    SteeringController_ApplyCommand(
+        controller,
+        requiredCommand);
+}
+
+void SteeringController_SetEffectiveAngleRad(
+    SteeringController *controller,
+    float targetAngleRad)
+{
+    SteeringController_SetEffectiveAngleRadInternal(
+        controller,
+        targetAngleRad,
+        false);
+}
+
+
 void SteeringController_Centre(
     SteeringController *controller)
 {
@@ -411,10 +676,14 @@ void SteeringController_Centre(
      *
      * Moving to command zero does not physically erase
      * backlash in the linkage.
+     *
+     * Forces centering even if it is within reversal
+     * deadband
      */
-    SteeringController_SetCommand(
+    SteeringController_SetEffectiveAngleRadInternal(
         controller,
-        0.0f);
+        0.0f,
+        true);
 }
 
 
@@ -463,4 +732,50 @@ int8_t SteeringController_GetMovementDirection(
     }
 
     return controller->movementDirection;
+}
+
+float SteeringController_GetTargetEffectiveAngleRad(
+    const SteeringController *controller)
+{
+    if (controller == NULL)
+    {
+        return 0.0f;
+    }
+
+    return controller->targetEffectiveAngleRad;
+}
+
+
+float SteeringController_GetMinEffectiveAngleRad(
+    const SteeringController *controller)
+{
+    if (controller == NULL)
+    {
+        return 0.0f;
+    }
+
+    return controller->minEffectiveAngleRad;
+}
+
+
+float SteeringController_GetMaxEffectiveAngleRad(
+    const SteeringController *controller)
+{
+    if (controller == NULL)
+    {
+        return 0.0f;
+    }
+
+    return controller->maxEffectiveAngleRad;
+}
+
+bool SteeringController_IsReversalPending(
+    const SteeringController *controller)
+{
+    if (controller == NULL)
+    {
+        return false;
+    }
+
+    return controller->reversalPending;
 }

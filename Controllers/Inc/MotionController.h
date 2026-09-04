@@ -88,11 +88,6 @@ typedef struct
 	float wheelSyncErrorMm;
 	float wheelSyncCorrectionCps;
 
-	/*
-	 * +1 or -1 depending on physical steering / IMU orientation.
-	 */
-	int8_t steeringPolarity;
-
 	MotionControllerMode mode;
 
 	/*
@@ -136,10 +131,9 @@ bool MotionController_Init(
     float headingKp,
     float headingKi,
     float headingKd,
-    float maxSteeringCorrection,
+    float maxHeadingSteeringAngleRad,
     float wheelSyncKpCpsPerMm,
-    float maxWheelSyncCorrectionCps,
-    int8_t steeringPolarity);
+    float maxWheelSyncCorrectionCps);
 
 /**
  * Straight line motion command
