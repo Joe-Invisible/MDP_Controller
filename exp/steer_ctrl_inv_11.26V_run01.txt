@@ -1,0 +1,25 @@
+=cmd-param-changed,param="logging enabled",value="on"
+78^done
+(gdb) 
+79^error,msg="-interpreter-exec: Usage: -interpreter-exec interp command"
+(gdb) 
+~"$2 = true\n"
+80^done
+(gdb) 
+~"$3 = 8\n"
+81^done
+(gdb) 
+~"$4 = {{step = 0, requestedAngleRad = 0, targetAngleRad = 0, effectiveAngleRad = 0, command = 0, backlashActive = false, movementDirection = 0 '\\000'}, {step = 1, requestedAngleRad = 0.00499999989, targetAngleRad = 0.00499999989, effectiveAngleRad = 0.00499999989, command = -10.2633877, backlashActive = false, movementDirection = -1 '\377'}, {step = 2, requestedAngleRad = -0.00499999989, targetAngleRad = -0.00499999989, effectiveAngleRad = -0.00499999849, command = 4.42701197, backlashActive = false, movementDirection = 1 '\\001'}, {step = 3, requestedAngleRad = 0, targetAngleRad = 0, effectiveAngleRad = 9.31322575e-010, command = -9.52502251, backlashActive = false, movementDirection = -1 '\377'}, {step = 4, requestedAngleRad = -0.0199999996, targetAngleRad = -0.0199999996, effectiveAngleRad = -0.0200000014, command = 5.97650051, backlashActive = false, movementDirection = 1 '\\001'}, {step = 5, requestedAngleRad = 0.00999999978, targetAngleRad = 0.00999999978, effectiveAngleRad = 0.00999999791, command = -11.0434532, backlashActive = false, movementDirection = -1 '\377'}, {step = 6, requestedAngleRad = 0.0500000007, targetAngleRad = 0.0161311906, effectiveAngleRad = 0.0161311906, command = -12, backlashActive = false, movementDirection = -1 '\377'}, {step = 7, requestedAngleRad = -0.0799999982, targetAngleRad = -0.0516343787, effectiveAngleRad = -0.0516343787, command = 12, backlashActive = false, movementDirection = 1 '\\001'}}\n"
+82^done
+(gdb) 
+~"Kill the program being debugged? (y or n) [answered Y; input not from terminal]\n"
+=thread-exited,id="1",group-id="i1"
+=thread-group-exited,id="i1"
+~"[Inferior 1 (Remote target) killed]\n"
+83^done
+(gdb) 
+84^done,groups=[{id="i1",type="process",executable="C:\\Users\\user\\Desktop\\MDP\\code\\MDP_Controller\\Debug\\MDP_Controller.elf"}]
+(gdb) 
+85^done,groups=[{id="i1",type="process",executable="C:\\Users\\user\\Desktop\\MDP\\code\\MDP_Controller\\Debug\\MDP_Controller.elf"}]
+(gdb) 
+86^exit
