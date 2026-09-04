@@ -31,11 +31,6 @@ static float MotionController_GetMmPerCount(
         (float)controller->kinematics->rearEncoderCountsPerRev;
 }
 
-static float MotionController_GetEffectiveSteeringAngleRad(
-    const MotionController* controller) {
-    return 0.0f;
-}
-
 
 static void MotionController_ResetOdometry(
     MotionController *controller)
@@ -98,10 +93,13 @@ static void MotionController_UpdateOdometry(
      * The encoder increments measured here correspond
      * approximately to motion performed under the steering
      * command from the previous controller update.
+     *
+     * SteeringController retains the effective-angle estimate
+     * associated with that command.
      */
     float steeringAngleRad =
-        MotionController_GetEffectiveSteeringAngleRad(
-            controller);
+        SteeringController_GetEffectiveAngleRad(
+            controller->steering);
 
     float curvaturePerMm =
         tanf(steeringAngleRad) /
@@ -158,9 +156,8 @@ static void MotionController_BeginBraking(
     controller->wheelSyncCorrectionCps = 0.0f;
     // We preserve first the wheelSyncErrorMm for diagnostics purpose.
 
-    Servo_Centre(controller->steeringServo);
+    SteeringController_Centre(controller->steering);
 
-    controller->steeringCommand = 0.0f;
     controller->stationarySamples = 0U;
 
     controller->mode = MOTIONCONTROLLER_BRAKING;
@@ -181,35 +178,35 @@ static void MotionController_FinishBraking(
     WheelSpeedController_Stop(controller->leftWheel);
     WheelSpeedController_Stop(controller->rightWheel);
 
-    Servo_Centre(controller->steeringServo);
+    SteeringController_Centre(controller->steering);
 
     controller->stationarySamples = 0U;
     controller->mode = MOTIONCONTROLLER_IDLE;
 }
 
 bool MotionController_Init(
-	MotionController *controller,
-	WheelSpeedController *leftWheel,
-	WheelSpeedController *rightWheel,
-	Servo *steeringServo,
-	ICM20948 *imu,
-	const RobotKinematics *kinematics,
+    MotionController *controller,
+    WheelSpeedController *leftWheel,
+    WheelSpeedController *rightWheel,
+    SteeringController *steering,
+    ICM20948 *imu,
+    const RobotKinematics *kinematics,
     float headingKp,
     float headingKi,
     float headingKd,
     float maxSteeringCorrection,
     float wheelSyncKpCpsPerMm,
     float maxWheelSyncCorrectionCps,
-	int8_t steeringPolarity)
+    int8_t steeringPolarity)
 {
-    if (controller == NULL ||
-        leftWheel == NULL ||
-        rightWheel == NULL ||
-        leftWheel->motor == NULL ||
-        rightWheel->motor == NULL ||
-        steeringServo == NULL ||
-        imu == NULL ||
-        kinematics == NULL)
+	if (controller == NULL ||
+	    leftWheel == NULL ||
+	    rightWheel == NULL ||
+	    leftWheel->motor == NULL ||
+	    rightWheel->motor == NULL ||
+	    steering == NULL ||
+	    imu == NULL ||
+	    kinematics == NULL)
     {
         return false;
     }
@@ -243,7 +240,7 @@ bool MotionController_Init(
 
     controller->leftWheel = leftWheel;
     controller->rightWheel = rightWheel;
-    controller->steeringServo = steeringServo;
+    controller->steering = steering;
     controller->imu = imu;
     controller->kinematics = kinematics;
 
@@ -301,7 +298,6 @@ bool MotionController_MoveStraight(
      * at the start of this command.
      */
     controller->yawDeg = 0.0f;
-    controller->steeringCommand = 0.0f;
 
     /*
      * The desired wheel relationship starts at zero.
@@ -317,7 +313,7 @@ bool MotionController_MoveStraight(
 
     MotionController_ResetOdometry(controller);
 
-    Servo_Centre(controller->steeringServo);
+    SteeringController_Centre(controller->steering);
 
     WheelSpeedController_SetTarget(
         controller->leftWheel,
@@ -395,8 +391,8 @@ static void MotionController_UpdateWheelSynchronisation(
      *     vR = v * (1 + W*kappa/2)
      */
     float steeringAngleRad =
-        MotionController_GetEffectiveSteeringAngleRad(
-            controller);
+        SteeringController_GetEffectiveAngleRad(
+            controller->steering);
 
     float curvaturePerMm =
         tanf(steeringAngleRad) /
@@ -590,15 +586,14 @@ bool MotionController_Update(
      * steeringPolarity accounts for the physical servo and
      * IMU axis orientation on this chassis.
      */
-    controller->steeringCommand =
+    float steeringCommand =
         correction *
         (float)controller->steeringPolarity *
         (float)controller->motionDirection;
 
-    Servo_SetSteering(
-        controller->steeringServo,
-        controller->steeringCommand);
-
+    SteeringController_SetCommand(
+        controller->steering,
+        steeringCommand);
     /*
      * --------------------------------------------------------
      * REAR-WHEEL SYNCHRONISATION
@@ -632,7 +627,7 @@ void MotionController_Stop(
     WheelSpeedController_Stop(controller->leftWheel);
     WheelSpeedController_Stop(controller->rightWheel);
 
-    Servo_Centre(controller->steeringServo);
+    SteeringController_Centre(controller->steering);
 
     PIDController_Reset(&controller->headingPID);
 

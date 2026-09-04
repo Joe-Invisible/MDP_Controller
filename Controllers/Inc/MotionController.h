@@ -16,10 +16,10 @@
 
 #include "PIDController.h"
 #include "WheelSpeedController.h"
+#include "SteeringController.h"
 #include "MotionControllerConfig.h"
 #include "RobotKinematics.h"
 
-#include "fwdriver.h"
 #include "icm20948.h"
 
 #define MOTIONCONTROLLER_STOP_STABLE_SAMPLES 3U
@@ -51,7 +51,8 @@ typedef struct
 	WheelSpeedController *leftWheel;
 	WheelSpeedController *rightWheel;
 
-	Servo *steeringServo;
+	SteeringController *steering;
+
 	ICM20948 *imu;
 
 	const RobotKinematics *kinematics;
@@ -117,11 +118,6 @@ typedef struct
 	float travelledDistanceMm;
 
 	/*
-	 * Last steering command, useful for debugging.
-	 */
-	float steeringCommand;
-
-	/*
 	 * Used to reject a single noisy near-zero speed sample
 	 * when deciding that the robot has stopped.
 	 */
@@ -131,19 +127,19 @@ typedef struct
 
 
 bool MotionController_Init(
-	MotionController *controller,
-	WheelSpeedController *leftWheel,
-	WheelSpeedController *rightWheel,
-	Servo *steeringServo,
-	ICM20948 *imu,
-	const RobotKinematics *kinematics,
-	float headingKp,
-	float headingKi,
-	float headingKd,
-	float maxSteeringCorrection,
-	float wheelSyncKpCpsPerMm,
-	float maxWheelSyncCorrectionCps,
-	int8_t steeringPolarity);
+    MotionController *controller,
+    WheelSpeedController *leftWheel,
+    WheelSpeedController *rightWheel,
+    SteeringController *steering,
+    ICM20948 *imu,
+    const RobotKinematics *kinematics,
+    float headingKp,
+    float headingKi,
+    float headingKd,
+    float maxSteeringCorrection,
+    float wheelSyncKpCpsPerMm,
+    float maxWheelSyncCorrectionCps,
+    int8_t steeringPolarity);
 
 /**
  * Straight line motion command
