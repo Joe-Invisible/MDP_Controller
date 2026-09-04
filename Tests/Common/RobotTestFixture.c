@@ -109,6 +109,8 @@ bool RobotTestFixture_InitMotionController(
 
 	if (!RobotTestFixture_InitFrontWheels(fixture)) return false;
 
+	if (!RobotTestFixture_InitSteeringController(fixture)) return false;
+
 	if (!RobotTestFixture_InitWheelControllers(fixture)) return false;
 
 	if (!MotionController_Init(

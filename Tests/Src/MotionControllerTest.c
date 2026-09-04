@@ -204,6 +204,13 @@ static void MotionControllerTest_LogSample(
         SteeringController_GetMovementDirection(
         		motionController->steering);
 
+    motionControllerTestLog[i].controllerDistanceDifferenceMm =
+        motionController->rightTravelMm -
+        motionController->leftTravelMm;
+
+    motionControllerTestLog[i].desiredWheelTravelDifferenceMm =
+        motionController->desiredWheelTravelDifferenceMm;
+
     motionControllerTestLogCount++;
 }
 
@@ -220,7 +227,6 @@ bool MotionControllerTest_Init(RobotTestFixture *fixture)
     OLED_Refresh_Gram();
 
     /*
-     * Heading controller disabled for this diagnostic.
      *
      * Servo remains enabled/centred, but heading PID output is zero.
      *
@@ -266,9 +272,14 @@ void MotionControllerTestRun(void)
 
     OLED_Refresh_Gram();
 
-    SW1_WhileNotPressed();
+    SW1_WaitForPressAndRelease();
 
     OLED_Clear();
+
+    /*
+     * Give time for the user to remove finger from button
+     */
+    HAL_Delay(500U);
 
 #if DEBUGLOG == 1
     MotionControllerTest_ResetLog();

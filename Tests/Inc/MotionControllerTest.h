@@ -32,6 +32,9 @@ typedef struct {
 
     float yawDeg;
 
+    float controllerDistanceDifferenceMm;
+    float desiredWheelTravelDifferenceMm;
+
     float wheelSyncErrorMm;
     float wheelSyncCorrectionCps;
 
