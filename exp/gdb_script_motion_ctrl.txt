@@ -1,9 +1,9 @@
 set print elements unlimited
 set print repeats unlimited
 
-set logging file SteeringGeometryTest_focused_11.36V.txt
+set logging file steer_ctrl_11.3V_run06.txt
 set logging overwrite on
 set logging enabled on
 
-p g_steeringGeometryCalibrationResultCount
-p g_steeringGeometryCalibrationResults
+p motionControllerTestLogCount
+p motionControllerTestLog
