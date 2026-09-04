@@ -23,7 +23,7 @@ void InvokeTest() {
 
 	LED_On();
 
-	SteeringControllerTestRun();
+	MotionControllerTestRun();
 
 	while (1) {
 		// Test ended. Loop forever.

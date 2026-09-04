@@ -115,7 +115,7 @@ bool RobotTestFixture_InitMotionController(
 			&fixture->motionController,
 			&fixture->leftWheelController,
 			&fixture->rightWheelController,
-			&fixture->steeringServo,
+			&fixture->steeringController,
 			&fixture->imu,
 			&kinematics, headingKp, headingKi, headingKd, maxSteeringCorrection,
 			wheelSyncKpCpsPerMm, maxWheelSyncCorrectionCps, -1))

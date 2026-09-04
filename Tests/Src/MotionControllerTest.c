@@ -55,9 +55,9 @@
  */
 #define HEADING_CTRL_KP		(10.0f)
 #define HEADING_CTRL_KI		(0.0f)
+#define HEADING_CTRL_LIMIT	(12.0f)
 
-
-#define DEBUGLOG 0
+#define DEBUGLOG 1
 
 #define MOTION_TEST_MM_PER_COUNT \
     (3.14159265358979323846f * MOTION_TEST_WHEEL_DIAMETER_MM \
@@ -74,33 +74,6 @@ static float motionControllerTestRightDistanceMm = 0.0f;
 /* -------------------------------------------------------------------------- */
 /* Debugger log                                                               */
 /* -------------------------------------------------------------------------- */
-
-typedef struct {
-    uint32_t timeMs;
-    uint32_t state;
-
-    float leftTargetCps;
-    float rightTargetCps;
-
-    float leftMeasuredCps;
-    float rightMeasuredCps;
-
-    float leftPwm;
-    float rightPwm;
-
-    float leftDistanceMm;
-    float rightDistanceMm;
-
-    float speedDifferenceCps;
-    float distanceDifferenceMm;
-
-    float yawDeg;
-
-    float wheelSyncErrorMm;
-    float wheelSyncCorrectionCps;
-
-    float steeringCommand;
-} MotionControllerTestLogSample;
 
 
 /*
@@ -216,7 +189,20 @@ static void MotionControllerTest_LogSample(
         motionController->wheelSyncCorrectionCps;
 
     motionControllerTestLog[i].steeringCommand =
-    		motionController->steeringCommand;
+    	    SteeringController_GetCommand(
+    	        motionController->steering);
+
+    motionControllerTestLog[i].effectiveSteeringAngleRad =
+        SteeringController_GetEffectiveAngleRad(
+        		motionController->steering);
+
+    motionControllerTestLog[i].steeringBacklashActive =
+        SteeringController_IsBacklashActive(
+        		motionController->steering);
+
+    motionControllerTestLog[i].steeringMovementDirection =
+        SteeringController_GetMovementDirection(
+        		motionController->steering);
 
     motionControllerTestLogCount++;
 }
@@ -244,8 +230,8 @@ bool MotionControllerTest_Init(RobotTestFixture *fixture)
     		fixture,
 		HEADING_CTRL_KP,      /* Kp */
 		HEADING_CTRL_KI,      /* Ki */
-		0.0f,      /* Kd */
-		30.0f,	   /* max steering correction (%) */
+		0.0f,      			  /* Kd */
+		HEADING_CTRL_LIMIT,	  /* max steering correction (%) */
 		MOTION_SYNC_KP_CPS_PER_MM,
 		MOTION_SYNC_MAX_CORRECTION_CPS))
     {
