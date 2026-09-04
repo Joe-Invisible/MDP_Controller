@@ -42,6 +42,11 @@ typedef struct {
     float effectiveSteeringAngleRad;
     bool steeringBacklashActive;
     int8_t steeringMovementDirection;
+
+    float targetSteeringAngleRad;
+    float headingErrorRad;
+
+    bool steeringReversalPending;
 } MotionControllerTestLogSample;
 
 void MotionControllerTestRun();

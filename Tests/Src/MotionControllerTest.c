@@ -53,14 +53,16 @@
 /*
  * Heading controller parameters
  */
-#define HEADING_CTRL_KP		(10.0f)
-#define HEADING_CTRL_KI		(0.0f)
-#define HEADING_CTRL_LIMIT	(12.0f)
+#define HEADING_CTRL_KP			(0.60f)
+#define HEADING_CTRL_KI			(0.0f)
+#define HEADING_CTRL_LIMIT_RAD	(0.010f)
 
 #define DEBUGLOG 1
 
+
+#define MOTION_PI				(3.14159265358979323846f)
 #define MOTION_TEST_MM_PER_COUNT \
-    (3.14159265358979323846f * MOTION_TEST_WHEEL_DIAMETER_MM \
+    (MOTION_PI * MOTION_TEST_WHEEL_DIAMETER_MM \
      / MOTION_TEST_ENCODER_CPR)
 
 /* -------------------------------------------------------------------------- */
@@ -211,6 +213,18 @@ static void MotionControllerTest_LogSample(
     motionControllerTestLog[i].desiredWheelTravelDifferenceMm =
         motionController->desiredWheelTravelDifferenceMm;
 
+    motionControllerTestLog[i].targetSteeringAngleRad =
+        SteeringController_GetTargetEffectiveAngleRad(
+            motionController->steering);
+
+    motionControllerTestLog[i].headingErrorRad =
+        -motionController->yawDeg *
+        (MOTION_PI / 180.0f);
+
+    motionControllerTestLog[i].steeringReversalPending =
+        SteeringController_IsReversalPending(
+            motionController->steering);
+
     motionControllerTestLogCount++;
 }
 
@@ -237,7 +251,7 @@ bool MotionControllerTest_Init(RobotTestFixture *fixture)
 		HEADING_CTRL_KP,      /* Kp */
 		HEADING_CTRL_KI,      /* Ki */
 		0.0f,      			  /* Kd */
-		HEADING_CTRL_LIMIT,	  /* max steering correction (%) */
+		HEADING_CTRL_LIMIT_RAD,	  /* max steering correction (rad) */
 		MOTION_SYNC_KP_CPS_PER_MM,
 		MOTION_SYNC_MAX_CORRECTION_CPS))
     {
@@ -289,6 +303,14 @@ void MotionControllerTestRun(void)
         &fixture.motionController,
         MOTION_TEST_DISTANCE_MM,
         MOTION_TEST_SPEED_CPS);
+
+    /*
+     * Capture state immediately after MoveStraight(), before
+     * the first periodic control update.
+     */
+    MotionControllerTest_LogSample(
+        &fixture,
+        0U);
 
     uint32_t startTick = HAL_GetTick();
     uint32_t lastControlTick = startTick;
