@@ -10,6 +10,9 @@
 #include <math.h>
 #include <stddef.h>
 
+#define STEERING_ANGLE_MODEL_EPSILON_RAD 	(1.0e-6f)
+#define STEERING_COMMAND_MODEL_EPSILON 		(1.0e-4f)
+
 /* ------------------------------------------------------------
  * Internal helpers
  * ------------------------------------------------------------ */
@@ -315,13 +318,15 @@ static void SteeringController_UpdateModel(
         {
             backlashTakenUp =
                 branchAngleRad <=
-                controller->backlashHoldAngleRad;
+                controller->backlashHoldAngleRad +
+				STEERING_ANGLE_MODEL_EPSILON_RAD;
         }
         else
         {
             backlashTakenUp =
                 branchAngleRad >=
-                controller->backlashHoldAngleRad;
+                controller->backlashHoldAngleRad +
+				STEERING_ANGLE_MODEL_EPSILON_RAD;
         }
 
         if (!backlashTakenUp)
@@ -400,6 +405,12 @@ bool SteeringController_Init(
         return false;
     }
 
+    if (calibration->reversalDeadbandRad < 0.0f ||
+        calibration->maxCommandRatePerSec <= 0.0f)
+    {
+        return false;
+    }
+
     float increasingMinAngleRad =
         calibration->increasingPoints[
             calibration->increasingPointCount - 1U
@@ -456,6 +467,10 @@ bool SteeringController_Init(
     controller->targetEffectiveAngleRad = 0.0f;
 
     controller->reversalPending = false;
+
+    controller->centreState = STEERING_CENTRE_IDLE;
+    controller->centreCommand = 0.0f;
+
     /*
      * Establish the initial model reference.
      *
@@ -515,6 +530,44 @@ static void SteeringController_ApplyCommand(
         clampedCommand);
 }
 
+static void SteeringController_ApplyCommandRateLimited(
+    SteeringController *controller,
+    float desiredCommand,
+    float dt)
+{
+    if (controller == NULL ||
+        controller->calibration == NULL ||
+        dt <= 0.0f)
+    {
+        return;
+    }
+
+    desiredCommand =
+        SteeringController_Clamp(
+            desiredCommand,
+            controller->calibration->minCommand,
+            controller->calibration->maxCommand);
+
+    float maxDeltaCommand =
+        controller->calibration->maxCommandRatePerSec * dt;
+
+    float deltaCommand =
+        desiredCommand - controller->command;
+
+    if (deltaCommand > maxDeltaCommand)
+    {
+        deltaCommand = maxDeltaCommand;
+    }
+    else if (deltaCommand < -maxDeltaCommand)
+    {
+        deltaCommand = -maxDeltaCommand;
+    }
+
+    SteeringController_ApplyCommand(
+        controller,
+        controller->command + deltaCommand);
+}
+
 
 void SteeringController_SetCommand(
     SteeringController *controller,
@@ -540,7 +593,9 @@ void SteeringController_SetCommand(
 static void SteeringController_SetEffectiveAngleRadInternal(
     SteeringController *controller,
     float targetAngleRad,
-    bool forceReversal)
+    float dt,
+    bool forceReversal,
+    bool rateLimited)
 {
     if (controller == NULL ||
         controller->servo == NULL ||
@@ -549,19 +604,18 @@ static void SteeringController_SetEffectiveAngleRadInternal(
         return;
     }
 
+    if (controller->centreState != STEERING_CENTRE_IDLE)
+    {
+        return;
+    }
+
+
     float clampedTargetAngleRad =
         SteeringController_Clamp(
             targetAngleRad,
             controller->minEffectiveAngleRad,
             controller->maxEffectiveAngleRad);
 
-    /*
-     * Always retain the requested target, even when we decide
-     * not to move yet.
-     *
-     * This means targetEffectiveAngleRad may legitimately
-     * differ from effectiveAngleRad.
-     */
     controller->targetEffectiveAngleRad =
         clampedTargetAngleRad;
 
@@ -574,35 +628,25 @@ static void SteeringController_SetEffectiveAngleRadInternal(
     if (angleErrorRad < 0.0f)
     {
         /*
-         * Need decreasing effective angle.
-         *
-         * Effective angle decreases as raw command increases.
+         * Effective steering angle decreases as raw command
+         * increases.
          */
         requiredCommandDirection = +1;
     }
     else if (angleErrorRad > 0.0f)
     {
-        /*
-         * Need increasing effective angle.
-         *
-         * Effective angle increases as raw command decreases.
-         */
         requiredCommandDirection = -1;
     }
     else
     {
         controller->reversalPending = false;
 
-        /*
-         * After Init(), movementDirection == 0 means our
-         * zero-angle state is only a nominal reference.
-         *
-         * Establish the decreasing-command branch so that
-         * physical centre corresponds to the calibrated
-         * command around -9.525.
-         */
         if (controller->movementDirection == 0)
         {
+            /*
+             * Deterministically establish the decreasing-command
+             * zero-angle branch after initialization.
+             */
             requiredCommandDirection = -1;
         }
         else
@@ -612,18 +656,89 @@ static void SteeringController_SetEffectiveAngleRadInternal(
     }
 
     /*
-     * If this target would reverse the established raw-command
-     * direction, do not immediately jump to the opposite major
-     * hysteresis branch for a tiny requested reversal.
-     *
-     * Instead hold the current actuator command and effective
-     * angle until the requested effective-angle change becomes
-     * significant enough.
+     * Centre() forced operations retain the old instantaneous
+     * behavior for now. This deliberately keeps the first patch
+     * local to normal heading control.
      */
-    if (!forceReversal &&
+    if (!rateLimited)
+    {
+        uint32_t pointCount = 0U;
+
+        const SteeringCalibrationPoint *branch =
+            SteeringController_GetBranch(
+                controller,
+                requiredCommandDirection,
+                &pointCount);
+
+        float requiredCommand =
+            SteeringController_InterpolateCommand(
+                branch,
+                pointCount,
+                clampedTargetAngleRad);
+
+        controller->reversalPending = false;
+
+        SteeringController_ApplyCommand(
+            controller,
+            requiredCommand);
+
+        return;
+    }
+
+    /*
+     * If we are already traversing backlash, first finish moving
+     * toward the point on the newly selected branch corresponding
+     * to the held effective wheel angle.
+     *
+     * Do NOT chase the final requested angle through the backlash
+     * region.
+     */
+    if (controller->backlashActive)
+    {
+        uint32_t pointCount = 0U;
+
+        const SteeringCalibrationPoint *branch =
+            SteeringController_GetBranch(
+                controller,
+                controller->movementDirection,
+                &pointCount);
+
+        float takeupCommand =
+            SteeringController_InterpolateCommand(
+                branch,
+                pointCount,
+                controller->backlashHoldAngleRad);
+
+        SteeringController_ApplyCommandRateLimited(
+            controller,
+            takeupCommand,
+            dt);
+
+        /*
+         * Reaching the raw command corresponding to the held wheel
+         * angle means the opposite side of the backlash has been
+         * engaged.
+         */
+        if (fabsf(controller->command - takeupCommand) <
+            STEERING_COMMAND_MODEL_EPSILON)
+        {
+            controller->backlashActive = false;
+            controller->effectiveAngleRad =
+                controller->backlashHoldAngleRad;
+        }
+
+        return;
+    }
+    bool directionReversal =
         controller->movementDirection != 0 &&
         requiredCommandDirection !=
-            controller->movementDirection &&
+            controller->movementDirection;
+
+    /*
+     * Suppress insignificant target reversals.
+     */
+    if (!forceReversal &&
+        directionReversal &&
         fabsf(angleErrorRad) <
             controller->calibration->reversalDeadbandRad)
     {
@@ -641,25 +756,57 @@ static void SteeringController_SetEffectiveAngleRadInternal(
             requiredCommandDirection,
             &pointCount);
 
-    float requiredCommand =
-        SteeringController_InterpolateCommand(
-            branch,
-            pointCount,
-            clampedTargetAngleRad);
+    float desiredCommand;
 
-    SteeringController_ApplyCommand(
+    if (directionReversal)
+    {
+        /*
+         * A genuine major-branch reversal has been accepted.
+         *
+         * First move through backlash toward the raw command on
+         * the opposite branch that corresponds to the CURRENT
+         * effective wheel angle.
+         *
+         * SteeringController_UpdateModel() will see the raw
+         * command reversal, assert backlashActive and hold
+         * effectiveAngleRad while we traverse the play.
+         */
+        desiredCommand =
+            SteeringController_InterpolateCommand(
+                branch,
+                pointCount,
+                controller->effectiveAngleRad);
+    }
+    else
+    {
+        /*
+         * Already travelling on the appropriate branch:
+         * proceed toward the requested effective angle.
+         */
+        desiredCommand =
+            SteeringController_InterpolateCommand(
+                branch,
+                pointCount,
+                clampedTargetAngleRad);
+    }
+
+    SteeringController_ApplyCommandRateLimited(
         controller,
-        requiredCommand);
+        desiredCommand,
+        dt);
 }
 
 void SteeringController_SetEffectiveAngleRad(
     SteeringController *controller,
-    float targetAngleRad)
+    float targetAngleRad,
+	float dt)
 {
-    SteeringController_SetEffectiveAngleRadInternal(
-        controller,
-        targetAngleRad,
-        false);
+	SteeringController_SetEffectiveAngleRadInternal(
+		controller,
+		targetAngleRad,
+		dt,
+		false,
+		true);
 }
 
 
@@ -682,8 +829,21 @@ void SteeringController_Centre(
      */
     SteeringController_SetEffectiveAngleRadInternal(
         controller,
+		0.0f,
         0.0f,
-        true);
+        true,
+		false);
+
+    /*
+     * Leave the model in an established, non-backlash
+     * state after the immediate centering operation
+     */
+    controller->targetEffectiveAngleRad = 0.0f;
+    controller->effectiveAngleRad = 0.0f;
+    controller->movementDirection = -1;
+    controller->backlashActive = false;
+    controller->backlashHoldAngleRad = 0.0f;
+    controller->reversalPending = false;
 }
 
 
@@ -778,4 +938,124 @@ bool SteeringController_IsReversalPending(
     }
 
     return controller->reversalPending;
+}
+
+void SteeringController_StartCentre(SteeringController *controller)
+{
+    if (controller == NULL ||
+        controller->calibration == NULL)
+    {
+        return;
+    }
+
+    /*
+     * Centre is deliberately established on the decreasing-command
+     * calibration branch.
+     *
+     * First move to maxCommand, then approach the calibrated zero
+     * from above.
+     */
+    controller->centreCommand =
+        SteeringController_InterpolateCommand(
+            controller->calibration->decreasingPoints,
+            controller->calibration->decreasingPointCount,
+            0.0f);
+
+    controller->targetEffectiveAngleRad = 0.0f;
+    controller->reversalPending = false;
+
+    controller->centreState = STEERING_CENTRE_PRECONDITION;
+}
+
+bool SteeringController_UpdateCentre(SteeringController *controller,
+                                     float dt)
+{
+    if (controller == NULL ||
+        controller->calibration == NULL)
+    {
+        return false;
+    }
+
+    switch (controller->centreState)
+    {
+    case STEERING_CENTRE_IDLE:
+        return true;
+
+    case STEERING_CENTRE_PRECONDITION:
+    {
+        const float preconditionCommand =
+            controller->calibration->maxCommand;
+
+        SteeringController_ApplyCommandRateLimited(
+            controller,
+            preconditionCommand,
+            dt);
+
+        if (fabsf(controller->command - preconditionCommand) <=
+            STEERING_COMMAND_MODEL_EPSILON)
+        {
+            /*
+             * We are now definitely on the high-command side.
+             * The next phase approaches centre in decreasing-command
+             * direction.
+             */
+            controller->centreState = STEERING_CENTRE_APPROACH;
+        }
+
+        return false;
+    }
+
+    case STEERING_CENTRE_APPROACH:
+    {
+        SteeringController_ApplyCommandRateLimited(
+            controller,
+            controller->centreCommand,
+            dt);
+
+        if (fabsf(controller->command -
+                  controller->centreCommand) <=
+            STEERING_COMMAND_MODEL_EPSILON)
+        {
+            /*
+             * The physical linkage has now approached calibrated
+             * centre from the decreasing-command direction.
+             *
+             * Synchronise the software model with that known
+             * mechanical branch.
+             */
+            controller->command = controller->centreCommand;
+
+            controller->targetEffectiveAngleRad = 0.0f;
+            controller->effectiveAngleRad = 0.0f;
+
+            controller->movementDirection = -1;
+
+            controller->backlashActive = false;
+            controller->backlashHoldAngleRad = 0.0f;
+
+            controller->reversalPending = false;
+
+            controller->centreState = STEERING_CENTRE_IDLE;
+
+            return true;
+        }
+
+        return false;
+    }
+
+    default:
+        controller->centreState = STEERING_CENTRE_IDLE;
+        return false;
+    }
+}
+
+bool SteeringController_IsCentring(
+    const SteeringController *controller)
+{
+    if (controller == NULL)
+    {
+        return false;
+    }
+
+    return controller->centreState != STEERING_CENTRE_IDLE;
 }

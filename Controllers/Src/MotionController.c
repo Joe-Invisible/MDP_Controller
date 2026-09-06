@@ -613,7 +613,8 @@ bool MotionController_Update(
 
     SteeringController_SetEffectiveAngleRad(
         controller->steering,
-        targetSteeringAngleRad);
+        targetSteeringAngleRad,
+		dt);
     /*
      * --------------------------------------------------------
      * REAR-WHEEL SYNCHRONISATION

@@ -60,8 +60,23 @@ typedef struct
      */
     float reversalDeadbandRad;
 
+    /*
+     * Maximum raw Servo_SetSteering() command slew rate used
+     * by effective-angle control.
+     *
+     * Units: raw command units / second.
+     */
+    float maxCommandRatePerSec;
+
 } SteeringControllerCalibration;
 
+
+typedef enum
+{
+    STEERING_CENTRE_IDLE = 0,
+    STEERING_CENTRE_PRECONDITION,
+    STEERING_CENTRE_APPROACH
+} SteeringControllerCentreState;
 
 typedef struct
 {
@@ -118,6 +133,9 @@ typedef struct
 
     bool reversalPending;
 
+    SteeringControllerCentreState centreState;
+    float centreCommand;
+
 } SteeringController;
 
 
@@ -162,7 +180,8 @@ void SteeringController_SetCommand(
  */
 void SteeringController_SetEffectiveAngleRad(
     SteeringController *controller,
-    float targetAngleRad);
+    float targetAngleRad,
+	float dt);
 
 /**
  * @brief Return the currently requested effective steering
@@ -234,5 +253,17 @@ int8_t SteeringController_GetMovementDirection(
  */
 bool SteeringController_IsReversalPending(
     const SteeringController *controller);
+
+/**
+ * @brief Deterministic centering with fixed precondition.
+ * 		This is designed to avoid ambiguous mechanical state
+ * 		at the beginning of a motion execution.
+ */
+void SteeringController_StartCentre(SteeringController *controller);
+
+bool SteeringController_UpdateCentre(SteeringController *controller,
+                                     float dt);
+
+bool SteeringController_IsCentring(const SteeringController *controller);
 
 #endif /* INC_STEERINGCONTROLLER_H_ */

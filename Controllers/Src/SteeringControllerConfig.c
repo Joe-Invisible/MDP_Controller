@@ -21,8 +21,16 @@
 #define STEERING_CAL_MIN_COMMAND      (-12.0f)
 #define STEERING_CAL_MAX_COMMAND      ( 12.0f)
 
-
+/*
+ * Minimum effective-angle reversal required before
+ * switching to the opposite major hysteresis branch.
+ */
 #define REVERSAL_DEADBAN_RAD			(0.0005f)
+/*
+ * Maximum raw Servo_SetSteering() command slew rate used
+ * by effective-angle control.
+ */
+#define MAX_COMMAND_RATE				(60.0f)
 
 /*
  * Increasing-command branch:
@@ -119,4 +127,7 @@ steeringCalibration =
 
 	.reversalDeadbandRad =
 		REVERSAL_DEADBAN_RAD,
+
+	.maxCommandRatePerSec =
+		MAX_COMMAND_RATE,
 };
