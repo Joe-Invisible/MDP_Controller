@@ -206,7 +206,8 @@ static void SteeringControllerTest_RunAngleStep(
 {
     SteeringController_SetEffectiveAngleRad(
         controller,
-        requestedAngleRad);
+        requestedAngleRad,
+		0.0f);
 
     HAL_Delay(
         STEERING_TEST_SETTLE_MS);

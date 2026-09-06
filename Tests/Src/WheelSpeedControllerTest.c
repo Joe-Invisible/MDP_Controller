@@ -82,7 +82,7 @@ static void WheelSpeedControllerTest_RunTarget(
 
     uint32_t startTick   = HAL_GetTick();
     uint32_t lastControl = startTick;
-    uint32_t lastDisplay = startTick;
+    // uint32_t lastDisplay = startTick;
 
     while ((HAL_GetTick() - startTick) < TARGET_DURATION_MS)
     {

@@ -53,7 +53,7 @@
 /*
  * Heading controller parameters
  */
-#define HEADING_CTRL_KP			(0.60f)
+#define HEADING_CTRL_KP			(0.80f)
 #define HEADING_CTRL_KI			(0.0f)
 #define HEADING_CTRL_LIMIT_RAD	(0.010f)
 
@@ -94,6 +94,7 @@ motionControllerTestLog[MOTION_TEST_LOG_CAPACITY];
 
 volatile uint32_t motionControllerTestLogCount = 0U;
 
+volatile const char* experimentInfo = "With deterministic centering; heading Kp=0.8, maxCmdRate=60, Ksync=10";
 
 /* -------------------------------------------------------------------------- */
 /* Logging helpers                                                            */
@@ -293,7 +294,18 @@ void MotionControllerTestRun(void)
     /*
      * Give time for the user to remove finger from button
      */
-    HAL_Delay(500U);
+    HAL_Delay(400U);
+
+    SteeringController_StartCentre(&fixture.steeringController);
+
+    // Deterministic preconditioned centering
+    while (!SteeringController_UpdateCentre(&fixture.steeringController, 0.01f))
+    {
+        HAL_Delay(10);
+    }
+
+    // mechanical settle time, optional
+    HAL_Delay(100U);
 
 #if DEBUGLOG == 1
     MotionControllerTest_ResetLog();

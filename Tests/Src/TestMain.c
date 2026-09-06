@@ -9,6 +9,7 @@
 #include "DCMotorTestBasic.h"
 #include "ServoTestBasic.h"
 #include "ICM20948Test.h"
+#include "HCSR04Test.h"
 #include "OLEDTest.h"
 #include "WheelSpeedControllerTest.h"
 #include "SteeringControllerTest.h"
