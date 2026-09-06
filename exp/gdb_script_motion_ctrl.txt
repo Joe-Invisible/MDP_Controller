@@ -1,7 +1,7 @@
 set print elements unlimited
 set print repeats unlimited
 
-set logging file rad_mctrl_fixed_kp0.60_run02.txt
+set logging file rad_mctrl_kp0.80_maxcmd60_run03.txt
 set logging overwrite on
 set logging enabled on
 
