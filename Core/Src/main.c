@@ -98,6 +98,7 @@ int main(void)
   MX_TIM4_Init();
   MX_TIM8_Init();
   MX_TIM14_Init();
+  MX_TIM12_Init();
   /* USER CODE BEGIN 2 */
 
 #if BRANCH_TO_TESTS
