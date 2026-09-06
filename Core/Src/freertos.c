@@ -22,11 +22,10 @@
 #include "task.h"
 #include "main.h"
 #include "cmsis_os.h"
-#include "AppTasks.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "AppTasks.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
