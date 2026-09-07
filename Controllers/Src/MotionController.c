@@ -12,11 +12,6 @@
 
 #define MOTION_PI 3.14159265358979323846f
 
- /*
-  * For experiment purposes only
-  */
-#define TMP_2000CPS_BRAKING_DISTANCE_MM (22.0f)
-
 
 static float MotionController_GetMmPerCount(
     const MotionController *controller)
@@ -150,6 +145,12 @@ static void MotionController_BeginBraking(
     WheelSpeedController_SetTarget(controller->rightWheel, 0.0f);
 
     /*
+     * Abort active profile
+     */
+    MotionProfile_Stop(&controller->motionProfile);
+    controller->targetSpeedCps = 0.0f;
+
+    /*
      * Wheel synchronisation no longer commands speed
      * corrections once braking begins.
      */
@@ -196,7 +197,9 @@ bool MotionController_Init(
     float headingKd,
     float maxHeadingSteeringAngleRad,
     float wheelSyncKpCpsPerMm,
-    float maxWheelSyncCorrectionCps)
+    float maxWheelSyncCorrectionCps,
+	float motionAccelerationMmps2,
+	float motionDecelerationMmps2)
 {
 	if (controller == NULL ||
 	    leftWheel == NULL ||
@@ -270,6 +273,15 @@ bool MotionController_Init(
 
     controller->mode = MOTIONCONTROLLER_IDLE;
 
+    if (!MotionProfile_Init(
+            &controller->motionProfile,
+            motionAccelerationMmps2,
+            motionDecelerationMmps2))
+    {
+        return false;
+    }
+
+
     if (!PIDController_Init(
         &controller->headingPID,
         headingKp,
@@ -305,9 +317,28 @@ bool MotionController_MoveStraight(
 
     controller->targetDistanceMm = fabsf(distanceMm);
 
-    controller->targetSpeedCps =
-        (float)controller->motionDirection *
-        speedCps;
+    /*
+     * MotionProfile now responsible for determining the speed
+     * across each control interval.
+     *
+     * Now the robot shall start at 0Cps
+     */
+    controller->maxSpeedCps = speedCps;
+    controller->targetSpeedCps = 0.0f;
+
+    float mmPerCount =
+        MotionController_GetMmPerCount(controller);
+
+    float maxSpeedMmps =
+        speedCps * mmPerCount;
+
+    if (!MotionProfile_Start(
+            &controller->motionProfile,
+            controller->targetDistanceMm,
+            maxSpeedMmps))
+    {
+        return false;
+    }
 
     /*
      * Straight-line heading is relative to the orientation
@@ -567,13 +598,37 @@ bool MotionController_Update(
         (float)controller->motionDirection *
         controller->travelledDistanceMm;
 
-    // future progress check: a mutex routing to
-    // different completion conditions depending on state.
-    if (progressMm >= controller->targetDistanceMm - TMP_2000CPS_BRAKING_DISTANCE_MM)
+    float targetSpeedMmps =
+        MotionProfile_Update(
+            &controller->motionProfile,
+            progressMm,
+            dt);
+
+    /*
+     * MotionProfile becomes inactive once the requested
+     * distance has been reached.
+     *
+     * Enter the existing braking state so that zero velocity
+     * is actively enforced until both wheels are stationary.
+     */
+    if (!MotionProfile_IsActive(
+            &controller->motionProfile))
     {
         MotionController_BeginBraking(controller);
         return true;
     }
+
+    /*
+     * Convert vehicle-speed magnitude back to encoder CPS
+     * and restore the commanded motion direction.
+     */
+    float mmPerCount =
+        MotionController_GetMmPerCount(controller);
+
+    controller->targetSpeedCps =
+        (float)controller->motionDirection *
+        targetSpeedMmps /
+        mmPerCount;
 
     if (!MotionController_UpdateYawEstimate(controller, dt)) {
         /*

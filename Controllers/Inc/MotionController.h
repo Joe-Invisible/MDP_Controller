@@ -17,6 +17,8 @@
 #include "PIDController.h"
 #include "WheelSpeedController.h"
 #include "SteeringController.h"
+#include "MotionProfile.h"
+
 #include "MotionControllerConfig.h"
 #include "RobotKinematics.h"
 
@@ -94,8 +96,13 @@ typedef struct
 	 * Current motion command
 	 */
 	int8_t motionDirection;
-	float targetSpeedCps;
+
+	float maxSpeedCps;		/* unsigned requested cruise speed magnitude */
+	float targetSpeedCps;	/* signed current profiled reference */
+
 	float targetDistanceMm;
+
+	MotionProfile motionProfile;
 
 	/*
 	 * Relative heading since motion began.
@@ -133,7 +140,9 @@ bool MotionController_Init(
     float headingKd,
     float maxHeadingSteeringAngleRad,
     float wheelSyncKpCpsPerMm,
-    float maxWheelSyncCorrectionCps);
+    float maxWheelSyncCorrectionCps,
+	float motionAccelerationMmps2,
+	float motionDecelerationMmps2);
 
 /**
  * Straight line motion command
