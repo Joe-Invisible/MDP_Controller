@@ -105,6 +105,33 @@ static float WheelSpeedController_ComputePPI(
 	return PIDController_Update(&controller->pid, errorCps, dt);
 }
 
+/**
+ * Returns whether minimum-PWM deadband compensation should be applied.
+ *
+ * If the wheel is already moving in the commanded direction faster than
+ * the target speed, forcing the output back to the minimum running PWM
+ * prevents controlled deceleration. In that case, allow the PI +
+ * feedforward result to fall below the calibrated running minimum.
+ */
+static bool WheelSpeedController_ShouldApplyDeadbandCompensation(
+        const WheelSpeedController *controller)
+{
+    float target = controller->targetSpeedCps;
+    float measured = controller->measuredSpeedCps;
+
+    if (target == 0.0f)
+        return false;
+
+    bool movingInTargetDirection =
+        (target > 0.0f && measured > 0.0f) ||
+        (target < 0.0f && measured < 0.0f);
+
+    bool fasterThanTarget =
+        fabsf(measured) > fabsf(target);
+
+    return !(movingInTargetDirection && fasterThanTarget);
+}
+
 void WheelSpeedController_SetTarget(
     WheelSpeedController *controller,
     float speedCps) {
@@ -190,11 +217,17 @@ void WheelSpeedController_Update(
 	float pwm = pff + ppi;
 
 	/*
-	 * Apply deadband compensation except when braking.
+	 * Apply deadband compensation when driving the wheel toward
+	 * its target speed.
+	 *
+	 * If the wheel is already moving in the commanded direction
+	 * faster than the target, allow the controller output to fall
+	 * below the minimum running PWM so that the wheel can decelerate.
 	 */
-	if (controller->targetSpeedCps != 0.0f)
+	if (WheelSpeedController_ShouldApplyDeadbandCompensation(controller))
 	{
-		bool stationary = WheelSpeedController_IsStationary(controller);
+	    bool stationary =
+	        WheelSpeedController_IsStationary(controller);
 
 	    float minPWM;
 
