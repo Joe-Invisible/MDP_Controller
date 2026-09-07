@@ -141,6 +141,8 @@ Application-specific code is kept separate from CubeMX-generated code where poss
 * `Tests/` contains standalone routines used during hardware bring-up, calibration, and controller development.
 * `zdocs/` contains relevant hardware datasheets and board documentation.
 
+The leading `z` in `zdocs/` has no special technical meaning. It was chosen simply so that the directory appears near the bottom of the STM32CubeIDE Project Explorer, keeping the source-code directories visually prioritized.
+
 ## Development Progress
 
 ### Implemented
