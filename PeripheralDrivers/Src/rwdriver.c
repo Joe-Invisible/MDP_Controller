@@ -20,7 +20,10 @@ bool DCMotor_Init(
 	if (!rm || !pwmHtim || !encHtim) return false;
 
 	rm->config.pwmHtim = pwmHtim;
-	// hard-coded CH1 and 2 for now.
+	/*
+	 * Hardcoded channels.
+	 * No intention of changing it.
+	 */
 	rm->config.pwmChannel1 = TIM_CHANNEL_1;
 	rm->config.pwmChannel2 = TIM_CHANNEL_2;
 
@@ -30,7 +33,9 @@ bool DCMotor_Init(
 
 	rm->state.encCount = 0;
 	rm->state.activeDutyCycle = 0;
-	rm->state.direction = -1;
+	rm->state.direction = 0;
+
+	rm->state.mode = DCMOTOR_MODE_NEUTRAL;
 
 	return true;
 }
@@ -64,6 +69,8 @@ void DCMotor_Disable(DCMotor* rm) {
 
 	DCMotor_SetPWM(rm, 0);
 
+	rm->state.mode = DCMOTOR_MODE_NEUTRAL;
+
 	if(HAL_TIM_Encoder_Stop(rm->config.encHtim,
 			TIM_CHANNEL_ALL) != HAL_OK)
 		return;
@@ -94,6 +101,12 @@ void DCMotor_SetPWM(DCMotor* rm, float dutyCycle) {
 		dutyCycle = dutyCycle < 0.0f ? -100.0f : 100.0f;
 	}
 
+	if (fabs(dutyCycle) > 0.0) {
+		rm->state.mode = DCMOTOR_MODE_DRIVE;
+	} else {
+		rm->state.mode = DCMOTOR_MODE_NEUTRAL;
+	}
+
 	// get dutyCycle sign by convention
 	int8_t direction = rm->config.flipDirection ^ (signbit(dutyCycle) != 0);
 	dutyCycle = dutyCycle < 0 ? -dutyCycle : dutyCycle;
@@ -114,7 +127,12 @@ void DCMotor_SetPWM(DCMotor* rm, float dutyCycle) {
 	}
 
 	rm->state.activeDutyCycle = dutyCycle;
-	rm->state.direction = dutyCycle == 0 ? -1 : direction;
+	/*
+	 * For zero-PWM, we choose to deterministically
+	 * retain the previous direction value. This does NOT
+	 * mean the direction is valid in this case.
+	 */
+	rm->state.direction = dutyCycle == 0 ? rm->state.direction : direction;
 
 	// Set duty cycles
 	__HAL_TIM_SET_COMPARE(
@@ -140,8 +158,16 @@ void DCMotor_SetBrakePWM(DCMotor* rm, float brakePercent) {
 		brakePercent = 100.0f;
 	}
 
+	if (brakePercent == 0.0f) {
+		// Commanding zero-duty cycle brake is effectively
+		// commanding to coast.
+		DCMotor_Neutral(rm);
+		return;
+	} else {
+		rm->state.mode = DCMOTOR_MODE_BRAKE;
+	}
+
 	rm->state.activeDutyCycle = brakePercent;
-	rm->state.direction = -1;
 
 	uint32_t compare = DCMotor_ComputeCompareValue(rm, brakePercent);
 

@@ -13,6 +13,11 @@
 #include <stdbool.h>
 #include "stm32f4xx_hal.h"
 
+typedef enum {
+    DCMOTOR_MODE_NEUTRAL = 0,
+    DCMOTOR_MODE_DRIVE,
+    DCMOTOR_MODE_BRAKE
+} DCMotorMode;
 
 /**
  * Peripheral Configuration Parameters
@@ -31,6 +36,9 @@ typedef struct DCMotorConfg {
 	 */
 	uint32_t pwmChannel2;
 
+	/**
+	 * Adjust according to hardware polarity
+	 */
 	uint32_t flipDirection;
 
 	/**
@@ -54,16 +62,22 @@ typedef struct DCMotorState {
 	 * specifies the % duty cycle, e.g., 50 is 50% duty cycle.
 	 * This value will be applied to the active channel.
 	 *
+	 * For BRAKE, this is the duty cycle applied to both
+	 * channels.
+	 *
 	 */
 	float activeDutyCycle;
 
 	/**
-	 * 0: forward
+	 * Torque direction of the motor, valid during DRIVE
+	 * state only,
+	 * 0: forward (startup NEUTRAL mode default)
 	 * 1: reverse
-	 * -1: stationary
+	 * In other modes, this field is not valid.
 	 */
 	int8_t direction;
 
+	DCMotorMode mode;
 } DCMotorState;
 
 
@@ -106,12 +120,13 @@ void DCMotor_Neutral(DCMotor* rm);
 
 /**
  * Electrical braking. For the H-bridge driver, this method
- * drives both terminals high, producing an electromagnetic
- * torque that opposes rotation. Prefer this over coasting
- * if there is active need of fast deceleration.
+ * drives both H-bridge control inputs high during the braking
+ * portion, producing an electromagnetic torque that opposes
+ * rotation. Prefer this over coasting if there is active need
+ * of fast deceleration.
  *
- * Both terminals are driven with the same PWM duty cycle,
- * effectively alternating between BRAKE and COAST.
+ * Both H-bridge control inputs are driven with the same PWM
+ * duty cycle, effectively alternating between BRAKE and COAST.
  *
  * brakePercent:
  * 		Range 0~+100
