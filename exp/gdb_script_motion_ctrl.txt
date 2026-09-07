@@ -1,11 +1,12 @@
 set print elements unlimited
 set print repeats unlimited
 
-set logging file mctrl_run09.txt
+set logging file mctrl_profile_run09.txt
 set logging overwrite on
 set logging enabled on
 
-p "added deterministic centering"
+p "Motion Profile testing; Kp=0.8, Ksync=10; STRAIGHT 1000mm @ 2000Cps; acc=500, dec=250.0"
+p "DCMotor deadband compensation NOT applied for deceleration phase."
 
 p motionControllerTestLogCount
-p motionControllerTestLog
+p motionControllerTestLog[0] @ motionControllerTestLogCount
