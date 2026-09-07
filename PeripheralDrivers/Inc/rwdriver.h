@@ -60,7 +60,7 @@ typedef struct DCMotorState {
 	/**
 	 * 0: forward
 	 * 1: reverse
-	 * -1: stopped
+	 * -1: stationary
 	 */
 	int8_t direction;
 
@@ -99,8 +99,30 @@ void DCMotor_Disable(DCMotor* rm);
  */
 void DCMotor_SetPWM(DCMotor* rm, float dutyCycle);
 
+/**
+ * Puts the motor at coast. The wheels can roll freely.
+ */
 void DCMotor_Neutral(DCMotor* rm);
 
+/**
+ * Electrical braking. For the H-bridge driver, this method
+ * drives both terminals high, producing an electromagnetic
+ * torque that opposes rotation. Prefer this over coasting
+ * if there is active need of fast deceleration.
+ *
+ * Both terminals are driven with the same PWM duty cycle,
+ * effectively alternating between BRAKE and COAST.
+ *
+ * brakePercent:
+ * 		Range 0~+100
+ * 		Determines the ratio of BRAKE state in one PWM period.
+ */
+void DCMotor_SetBrakePWM(DCMotor *motor, float brakePercent);
+
+/**
+ * Compatibility wrapper for full duty cycle braking.
+ * Equivalent to DCMotor_SetBrakePWM with brakePercent=100.
+ */
 void DCMotor_Brake(DCMotor* rm);
 
 int16_t DCMotor_GetEncoderCount(DCMotor* rm);

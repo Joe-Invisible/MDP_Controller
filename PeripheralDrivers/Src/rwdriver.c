@@ -9,7 +9,7 @@
 #include "rwdriver.h"
 #include "math.h"
 
-#define BRAKE_PWM_DUTY_CYCLE ((int8_t)100)
+#define FULL_BRAKE_PWM_DUTY_CYCLE ((float)100.0f)
 
 bool DCMotor_Init(
 		DCMotor* rm,
@@ -79,6 +79,13 @@ void DCMotor_Disable(DCMotor* rm) {
 	);
 }
 
+static uint32_t DCMotor_ComputeCompareValue(DCMotor *rm, float dutyCycle) {
+	// Calculate compare value
+	uint32_t arr = __HAL_TIM_GET_AUTORELOAD(rm->config.pwmHtim);
+	uint32_t compare = (dutyCycle * (arr + 1)) / 100;
+	return compare;
+}
+
 void DCMotor_SetPWM(DCMotor* rm, float dutyCycle) {
 	if (!rm) return;
 
@@ -91,9 +98,7 @@ void DCMotor_SetPWM(DCMotor* rm, float dutyCycle) {
 	int8_t direction = rm->config.flipDirection ^ (signbit(dutyCycle) != 0);
 	dutyCycle = dutyCycle < 0 ? -dutyCycle : dutyCycle;
 
-	// Calculate compare value
-	uint32_t arr = __HAL_TIM_GET_AUTORELOAD(rm->config.pwmHtim);
-	uint32_t compare = (dutyCycle * (arr + 1)) / 100;
+	uint32_t compare = DCMotor_ComputeCompareValue(rm, dutyCycle);
 
 	// Determine active PWM input
 	uint32_t activeChannel = -1;
@@ -125,25 +130,37 @@ void DCMotor_Neutral(DCMotor* rm) {
 	DCMotor_SetPWM(rm, 0);
 }
 
-void DCMotor_Brake(DCMotor *rm)
-{
+void DCMotor_SetBrakePWM(DCMotor* rm, float brakePercent) {
 	if (!rm) return;
 
-	rm->state.activeDutyCycle = BRAKE_PWM_DUTY_CYCLE;
+	if (brakePercent < 0.0f) {
+		brakePercent = 0.0f;
+	}
+	else if (brakePercent > 100.0f) {
+		brakePercent = 100.0f;
+	}
+
+	rm->state.activeDutyCycle = brakePercent;
 	rm->state.direction = -1;
 
-	uint32_t period =
-			__HAL_TIM_GET_AUTORELOAD(rm->config.pwmHtim) + 1U;
+	uint32_t compare = DCMotor_ComputeCompareValue(rm, brakePercent);
 
 	__HAL_TIM_SET_COMPARE(
 			rm->config.pwmHtim,
 			rm->config.pwmChannel1,
-			period);
+			compare);
 
 	__HAL_TIM_SET_COMPARE(
 			rm->config.pwmHtim,
 			rm->config.pwmChannel2,
-			period);
+			compare);
+}
+
+void DCMotor_Brake(DCMotor *rm)
+{
+	if (!rm) return;
+
+	DCMotor_SetBrakePWM(rm, FULL_BRAKE_PWM_DUTY_CYCLE);
 }
 
 int16_t DCMotor_GetEncoderCount(DCMotor* rm) {
