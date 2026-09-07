@@ -100,7 +100,10 @@ bool RobotTestFixture_InitMotionController(
 		RobotTestFixture *fixture,
 		float headingKp, float headingKi, float headingKd,
 		float maxHeadingSteeringAngleRad,
-		float wheelSyncKpCpsPerMm, float maxWheelSyncCorrectionCps) {
+		float wheelSyncKpCpsPerMm,
+		float maxWheelSyncCorrectionCps,
+		float motionAccelerationMmps2,
+		float motionDecelerationMmps2) {
 	if (fixture == NULL) return false;
 
 	if (!RobotTestFixture_InitIMU(fixture)) return false;
@@ -120,7 +123,9 @@ bool RobotTestFixture_InitMotionController(
 			&fixture->steeringController,
 			&fixture->imu,
 			&kinematics, headingKp, headingKi, headingKd, maxHeadingSteeringAngleRad,
-			wheelSyncKpCpsPerMm, maxWheelSyncCorrectionCps))
+			wheelSyncKpCpsPerMm, maxWheelSyncCorrectionCps,
+			motionAccelerationMmps2,
+			motionDecelerationMmps2))
 		return false;
 
 	return true;

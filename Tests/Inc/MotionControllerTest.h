@@ -15,6 +15,15 @@ typedef struct {
     uint32_t timeMs;
     uint32_t state;
 
+    /*
+     * Motion profile / progress
+     */
+    float profileTargetSpeedCps;
+    float travelledDistanceMm;
+
+    /*
+     * Wheel speed control
+     */
     float leftTargetCps;
     float rightTargetCps;
 
@@ -24,31 +33,21 @@ typedef struct {
     float leftPwm;
     float rightPwm;
 
-    float leftDistanceMm;
-    float rightDistanceMm;
-
-    float speedDifferenceCps;
-    float distanceDifferenceMm;
-
-    float yawDeg;
-
-    float controllerDistanceDifferenceMm;
+    /*
+     * Wheel synchronisation
+     */
     float desiredWheelTravelDifferenceMm;
-
     float wheelSyncErrorMm;
     float wheelSyncCorrectionCps;
 
-    float steeringCommand;
-    float effectiveSteeringAngleRad;
-    bool steeringBacklashActive;
-    int8_t steeringMovementDirection;
-
+    /*
+     * Heading / steering
+     */
+    float yawDeg;
     float targetSteeringAngleRad;
-    float headingErrorRad;
+    float effectiveSteeringAngleRad;
 
-    bool steeringReversalPending;
 } MotionControllerTestLogSample;
-
 void MotionControllerTestRun();
 
 #endif /* INC_MOTIONCONTROLLERTEST_H_ */

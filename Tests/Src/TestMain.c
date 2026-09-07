@@ -13,6 +13,7 @@
 #include "OLEDTest.h"
 #include "WheelSpeedControllerTest.h"
 #include "SteeringControllerTest.h"
+#include "MotionProfileTest.h"
 #include "MotionControllerTest.h"
 #include "SteeringGeometryCalibrationTest.h"
 #include "oled.h"

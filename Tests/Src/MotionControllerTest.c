@@ -57,6 +57,17 @@
 #define HEADING_CTRL_KI			(0.0f)
 #define HEADING_CTRL_LIMIT_RAD	(0.010f)
 
+/*
+ * Motion Profile parameters
+ */
+#define MOTION_PROFILE_ACCELERATION_MMPS2    (500.0f)
+// Experimentally derived, based on how the actual
+// measured wheel speeds decreased near the end of
+// motion; In other words, this is a physically
+// achievable deceleration under the current controller
+// configuration.
+#define MOTION_PROFILE_DECELERATION_MMPS2    (250.0f)
+
 #define DEBUGLOG 1
 
 
@@ -143,6 +154,12 @@ static void MotionControllerTest_LogSample(
     motionControllerTestLog[i].timeMs = elapsedMs;
     motionControllerTestLog[i].state = (uint32_t)motionController->mode;
 
+    motionControllerTestLog[i].profileTargetSpeedCps =
+    		motionController->targetSpeedCps;
+
+    motionControllerTestLog[i].travelledDistanceMm =
+        motionController->travelledDistanceMm;
+
     motionControllerTestLog[i].leftTargetCps =
         leftWheel->targetSpeedCps;
 
@@ -161,20 +178,6 @@ static void MotionControllerTest_LogSample(
     motionControllerTestLog[i].rightPwm =
         rightWheel->outputPWM;
 
-    motionControllerTestLog[i].leftDistanceMm =
-        motionControllerTestLeftDistanceMm;
-
-    motionControllerTestLog[i].rightDistanceMm =
-        motionControllerTestRightDistanceMm;
-
-    motionControllerTestLog[i].speedDifferenceCps =
-        rightWheel->measuredSpeedCps -
-        leftWheel->measuredSpeedCps;
-
-    motionControllerTestLog[i].distanceDifferenceMm =
-        motionControllerTestRightDistanceMm -
-        motionControllerTestLeftDistanceMm;
-
     /*
      * MotionController's integrated heading estimate.
      *
@@ -191,39 +194,15 @@ static void MotionControllerTest_LogSample(
     motionControllerTestLog[i].wheelSyncCorrectionCps =
         motionController->wheelSyncCorrectionCps;
 
-    motionControllerTestLog[i].steeringCommand =
-    	    SteeringController_GetCommand(
-    	        motionController->steering);
-
     motionControllerTestLog[i].effectiveSteeringAngleRad =
         SteeringController_GetEffectiveAngleRad(
         		motionController->steering);
-
-    motionControllerTestLog[i].steeringBacklashActive =
-        SteeringController_IsBacklashActive(
-        		motionController->steering);
-
-    motionControllerTestLog[i].steeringMovementDirection =
-        SteeringController_GetMovementDirection(
-        		motionController->steering);
-
-    motionControllerTestLog[i].controllerDistanceDifferenceMm =
-        motionController->rightTravelMm -
-        motionController->leftTravelMm;
 
     motionControllerTestLog[i].desiredWheelTravelDifferenceMm =
         motionController->desiredWheelTravelDifferenceMm;
 
     motionControllerTestLog[i].targetSteeringAngleRad =
         SteeringController_GetTargetEffectiveAngleRad(
-            motionController->steering);
-
-    motionControllerTestLog[i].headingErrorRad =
-        -motionController->yawDeg *
-        (MOTION_PI / 180.0f);
-
-    motionControllerTestLog[i].steeringReversalPending =
-        SteeringController_IsReversalPending(
             motionController->steering);
 
     motionControllerTestLogCount++;
@@ -254,7 +233,9 @@ bool MotionControllerTest_Init(RobotTestFixture *fixture)
 		0.0f,      			  /* Kd */
 		HEADING_CTRL_LIMIT_RAD,	  /* max steering correction (rad) */
 		MOTION_SYNC_KP_CPS_PER_MM,
-		MOTION_SYNC_MAX_CORRECTION_CPS))
+		MOTION_SYNC_MAX_CORRECTION_CPS,
+		MOTION_PROFILE_ACCELERATION_MMPS2,
+		MOTION_PROFILE_DECELERATION_MMPS2))
     {
     	return false;
     }
