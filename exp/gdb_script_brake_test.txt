@@ -1,0 +1,15 @@
+set print elements unlimited
+set print repeats unlimited
+set max-value-size unlimited
+
+set logging file dcmotor_brake_map.txt
+set logging overwrite on
+set logging enabled on
+
+p "Electronic brake map versus initial speed"
+
+p brakeMapTrialLogCount
+p brakeMapTrialLog[0] @ brakeMapTrialLogCount
+
+p brakeMapTraceLogCount
+p brakeMapTraceLog[0] @ brakeMapTraceLogCount
