@@ -23,6 +23,8 @@
 #include "SteeringController.h"
 #include "SteeringControllerConfig.h"
 
+#include "WheelBrakeConfig.h"
+
 #include "MotionController.h"
 #include "MotionControllerConfig.h"
 

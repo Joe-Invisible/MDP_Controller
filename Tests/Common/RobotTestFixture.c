@@ -19,6 +19,20 @@
 #define SERVOPWMSRC htim8
 #define SERVOPWMCH TIM_CHANNEL_1
 
+
+#define CONFIGURE_DYNAMIC_BRAKES		1
+
+#if CONFIGURE_DYNAMIC_BRAKES == 1
+static const WheelSpeedBrakeConfig wheelSpeedBrakeConfig = {
+    .map = &rearWheelBrakeMap,
+
+    .engageOverspeedCps = 200.0f,
+    .releaseOverspeedCps = 100.0f,
+
+    .fullDemandOverspeedCps = 800.0f
+};
+#endif
+
 bool RobotTestFixture_InitIMU(RobotTestFixture *fixture) {
 	if (fixture == NULL) return false;
 	if (!ICM20948_Init(&fixture->imu, &hi2c2)) return false;
@@ -127,6 +141,15 @@ bool RobotTestFixture_InitMotionController(
 			motionAccelerationMmps2,
 			motionDecelerationMmps2))
 		return false;
+
+#if CONFIGURE_DYNAMIC_BRAKES == 1
+	WheelSpeedController_ConfigureBrake(
+			&fixture->leftWheelController,
+			&wheelSpeedBrakeConfig);
+	WheelSpeedController_ConfigureBrake(
+			&fixture->rightWheelController,
+			&wheelSpeedBrakeConfig);
+#endif
 
 	return true;
 }

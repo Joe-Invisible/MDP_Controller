@@ -1,6 +1,8 @@
 /*
  * TestMain.c
  *
+ * Test branch entry point.
+ *
  *  Created on: 2026年8月24日
  *      Author: Joe
  */
@@ -13,6 +15,7 @@
 #include "OLEDTest.h"
 #include "WheelSpeedControllerTest.h"
 #include "SteeringControllerTest.h"
+#include "DynamicBrakeMapTest.h"
 #include "MotionProfileTest.h"
 #include "MotionControllerTest.h"
 #include "SteeringGeometryCalibrationTest.h"

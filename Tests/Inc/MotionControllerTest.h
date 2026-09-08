@@ -47,6 +47,17 @@ typedef struct {
     float targetSteeringAngleRad;
     float effectiveSteeringAngleRad;
 
+    /*
+     * Dynamic braking
+     */
+    WheelSpeedActuatorMode leftActuatorMode;
+    WheelSpeedActuatorMode rightActuatorMode;
+
+    float leftBrakeDemand;
+    float rightBrakeDemand;
+
+    float leftBrakePWM;
+    float rightBrakePWM;
 } MotionControllerTestLogSample;
 void MotionControllerTestRun();
 

@@ -15,5 +15,7 @@ void DCMotorTestRun();
 void DCMotorTestMinimumPWM();
 void DCMotorTestMinimumRunningPWM();
 void DCMotorTestResponseCurve();
+void DCMotorTestBrakeResponse();
+void DCMotorTestBrakeMap();
 
 #endif /* INC_DCMOTORTESTBASIC_H_ */

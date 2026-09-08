@@ -17,8 +17,8 @@
 /* Test configuration                                                         */
 /* -------------------------------------------------------------------------- */
 
-#define MOTION_TEST_DISTANCE_MM          (1000.0f)
-#define MOTION_TEST_SPEED_CPS            (2000.0f)
+#define MOTION_TEST_DISTANCE_MM          (2000.0f)
+#define MOTION_TEST_SPEED_CPS            (4000.0f)
 
 #define MOTION_TEST_CONTROL_PERIOD_MS    (10U)
 #define MOTION_TEST_CONTROL_PERIOD_S     (0.010f)
@@ -204,6 +204,24 @@ static void MotionControllerTest_LogSample(
     motionControllerTestLog[i].targetSteeringAngleRad =
         SteeringController_GetTargetEffectiveAngleRad(
             motionController->steering);
+
+    motionControllerTestLog[i].leftActuatorMode =
+    		leftWheel->actuatorMode;
+
+    motionControllerTestLog[i].rightActuatorMode =
+		rightWheel->actuatorMode;
+
+    motionControllerTestLog[i].leftBrakeDemand =
+		leftWheel->brakeDemand;
+
+    motionControllerTestLog[i].rightBrakeDemand =
+		rightWheel->brakeDemand;
+
+    motionControllerTestLog[i].leftBrakePWM =
+		leftWheel->brakePWM;
+
+    motionControllerTestLog[i].rightBrakePWM =
+		rightWheel->brakePWM;
 
     motionControllerTestLogCount++;
 }
