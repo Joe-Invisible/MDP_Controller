@@ -14,6 +14,7 @@
 #include <stdbool.h>
 #include "PIDController.h"
 #include "rwdriver.h"
+#include "DynamicBrakeMap.h"
 #include <stdint.h>
 
 
@@ -42,6 +43,53 @@ typedef struct {
 } WheelSpeedCalibration;
 
 
+typedef enum
+{
+    WHEEL_SPEED_ACTUATOR_COAST = 0,
+    WHEEL_SPEED_ACTUATOR_DRIVE,
+    WHEEL_SPEED_ACTUATOR_BRAKE
+
+} WheelSpeedActuatorMode;
+
+
+/*
+ * Active-braking control policy.
+ *
+ * This is distinct from DynamicBrakeMap:
+ *
+ *   DynamicBrakeMap:
+ *       normalized brake demand -> physical H-bridge PWM
+ *
+ *   WheelSpeedBrakeConfig:
+ *       overspeed error -> normalized brake demand
+ */
+typedef struct
+{
+    const DynamicBrakeMap *map;
+
+    /*
+     * Active braking begins once overspeed reaches this value.
+     */
+    float engageOverspeedCps;
+
+    /*
+     * Once braking has begun, continue until overspeed falls
+     * below this value.
+     *
+     * Must be less than engageOverspeedCps.
+     */
+    float releaseOverspeedCps;
+
+    /*
+     * Overspeed corresponding to brakeDemand == 1.0f.
+     *
+     * Must be greater than engageOverspeedCps.
+     */
+    float fullDemandOverspeedCps;
+
+} WheelSpeedBrakeConfig;
+
+
 typedef struct {
     DCMotor *motor;
 
@@ -52,7 +100,36 @@ typedef struct {
 
     float targetSpeedCps;
     float measuredSpeedCps;
+    /*
+     * Propulsion PWM only.
+     * Set to zero whenever active braking is being applied.
+     */
     float outputPWM;
+
+    /*
+     * Active-brake telemetry.
+     *
+     * brakeDemand:
+     *   normalized controller request [0, 1]
+     *
+     * brakePWM:
+     *   physical H-bridge brake PWM [%]
+     */
+    float brakeDemand;
+    float brakePWM;
+
+    WheelSpeedActuatorMode actuatorMode;
+
+    /*
+     * Used for brake hysteresis.
+     *
+     * This is separate from actuatorMode because target == 0
+     * also uses BRAKE, but is not an overspeed-braking state.
+     */
+    bool activeBrakeEngaged;
+
+    bool brakeConfigured;
+    WheelSpeedBrakeConfig brakeConfig;
 
     float currentOffset;
     float currentSlope;
@@ -65,6 +142,10 @@ bool WheelSpeedController_Init(
 	float kp, float ki,
 	float minFeedback, float maxFeedback,
     const WheelSpeedCalibration *calibration);
+
+bool WheelSpeedController_ConfigureBrake(
+        WheelSpeedController *controller,
+        const WheelSpeedBrakeConfig *config);
 
 void WheelSpeedController_SetTarget(
     WheelSpeedController *controller,

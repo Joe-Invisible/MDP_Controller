@@ -30,6 +30,9 @@ bool WheelSpeedController_Init(
     controller->motor = motor;
     controller->calibration = *calibration;
 
+    controller->actuatorMode =
+        WHEEL_SPEED_ACTUATOR_COAST;
+
     /*
      * Use the current encoder count as the initial reference.
      * Otherwise the first Update() could interpret all previous
@@ -53,6 +56,56 @@ bool WheelSpeedController_Init(
 
     /* Ensure the motor starts in a known stopped state. */
     DCMotor_SetPWM(motor, 0.0f);
+
+    return true;
+}
+
+bool WheelSpeedController_ConfigureBrake(
+        WheelSpeedController *controller,
+        const WheelSpeedBrakeConfig *config)
+{
+    if (controller == NULL ||
+        config == NULL ||
+        config->map == NULL)
+    {
+        return false;
+    }
+
+    if (!DynamicBrakeMap_ValidateMap(config->map))
+        return false;
+
+    if (config->releaseOverspeedCps < 0.0f ||
+        config->engageOverspeedCps <=
+            config->releaseOverspeedCps ||
+        config->fullDemandOverspeedCps <=
+            config->engageOverspeedCps)
+    {
+        return false;
+    }
+
+    /*
+     * The brake map used by WheelSpeedController is expected
+     * to represent normalized demand in (0, 1].
+     */
+    float minimumDemand =
+        config->map->demandKnots[0];
+
+    float maximumDemand =
+        config->map->demandKnots[
+            config->map->demandCount - 1U];
+
+    if (minimumDemand <= 0.0f ||
+        maximumDemand > 1.0f)
+    {
+        return false;
+    }
+
+    controller->brakeConfig = *config;
+    controller->brakeConfigured = true;
+
+    controller->brakeDemand = 0.0f;
+    controller->brakePWM = 0.0f;
+    controller->activeBrakeEngaged = false;
 
     return true;
 }
@@ -103,6 +156,103 @@ static float WheelSpeedController_ComputePPI(
 	float errorCps = controller->targetSpeedCps - controller->measuredSpeedCps;
 
 	return PIDController_Update(&controller->pid, errorCps, dt);
+}
+
+
+static float WheelSpeedController_GetOverspeedCps(
+        const WheelSpeedController *controller)
+{
+    float target = controller->targetSpeedCps;
+    float measured = controller->measuredSpeedCps;
+
+    if (target == 0.0f)
+        return 0.0f;
+
+    /*
+     * Active braking is only used when the wheel is already
+     * moving in the commanded direction.
+     *
+     * If it is moving opposite the requested direction,
+     * normal direction-change control remains responsible.
+     */
+    bool movingInTargetDirection =
+        (target > 0.0f && measured > 0.0f) ||
+        (target < 0.0f && measured < 0.0f);
+
+    if (!movingInTargetDirection)
+        return 0.0f;
+
+    float overspeed =
+        fabsf(measured) - fabsf(target);
+
+    if (overspeed <= 0.0f)
+        return 0.0f;
+
+    return overspeed;
+}
+
+static float WheelSpeedController_ComputeBrakeDemand(
+        const WheelSpeedController *controller,
+        float overspeedCps)
+{
+    const WheelSpeedBrakeConfig *config =
+        &controller->brakeConfig;
+
+    const DynamicBrakeMap *map =
+        config->map;
+
+    float minimumDemand =
+        map->demandKnots[0];
+
+    /*
+     * During the hysteresis region, maintain minimum
+     * calibrated braking authority.
+     */
+    if (overspeedCps <= config->engageOverspeedCps)
+        return minimumDemand;
+
+    if (overspeedCps >= config->fullDemandOverspeedCps)
+        return 1.0f;
+
+    float t =
+        (overspeedCps -
+         config->engageOverspeedCps) /
+        (config->fullDemandOverspeedCps -
+         config->engageOverspeedCps);
+
+    return minimumDemand +
+        t * (1.0f - minimumDemand);
+}
+
+/*
+ * Determine from current overspeed whether active braking
+ * should be engaged. Implements a hysteresis.
+ */
+static bool WheelSpeedController_ShouldActivelyBrake(
+        const WheelSpeedController *controller,
+        float overspeedCps)
+{
+    if (!controller->brakeConfigured ||
+        overspeedCps <= 0.0f)
+    {
+        return false;
+    }
+
+    if (controller->activeBrakeEngaged)
+    {
+        /*
+         * Stay engaged until we cross the lower release
+         * threshold.
+         */
+        return overspeedCps >
+            controller->brakeConfig.releaseOverspeedCps;
+    }
+
+    /*
+     * Enter braking only at the higher threshold.
+     */
+    return overspeedCps >=
+        controller->brakeConfig.engageOverspeedCps;
 }
 
 /**
@@ -192,17 +342,99 @@ void WheelSpeedController_Update(
 
 	controller->measuredSpeedCps = (float)delta / dt;
 
-	// Handle zero target, prevents PID accumulated integral
-	// from producing nonzero PWM.
-	if (controller->targetSpeedCps == 0.0f) {
-		PIDController_Reset(&controller->pid);
-		controller->outputPWM = 0.0f;
-		DCMotor_Brake(controller->motor);
-		return;
+	/*
+	 * Zero target retains the existing semantic:
+	 *
+	 * command zero speed -> full dynamic brake.
+	 */
+	if (controller->targetSpeedCps == 0.0f)
+	{
+	    PIDController_Reset(&controller->pid);
+
+	    controller->outputPWM = 0.0f;
+
+	    controller->brakeDemand = 1.0f;
+	    controller->brakePWM = 100.0f;
+
+	    controller->activeBrakeEngaged = false;
+	    controller->actuatorMode =
+	        WHEEL_SPEED_ACTUATOR_BRAKE;
+
+	    DCMotor_Brake(controller->motor);
+	    return;
 	}
 
-	float pffMagnitude = WheelSpeedController_ComputePFF(controller);
-	float ppi = WheelSpeedController_ComputePPI(controller, dt);
+
+	/*
+	 * Determine whether controlled active braking should take
+	 * over from the normal drive controller.
+	 */
+	float overspeedCps =
+	    WheelSpeedController_GetOverspeedCps(controller);
+
+	bool activelyBrake =
+	    WheelSpeedController_ShouldActivelyBrake(
+	        controller,
+	        overspeedCps);
+
+	if (activelyBrake)
+	{
+	    /*
+	     * Reset the propulsion PI when ENTERING active braking.
+	     *
+	     * While braking, PIDController_Update() is deliberately
+	     * not called, so no integral accumulates behind an actuator
+	     * mode that is not actually using its output.
+	     */
+	    if (!controller->activeBrakeEngaged)
+	    {
+	        PIDController_Reset(&controller->pid);
+	    }
+
+	    controller->activeBrakeEngaged = true;
+
+	    controller->brakeDemand =
+	        WheelSpeedController_ComputeBrakeDemand(
+	            controller,
+	            overspeedCps);
+
+	    controller->brakePWM =
+	        DynamicBrakeMap_GetPWM(
+	            controller->brakeConfig.map,
+	            controller->brakeDemand,
+	            controller->measuredSpeedCps);
+
+	    controller->outputPWM = 0.0f;
+
+	    controller->actuatorMode =
+	        WHEEL_SPEED_ACTUATOR_BRAKE;
+
+	    DCMotor_SetBrakePWM(
+	        controller->motor,
+	        controller->brakePWM);
+
+	    return;
+	}
+
+
+	/*
+	 * Brake hysteresis has released.
+	 */
+	controller->activeBrakeEngaged = false;
+	controller->brakeDemand = 0.0f;
+	controller->brakePWM = 0.0f;
+
+
+	/*
+	 * Normal propulsion controller.
+	 */
+	float pffMagnitude =
+	    WheelSpeedController_ComputePFF(controller);
+
+	float ppi =
+	    WheelSpeedController_ComputePPI(
+	        controller,
+	        dt);
 
 	float pff = 0.0f;
 
@@ -255,6 +487,26 @@ void WheelSpeedController_Update(
 	    }
 	}
 
+	/*
+	 * When the wheel is already moving in the target direction
+	 * faster than requested, propulsion may be reduced all the
+	 * way to zero, but it must not reverse polarity.
+	 *
+	 * Opposite-polarity drive would be plugging/reverse torque,
+	 * not controlled dynamic braking.
+	 */
+	if (controller->brakeConfigured &&
+	    overspeedCps > 0.0f)
+	{
+	    if ((controller->targetSpeedCps > 0.0f &&
+	         pwm < 0.0f) ||
+	        (controller->targetSpeedCps < 0.0f &&
+	         pwm > 0.0f))
+	    {
+	        pwm = 0.0f;
+	    }
+	}
+
 	// The controller should also know about output saturation.
 	if (pwm > 100.0f)
 	    pwm = 100.0f;
@@ -262,6 +514,11 @@ void WheelSpeedController_Update(
 	    pwm = -100.0f;
 
 	controller->outputPWM = pwm;
+
+	controller->actuatorMode =
+	    pwm == 0.0f ?
+	        WHEEL_SPEED_ACTUATOR_COAST :
+	        WHEEL_SPEED_ACTUATOR_DRIVE;
 
 	DCMotor_SetPWM(controller->motor, controller->outputPWM);
 }
@@ -276,6 +533,14 @@ void WheelSpeedController_Stop(WheelSpeedController *controller)
     controller->targetSpeedCps = 0.0f;
     controller->measuredSpeedCps = 0.0f;
     controller->outputPWM = 0.0f;
+
+    controller->brakeDemand = 0.0f;
+    controller->brakePWM = 0.0f;
+
+    controller->activeBrakeEngaged = false;
+
+    controller->actuatorMode =
+        WHEEL_SPEED_ACTUATOR_COAST;
 
     PIDController_Reset(&controller->pid);
 
