@@ -17,8 +17,8 @@
 /* Test configuration                                                         */
 /* -------------------------------------------------------------------------- */
 
-#define MOTION_TEST_DISTANCE_MM          (2000.0f)
-#define MOTION_TEST_SPEED_CPS            (4000.0f)
+#define MOTION_TEST_DISTANCE_MM          (1000.0f)
+#define MOTION_TEST_SPEED_CPS            (5000.0f)
 
 #define MOTION_TEST_CONTROL_PERIOD_MS    (10U)
 #define MOTION_TEST_CONTROL_PERIOD_S     (0.010f)
@@ -27,12 +27,11 @@
 #define MOTION_TEST_TIMEOUT_MS           (10000U)
 
 /*
- * 1000 mm @ 2000 CPS takes roughly 4 s.
- *
- * 512 samples at 10 ms/sample gives 5.12 s of full-rate logging, including
- * most/all of the braking phase.
+ * Largest capacity required for current tests 1000:5000:1000 CPS
+ * at distance 1000 mm.
  */
-#define MOTION_TEST_LOG_CAPACITY         (512U)
+#define MOTION_TEST_LOG_CAPACITY			(500U)
+#define MOTION_TEST_LOG_INTERVAL_MS		(20U)
 
 /*
  * Current rear-wheel calibration.
@@ -104,6 +103,7 @@ volatile MotionControllerTestLogSample
 motionControllerTestLog[MOTION_TEST_LOG_CAPACITY];
 
 volatile uint32_t motionControllerTestLogCount = 0U;
+volatile uint32_t lastLogTick = 0U;
 
 volatile const char* experimentInfo = "With deterministic centering; heading Kp=0.8, maxCmdRate=60, Ksync=10";
 
@@ -119,10 +119,7 @@ static void MotionControllerTest_ResetLog(void)
     motionControllerTestRightDistanceMm = 0.0f;
 }
 
-
-static void MotionControllerTest_LogSample(
-    RobotTestFixture *fixture,
-    uint32_t elapsedMs)
+static void MotionControllerTest_UpdateMeasurements(RobotTestFixture *fixture)
 {
     MotionController *motionController = &fixture->motionController;
 
@@ -144,6 +141,16 @@ static void MotionControllerTest_LogSample(
         rightWheel->measuredSpeedCps *
         MOTION_TEST_CONTROL_PERIOD_S *
         MOTION_TEST_MM_PER_COUNT;
+}
+
+static void MotionControllerTest_LogSample(
+    RobotTestFixture *fixture,
+    uint32_t elapsedMs)
+{
+    MotionController *motionController = &fixture->motionController;
+
+    WheelSpeedController *leftWheel = motionController->leftWheel;
+    WheelSpeedController *rightWheel = motionController->rightWheel;
 
     if (motionControllerTestLogCount >= MOTION_TEST_LOG_CAPACITY) {
         return;
@@ -280,7 +287,7 @@ void MotionControllerTestRun(void)
 
     OLED_Printf(0, 0, "Motion Ctrl Test");
     OLED_Printf(0, 1, "Start: SW1");
-    OLED_Printf(0, 2, "1000mm @ 2000CPS");
+    OLED_Printf(0, 2, "%.1f mm @ %.1fCPS", MOTION_TEST_DISTANCE_MM, MOTION_TEST_SPEED_CPS);
     OLED_Printf(0, 3, "Heading Kp = %.2f", fixture.motionController.headingPID.kp);
     OLED_Printf(0, 4, "Sync Kp = %.2f", fixture.motionController.wheelSyncKpCpsPerMm);
 
@@ -325,7 +332,9 @@ void MotionControllerTestRun(void)
 
     uint32_t startTick = HAL_GetTick();
     uint32_t lastControlTick = startTick;
-#if DEBUGLOG == 0
+#if DEBUGLOG == 1
+    lastLogTick = startTick;
+#elif DEBUGLOG == 0
     uint32_t lastDisplayTick = startTick;
 #endif	/* DEBUGLOG, to avoid unused variable warning */
 
@@ -355,7 +364,13 @@ void MotionControllerTestRun(void)
                 &fixture.motionController,
                 MOTION_TEST_CONTROL_PERIOD_S);
 
+            // 10 ms distance accumulation independent of logging period
+            MotionControllerTest_UpdateMeasurements(&fixture);
+        }
+
 #if DEBUGLOG == 1
+		if ((now - lastLogTick) >= MOTION_TEST_LOG_INTERVAL_MS) {
+			lastLogTick += MOTION_TEST_LOG_INTERVAL_MS;
             /*
              * Log immediately after the controller update so all values
              * correspond to the same completed control iteration.
@@ -363,8 +378,8 @@ void MotionControllerTestRun(void)
             MotionControllerTest_LogSample(
                 &fixture,
                 now - startTick);
+		}
 #endif	/* DEBUGLOG */
-        }
 
 #if DEBUGLOG == 0
         /*
