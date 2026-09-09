@@ -1,11 +1,12 @@
 set print elements unlimited
 set print repeats unlimited
 
-set logging file mctrl_dyn_brake_run03.txt
+set logging file mctrl_dyn_brake_5000_run02.txt
 set logging overwrite on
 set logging enabled on
 
-p "Motion Profile testing; Kp=0.8, Ksync=10; STRAIGHT 1000mm @ 2000Cps; acc=500, dec=250.0"
+p "Motion Profile testing; Kp=0.8, Ksync=10; acc=500, dec=250.0"
+p "1000 mm @ 5000 CPS"
 p "DCMotor dynamic braking engaged"
 
 p motionControllerTestLogCount
