@@ -1,8 +1,12 @@
 /*
  * SteeringGeometryCalibrationTest.h
  *
- *  Created on: 2026年9月2日
- *      Author: Joe
+ * Focused steering-geometry calibration for the positive-curvature
+ * operating region used by the constant-radius arc test.
+ *
+ * Created on: 2026年9月2日
+ * Updated on: 2026年9月9日
+ * Author: Joe
  */
 
 #ifndef INC_STEERINGGEOMETRYCALIBRATIONTEST_H_
@@ -10,19 +14,30 @@
 
 #include <stdint.h>
 
-
 typedef struct SteeringGeometryCalibrationResult
 {
     /*
-     * Command passed to Servo_SetSteering().
+     * Raw command passed to SteeringController_SetCommand().
      */
     float steeringCommand;
 
     /*
-     * +1 = ascending sweep
-     * -1 = descending sweep
+     * Raw-command approach direction.
+     *
+     * +1 = increasing command
+     * -1 = decreasing command
+     *
+     * The focused arc calibration deliberately uses -1 for
+     * every run to reproduce the branch used after deterministic
+     * centering when commanding positive curvature.
      */
     int8_t sweepDirection;
+
+    /*
+     * Explicit focused-test indexing.
+     */
+    uint8_t commandIndex;
+    uint8_t repeatIndex;
 
     /*
      * Timing / acquisition diagnostics.
@@ -80,7 +95,10 @@ typedef struct SteeringGeometryCalibrationResult
 } SteeringGeometryCalibrationResult;
 
 
-#define STEERING_GEOMETRY_CAL_RESULT_COUNT 26U
+/*
+ * Five focused commands, three repeats each.
+ */
+#define STEERING_GEOMETRY_CAL_RESULT_COUNT 15U
 
 
 extern volatile SteeringGeometryCalibrationResult

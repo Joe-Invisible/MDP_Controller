@@ -1,15 +1,24 @@
 /*
  * SteeringGeometryCalibrationTest.c
  *
- * Interactive calibration of:
+ * Focused calibration of:
  *
- *     Servo_SetSteering() command
+ *     raw steering command
  *
  * against the effective bicycle-model steering angle.
  *
- * The robot is pushed manually while the rear motors remain
- * neutral. Rear-wheel encoder travel and gyro-Z yaw are
- * recorded simultaneously.
+ * This version is intentionally matched to the startup history used by
+ * the feedforward constant-curvature arc test:
+ *
+ *   1. deterministic SteeringController centering,
+ *   2. 100 ms centre settling,
+ *   3. rate-limited approach to the raw test command at 60 command/s,
+ *   4. 500 ms preposition phase,
+ *   5. 500 ms additional mechanical hold,
+ *   6. manual push while gyro-Z and rear encoders are recorded.
+ *
+ * The focused command set brackets the raw command expected to produce
+ * approximately +0.0145 rad effective steering in the current model.
  */
 
 #include "SteeringGeometryCalibrationTest.h"
@@ -42,13 +51,25 @@
 
 
 /*
- * Allow the steering linkage to settle after changing command.
+ * Steering timing chosen to match the arc-test setup.
  */
-#define CAL_SERVO_SETTLE_MS         700U
+#define CAL_CONTROL_PERIOD_MS       10U
+#define CAL_CONTROL_PERIOD_S        0.010f
+
+#define CAL_CENTRE_SETTLE_MS        100U
+
+#define CAL_PREPOSITION_MS          500U
+#define CAL_PREPOSITION_HOLD_MS     500U
+
+/*
+ * Match SteeringController calibration setting currently used
+ * by the motion controller.
+ */
+#define CAL_COMMAND_RATE_PER_SEC    60.0f
 
 
 /*
- * After the user presses/release SW1 to start a run, give them
+ * After the user presses/releases SW1 to start a run, give them
  * time to remove their hand before acquisition begins.
  */
 #define CAL_HANDS_OFF_DELAY_MS      500U
@@ -59,6 +80,9 @@
  *
  *  - 600 mm rear-axle-centre travel, or
  *  - 20 degrees heading change after at least 100 mm travel.
+ *
+ * The focused commands are weak enough that the 600 mm criterion
+ * should normally terminate the run.
  */
 #define CAL_TARGET_TRAVEL_MM                600.0f
 #define CAL_TARGET_YAW_DEG                  20.0f
@@ -78,39 +102,31 @@
 
 
 /*
- * Commands concentrated around centre, where the heading
- * controller normally operates and where linkage hysteresis
- * matters most.
+ * Focused raw-command region.
+ *
+ * Current positive-curvature arc operation is near the decreasing-
+ * command branch close to -12.  The set below brackets the region
+ * expected to correspond roughly to +0.010 ... +0.016 rad.
  */
 static const float calCommands[] =
 {
-    -12.0f,
-    -10.0f,
-     -8.0f,
-     -6.0f,
-     -4.0f,
-     -2.0f,
-      0.0f,
-      2.0f,
-      4.0f,
-      6.0f,
-      8.0f,
-     10.0f,
-     12.0f,
+    -12.00f,
+    -11.75f,
+    -11.50f,
+    -11.25f,
+    -11.00f,
 };
-
 
 #define CAL_COMMAND_COUNT \
     ((uint32_t)(sizeof(calCommands) / sizeof(calCommands[0])))
 
+#define CAL_REPEAT_COUNT            3U
 
 /*
- * Approach the first measurement point from outside the
- * measured range so that the two sweeps exercise opposite
- * linkage histories.
+ * After deterministic centering, positive curvature is reached by
+ * moving toward lower raw commands.
  */
-#define CAL_ASCENDING_PRECONDITION      (-15.0f)
-#define CAL_DESCENDING_PRECONDITION     ( 15.0f)
+#define CAL_APPROACH_DIRECTION      (-1)
 
 
 /* ------------------------------------------------------------
@@ -129,7 +145,8 @@ volatile uint32_t
  * Display
  * ------------------------------------------------------------ */
 
-static void SteeringCal_ShowMessage(const char *message)
+static void SteeringCal_ShowMessage(
+    const char *message)
 {
     OLED_Clear();
 
@@ -150,28 +167,29 @@ static void SteeringCal_ShowMessage(const char *message)
 
 static void SteeringCal_ShowReady(
     float command,
-    int8_t sweepDirection,
-    uint32_t sweepIndex)
+    uint32_t commandIndex,
+    uint32_t repeatIndex)
 {
     OLED_Clear();
 
     OLED_Printf(
         0,
         0,
-        "STEER GEO CAL");
+        "ARC STEER CAL");
 
     OLED_Printf(
         0,
         1,
-        "%s %lu/%lu",
-        (sweepDirection > 0) ? "UP" : "DOWN",
-        (unsigned long)(sweepIndex + 1U),
-        (unsigned long)CAL_COMMAND_COUNT);
+        "CMD %lu/%lu R%lu/%lu",
+        (unsigned long)(commandIndex + 1U),
+        (unsigned long)CAL_COMMAND_COUNT,
+        (unsigned long)(repeatIndex + 1U),
+        (unsigned long)CAL_REPEAT_COUNT);
 
     OLED_Printf(
         0,
         2,
-        "STEER %+.1f",
+        "STEER %+.2f",
         command);
 
     OLED_Printf(
@@ -195,16 +213,16 @@ static void SteeringCal_ShowReady(
 
 static void SteeringCal_ShowMeasuring(
     float command,
-    int8_t sweepDirection)
+    uint32_t repeatIndex)
 {
     OLED_Clear();
 
     OLED_Printf(
         0,
         0,
-        "%s U%+.1f",
-        (sweepDirection > 0) ? "UP" : "DN",
-        command);
+        "U%+.2f R%lu",
+        command,
+        (unsigned long)(repeatIndex + 1U));
 
     OLED_Printf(
         0,
@@ -262,9 +280,9 @@ static void SteeringCal_ShowResult(
     OLED_Printf(
         0,
         1,
-        "%s U%+.1f",
-        (result->sweepDirection > 0) ? "UP" : "DN",
-        result->steeringCommand);
+        "U%+.2f R%u",
+        result->steeringCommand,
+        (unsigned int)(result->repeatIndex + 1U));
 
     OLED_Printf(
         0,
@@ -281,18 +299,111 @@ static void SteeringCal_ShowResult(
     OLED_Printf(
         0,
         4,
-        "dG %+.2f deg",
-        result->effectiveAngleGyroRad *
-            RAD_TO_DEG_F);
+        "dG %+.3f",
+        result->effectiveAngleGyroRad);
 
     OLED_Printf(
         0,
         5,
-        "dE %+.2f deg",
-        result->effectiveAngleEncoderRad *
-            RAD_TO_DEG_F);
+        "dE %+.3f",
+        result->effectiveAngleEncoderRad);
 
     OLED_Refresh_Gram();
+}
+
+
+/* ------------------------------------------------------------
+ * Steering preparation
+ * ------------------------------------------------------------ */
+
+static void SteeringCal_DeterministicCentre(
+    RobotTestFixture *fixture)
+{
+    SteeringController_StartCentre(
+        &fixture->steeringController);
+
+    while (!SteeringController_UpdateCentre(
+        &fixture->steeringController,
+        CAL_CONTROL_PERIOD_S))
+    {
+        HAL_Delay(
+            CAL_CONTROL_PERIOD_MS);
+    }
+
+    /*
+     * Same explicit post-centering mechanical settle used by
+     * the arc test.
+     */
+    HAL_Delay(
+        CAL_CENTRE_SETTLE_MS);
+}
+
+
+static void SteeringCal_PrepositionRawCommand(
+    RobotTestFixture *fixture,
+    float targetCommand)
+{
+    float currentCommand =
+        SteeringController_GetCommand(
+            &fixture->steeringController);
+
+    const float maxDeltaCommand =
+        CAL_COMMAND_RATE_PER_SEC *
+        CAL_CONTROL_PERIOD_S;
+
+    const uint32_t updateCount =
+        CAL_PREPOSITION_MS /
+        CAL_CONTROL_PERIOD_MS;
+
+    /*
+     * Run for a fixed 500 ms, exactly like the arc-test
+     * preposition phase.  If the target is reached early, the
+     * remaining updates simply continue commanding the same raw
+     * position.
+     */
+    for (uint32_t i = 0U;
+         i < updateCount;
+         i++)
+    {
+        float deltaCommand =
+            targetCommand -
+            currentCommand;
+
+        if (deltaCommand > maxDeltaCommand)
+        {
+            deltaCommand =
+                maxDeltaCommand;
+        }
+        else if (deltaCommand < -maxDeltaCommand)
+        {
+            deltaCommand =
+                -maxDeltaCommand;
+        }
+
+        currentCommand +=
+            deltaCommand;
+
+        SteeringController_SetCommand(
+            &fixture->steeringController,
+            currentCommand);
+
+        HAL_Delay(
+            CAL_CONTROL_PERIOD_MS);
+    }
+
+    /*
+     * Guard against floating-point accumulation leaving us
+     * microscopically short of the requested command.
+     */
+    SteeringController_SetCommand(
+        &fixture->steeringController,
+        targetCommand);
+
+    /*
+     * Additional mechanical hold used by the modified arc test.
+     */
+    HAL_Delay(
+        CAL_PREPOSITION_HOLD_MS);
 }
 
 
@@ -303,13 +414,24 @@ static void SteeringCal_ShowResult(
 static void SteeringCal_Measure(
     RobotTestFixture *fixture,
     float command,
-    int8_t sweepDirection,
+    uint32_t commandIndex,
+    uint32_t repeatIndex,
     volatile SteeringGeometryCalibrationResult *destination)
 {
     SteeringGeometryCalibrationResult result = {0};
 
-    result.steeringCommand = command;
-    result.sweepDirection = sweepDirection;
+    result.steeringCommand =
+        command;
+
+    result.sweepDirection =
+        CAL_APPROACH_DIRECTION;
+
+    result.commandIndex =
+        (uint8_t)commandIndex;
+
+    result.repeatIndex =
+        (uint8_t)repeatIndex;
+
 
     /*
      * Rear motor PWM outputs remain enabled so that the encoder
@@ -321,9 +443,11 @@ static void SteeringCal_Measure(
     DCMotor_Neutral(
         &fixture->rightRearWheel);
 
+
     SteeringCal_ShowMeasuring(
         command,
-        sweepDirection);
+        repeatIndex);
+
 
     /*
      * User has just released SW1. Give them time to remove
@@ -331,6 +455,7 @@ static void SteeringCal_Measure(
      */
     HAL_Delay(
         CAL_HANDS_OFF_DELAY_MS);
+
 
     /*
      * Capture starting encoder positions only after the
@@ -344,14 +469,17 @@ static void SteeringCal_Measure(
         DCMotor_GetEncoderCount(
             &fixture->rightRearWheel);
 
+
     const float mmPerCount =
         (PI_F *
          kinematics.rearWheelDiameterMm) /
         (float)kinematics.rearEncoderCountsPerRev;
 
+
     float leftTravelMm = 0.0f;
     float rightTravelMm = 0.0f;
     float yawDeg = 0.0f;
+
 
     ICM20948Measurement measurement = {0};
 
@@ -369,6 +497,7 @@ static void SteeringCal_Measure(
         return;
     }
 
+
     uint32_t startTick =
         HAL_GetTick();
 
@@ -378,33 +507,33 @@ static void SteeringCal_Measure(
     result.startTickMs =
         startTick;
 
+
     bool finished = false;
 
     while (!finished)
     {
         /*
-         * SW1_ReadState() deliberately remains the raw,
-         * non-blocking read here because acquisition must
-         * continue while checking for an abort request.
+         * SW1_ReadState() deliberately remains raw/non-blocking
+         * because acquisition must continue while checking abort.
          */
-        if (SW1_ReadState() == SW1_Enabled)
+        if (SW1_ReadState() ==
+            SW1_Enabled)
         {
             result.aborted = 1U;
 
-            /*
-             * Consume/debounce the release centrally in the
-             * user-button driver.
-             */
             SW1_WaitForRelease();
 
             break;
         }
 
+
         HAL_Delay(
             CAL_SAMPLE_PERIOD_MS);
 
+
         uint32_t now =
             HAL_GetTick();
+
 
         float dt =
             (float)(
@@ -415,6 +544,7 @@ static void SteeringCal_Measure(
         previousSampleTick =
             now;
 
+
         if (!ICM20948_ReadMeasurement(
                 &fixture->imu,
                 &measurement))
@@ -423,6 +553,7 @@ static void SteeringCal_Measure(
             break;
         }
 
+
         /*
          * Gyro-Z is already bias corrected by the ICM20948
          * driver.
@@ -430,6 +561,7 @@ static void SteeringCal_Measure(
         yawDeg +=
             measurement.gyroDps.z *
             dt;
+
 
         /*
          * Wrap-safe encoder subtraction, consistent with the
@@ -443,6 +575,7 @@ static void SteeringCal_Measure(
             DCMotor_GetEncoderCount(
                 &fixture->rightRearWheel);
 
+
         int16_t deltaLeft =
             (int16_t)(
                 (uint16_t)currentLeft -
@@ -453,11 +586,13 @@ static void SteeringCal_Measure(
                 (uint16_t)currentRight -
                 (uint16_t)previousRight);
 
+
         previousLeft =
             currentLeft;
 
         previousRight =
             currentRight;
+
 
         leftTravelMm +=
             (float)deltaLeft *
@@ -467,26 +602,23 @@ static void SteeringCal_Measure(
             (float)deltaRight *
             mmPerCount;
 
+
         float centreTravelMm =
             0.5f *
             (leftTravelMm +
              rightTravelMm);
 
+
         result.sampleCount++;
 
-        /*
-         * Weak steering runs terminate by distance.
-         */
+
         if (fabsf(centreTravelMm) >=
             CAL_TARGET_TRAVEL_MM)
         {
             finished = true;
         }
 
-        /*
-         * Strong steering runs can terminate earlier once
-         * sufficient angular displacement has accumulated.
-         */
+
         if ((fabsf(centreTravelMm) >=
              CAL_MIN_TRAVEL_FOR_YAW_STOP_MM) &&
             (fabsf(yawDeg) >=
@@ -494,6 +626,7 @@ static void SteeringCal_Measure(
         {
             finished = true;
         }
+
 
         if ((now - startTick) >=
             CAL_RUN_TIMEOUT_MS)
@@ -503,12 +636,15 @@ static void SteeringCal_Measure(
         }
     }
 
+
     uint32_t finishTick =
         HAL_GetTick();
+
 
     result.durationMs =
         finishTick -
         startTick;
+
 
     result.leftTravelMm =
         leftTravelMm;
@@ -521,12 +657,15 @@ static void SteeringCal_Measure(
         (leftTravelMm +
          rightTravelMm);
 
+
     result.distanceDifferenceMm =
         rightTravelMm -
         leftTravelMm;
 
+
     result.yawGyroDeg =
         yawDeg;
+
 
     /*
      * Rear-wheel kinematics:
@@ -537,20 +676,19 @@ static void SteeringCal_Measure(
         result.distanceDifferenceMm /
         kinematics.rearTrackWidthMm;
 
+
     result.yawEncoderDeg =
         yawEncoderRad *
         RAD_TO_DEG_F;
 
-    /*
-     * A useful curvature estimate requires enough travelled
-     * distance to avoid dividing by a very small number.
-     */
+
     if (fabsf(result.centreTravelMm) >=
         CAL_MIN_VALID_TRAVEL_MM)
     {
         float yawGyroRad =
             result.yawGyroDeg *
             DEG_TO_RAD_F;
+
 
         /*
          *     kappa = deltaPsi / s
@@ -562,6 +700,7 @@ static void SteeringCal_Measure(
         result.curvatureEncoderPerMm =
             yawEncoderRad /
             result.centreTravelMm;
+
 
         /*
          * Bicycle model:
@@ -582,6 +721,7 @@ static void SteeringCal_Measure(
                 kinematics.wheelbaseMm *
                 result.curvatureEncoderPerMm);
 
+
         if (!result.aborted &&
             !result.imuReadFailed)
         {
@@ -589,120 +729,98 @@ static void SteeringCal_Measure(
         }
     }
 
+
     *destination =
         result;
 }
 
 
 /* ------------------------------------------------------------
- * Sweep
+ * Focused repeated calibration
  * ------------------------------------------------------------ */
 
-static void SteeringCal_RunSweep(
-    RobotTestFixture *fixture,
-    int8_t sweepDirection)
+static void SteeringCal_RunFocusedTrials(
+    RobotTestFixture *fixture)
 {
-    float preconditionCommand =
-        (sweepDirection > 0)
-            ? CAL_ASCENDING_PRECONDITION
-            : CAL_DESCENDING_PRECONDITION;
-
-    /*
-     * Establish the linkage approach direction.
-     */
-    Servo_SetSteering(
-        &fixture->steeringServo,
-        preconditionCommand);
-
-    OLED_Clear();
-
-    OLED_Printf(
-        0,
-        0,
-        "%s SWEEP",
-        (sweepDirection > 0)
-            ? "UP"
-            : "DOWN");
-
-    OLED_Printf(
-        0,
-        2,
-        "PRECOND %+.0f",
-        preconditionCommand);
-
-    OLED_Refresh_Gram();
-
-    HAL_Delay(
-        CAL_SERVO_SETTLE_MS);
-
-    for (uint32_t i = 0U;
-         i < CAL_COMMAND_COUNT;
-         i++)
+    for (uint32_t commandIndex = 0U;
+         commandIndex < CAL_COMMAND_COUNT;
+         commandIndex++)
     {
-        uint32_t commandIndex =
-            (sweepDirection > 0)
-                ? i
-                : (CAL_COMMAND_COUNT -
-                   1U -
-                   i);
+        const float command =
+            calCommands[commandIndex];
 
-        float command =
-            calCommands[
-                commandIndex];
 
-        /*
-         * Move directly from the preceding sweep point.
-         *
-         * Do not centre between measurements: preserving the
-         * approach direction is the reason for running both
-         * sweeps.
-         */
-        Servo_SetSteering(
-            &fixture->steeringServo,
-            command);
-
-        HAL_Delay(
-            CAL_SERVO_SETTLE_MS);
-
-        SteeringCal_ShowReady(
-            command,
-            sweepDirection,
-            i);
-
-        /*
-         * Complete debounced action handled by userbutton.
-         */
-        SW1_WaitForPressAndRelease();
-
-        uint32_t resultIndex =
-            g_steeringGeometryCalibrationResultCount;
-
-        if (resultIndex >=
-            STEERING_GEOMETRY_CAL_RESULT_COUNT)
+        for (uint32_t repeatIndex = 0U;
+             repeatIndex < CAL_REPEAT_COUNT;
+             repeatIndex++)
         {
-            return;
+            uint32_t resultIndex =
+                g_steeringGeometryCalibrationResultCount;
+
+            if (resultIndex >=
+                STEERING_GEOMETRY_CAL_RESULT_COUNT)
+            {
+                return;
+            }
+
+
+            /*
+             * Recreate the same mechanical history before EVERY
+             * measurement instead of carrying history from the
+             * previous calibration point.
+             */
+            SteeringCal_ShowMessage(
+                "CENTERING");
+
+            SteeringCal_DeterministicCentre(
+                fixture);
+
+
+            SteeringCal_ShowMessage(
+                "PREPOSITION");
+
+            SteeringCal_PrepositionRawCommand(
+                fixture,
+                command);
+
+
+            SteeringCal_ShowReady(
+                command,
+                commandIndex,
+                repeatIndex);
+
+
+            SW1_WaitForPressAndRelease();
+
+
+            SteeringCal_Measure(
+                fixture,
+                command,
+                commandIndex,
+                repeatIndex,
+                &g_steeringGeometryCalibrationResults[
+                    resultIndex]);
+
+
+            g_steeringGeometryCalibrationResultCount++;
+
+
+            SteeringGeometryCalibrationResult displayResult =
+                g_steeringGeometryCalibrationResults[
+                    resultIndex];
+
+
+            SteeringCal_ShowResult(
+                &displayResult);
+
+
+            /*
+             * User repositions the robot before the next trial.
+             * The next trial will then deterministically centre
+             * the steering again before applying its command.
+             */
+            SW1_WaitForPressAndRelease();
         }
-
-        SteeringCal_Measure(
-            fixture,
-            command,
-            sweepDirection,
-            &g_steeringGeometryCalibrationResults[
-                resultIndex]);
-
-        g_steeringGeometryCalibrationResultCount++;
-
-        SteeringGeometryCalibrationResult displayResult =
-            g_steeringGeometryCalibrationResults[
-                resultIndex];
-
-        SteeringCal_ShowResult(
-            &displayResult);
-
-        /*
-         * Reposition the robot before proceeding.
-         */
-        SW1_WaitForPressAndRelease();
     }
 }
 
@@ -715,8 +833,10 @@ void SteeringGeometryCalibrationTestRun(void)
 {
     RobotTestFixture fixture = {0};
 
+
     g_steeringGeometryCalibrationResultCount =
         0U;
+
 
     for (uint32_t i = 0U;
          i < STEERING_GEOMETRY_CAL_RESULT_COUNT;
@@ -725,6 +845,7 @@ void SteeringGeometryCalibrationTestRun(void)
         g_steeringGeometryCalibrationResults[i] =
             (SteeringGeometryCalibrationResult){0};
     }
+
 
     /*
      * ICM20948_Init() estimates gyro bias during
@@ -736,6 +857,7 @@ void SteeringGeometryCalibrationTestRun(void)
     HAL_Delay(
         1000U);
 
+
     if (!RobotTestFixture_InitIMU(
             &fixture))
     {
@@ -745,8 +867,9 @@ void SteeringGeometryCalibrationTestRun(void)
         return;
     }
 
+
     /*
-     * This initializes and starts both rear encoder timers.
+     * Initialize/start rear encoder timers.
      */
     if (!RobotTestFixture_InitRearWheels(
             &fixture))
@@ -757,15 +880,13 @@ void SteeringGeometryCalibrationTestRun(void)
         return;
     }
 
-    /*
-     * Leave the motors unpowered but keep the driver/encoder
-     * peripherals enabled.
-     */
+
     DCMotor_Neutral(
         &fixture.leftRearWheel);
 
     DCMotor_Neutral(
         &fixture.rightRearWheel);
+
 
     if (!RobotTestFixture_InitFrontWheels(
             &fixture))
@@ -782,54 +903,62 @@ void SteeringGeometryCalibrationTestRun(void)
         return;
     }
 
-    Servo_Centre(&fixture.steeringServo);
-    HAL_Delay(CAL_SERVO_SETTLE_MS);
 
     /*
-     * Ascending:
-     *
-     *     -40 precondition
-     *     -30 -> ... -> +30
-     *
-     * Descending:
-     *
-     *     +40 precondition
-     *     +30 -> ... -> -30
+     * Unlike the old geometry sweep, this focused experiment
+     * initializes SteeringController so its deterministic centering
+     * sequence is exactly the one used by MotionControllerArcTest.
      */
-    SteeringCal_RunSweep(
-        &fixture,
-        +1);
+    if (!RobotTestFixture_InitSteeringController(
+            &fixture))
+    {
+        SteeringCal_ShowMessage(
+            "STEER CTRL FAIL");
 
-    Servo_Centre(&fixture.steeringServo);
-    HAL_Delay(CAL_SERVO_SETTLE_MS);
+        Servo_Disable(
+            &fixture.steeringServo);
 
-    SteeringCal_RunSweep(
-        &fixture,
-        -1);
+        DCMotor_Disable(
+            &fixture.leftRearWheel);
+
+        DCMotor_Disable(
+            &fixture.rightRearWheel);
+
+        return;
+    }
+
+
+    SteeringCal_RunFocusedTrials(
+        &fixture);
+
 
     /*
      * Safe shutdown.
      */
-    Servo_Centre(
-        &fixture.steeringServo);
+    SteeringController_Centre(
+        &fixture.steeringController);
 
     HAL_Delay(
         300U);
 
+
     Servo_Disable(
         &fixture.steeringServo);
 
+
     DCMotor_Neutral(
         &fixture.leftRearWheel);
 
     DCMotor_Neutral(
         &fixture.rightRearWheel);
 
+
     DCMotor_Disable(
         &fixture.leftRearWheel);
 
     DCMotor_Disable(
         &fixture.rightRearWheel);
+
 
     OLED_Clear();
 
