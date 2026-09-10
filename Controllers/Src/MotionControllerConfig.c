@@ -9,7 +9,7 @@
 
 #define MG512P30_QUAD_RESOLUTION    1560U
 
-#define WHEELBASE_MM                150.0f
+#define WHEELBASE_MM                145.0f
 
 #define WHEEL_WIDTH_MM              20.0f
 #define ROBOT_REAR_WIDTH_MM         185.0f

@@ -34,9 +34,13 @@ typedef enum
 	 */
 	MOTIONCONTROLLER_IDLE = 0,
 	/**
-	 * Executing straight-motion command
+	 * Executing straight motion command
 	 */
 	MOTIONCONTROLLER_STRAIGHT,
+	/**
+	 * Executing curved motion command
+	 */
+	MOTIONCONTROLLER_ARC,
 	/**
 	 * Executing brake command
 	 * MotionController will actively command
@@ -102,6 +106,20 @@ typedef struct
 
 	float targetDistanceMm;
 
+	/*
+	 * Geometric path command.
+	 *
+	 * Straight:
+	 *     curvature = 0
+	 *     steering  = 0
+	 *
+	 * Arc:
+	 *     curvature = 1 / radius
+	 *     steering  = atan(L * curvature)
+	 */
+	float targetCurvaturePerMm;
+	float targetSteeringAngleRad;
+
 	MotionProfile motionProfile;
 
 	/*
@@ -145,9 +163,15 @@ bool MotionController_Init(
 	float motionDecelerationMmps2);
 
 /**
- * Straight line motion command
- * distanceMm - signed displacement relative to current position
- * speedCPS - unsigned magnitude of speed at which to complete this motion
+ * Straight line motion.
+ *
+ * distanceMm:
+ * 		Signed rear-axle-centre path length relative to current
+ * 		position.
+ * speedCPS:
+ * 		Unsigned cruising speed. Note that this speed may
+ * 		not be attained, pertaining to the configured motion profile
+ * 		and specified distance.
  */
 bool MotionController_MoveStraight(
 	MotionController *controller,
@@ -155,7 +179,28 @@ bool MotionController_MoveStraight(
 	float speedCps);
 
 /**
- * Brake command. Unfinished motion will be
+ * Constant-curvature arc motion.
+ *
+ * distanceMm:
+ *     Signed rear-axle-centre path length.
+ *     Positive = forward, negative = reverse.
+ *
+ * radiusMm:
+ *     Signed radius of curvature.
+ *     Positive radius produces positive effective
+ *     steering angle.
+ *
+ * speedCps:
+ *     Unsigned centre-speed magnitude.
+ */
+bool MotionController_MoveArc(
+    MotionController *controller,
+    float distanceMm,
+    float radiusMm,
+    float speedCps);
+
+/**
+ * Full brake. Unfinished motion will be
  * aborted.
  */
 bool MotionController_Brake(

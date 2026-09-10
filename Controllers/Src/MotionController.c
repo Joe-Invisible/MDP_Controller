@@ -97,8 +97,9 @@ static void MotionController_UpdateOdometry(
             controller->steering);
 
     float curvaturePerMm =
-        tanf(steeringAngleRad) /
-        controller->kinematics->wheelbaseMm;
+        RobotKinematics_GetCurvaturePerMm(
+        		controller->kinematics,
+			steeringAngleRad);
 
     /*
      * Bicycle-model rear-wheel relationship:
@@ -296,11 +297,15 @@ bool MotionController_Init(
     return true;
 }
 
-bool MotionController_MoveStraight(
-    MotionController *controller,
-    float distanceMm,
-    float speedCps)
-{
+/**
+ * Common helper for the primitives. Motions
+ * share majority of initial state configurations,
+ * including the motion profile.
+ */
+static bool MotionController_BeginMotion(
+	MotionController *controller,
+	float distanceMm,
+	float speedCps) {
     if (controller == NULL)
         return false;
 
@@ -325,6 +330,13 @@ bool MotionController_MoveStraight(
      */
     controller->maxSpeedCps = speedCps;
     controller->targetSpeedCps = 0.0f;
+
+    /*
+     * Enforcing uniform state representation for curved and
+     * straight motions
+     */
+    controller->targetCurvaturePerMm = 0.0f;
+    controller->targetSteeringAngleRad = 0.0f;
 
     float mmPerCount =
         MotionController_GetMmPerCount(controller);
@@ -360,8 +372,6 @@ bool MotionController_MoveStraight(
 
     MotionController_ResetOdometry(controller);
 
-    SteeringController_Centre(controller->steering);
-
     WheelSpeedController_SetTarget(
         controller->leftWheel,
         controller->targetSpeedCps);
@@ -370,7 +380,98 @@ bool MotionController_MoveStraight(
         controller->rightWheel,
         controller->targetSpeedCps);
 
+    return true;
+}
+
+bool MotionController_MoveStraight(
+    MotionController *controller,
+    float distanceMm,
+    float speedCps)
+{
+    if (controller == NULL)
+        return false;
+
+    if (!MotionController_BeginMotion(
+    		controller,
+		distanceMm,
+		speedCps))
+    {
+    		return false;
+    }
+
+
+    SteeringController_Centre(controller->steering);
+
     controller->mode = MOTIONCONTROLLER_STRAIGHT;
+
+    return true;
+}
+
+bool MotionController_MoveArc(
+    MotionController *controller,
+    float distanceMm,
+    float radiusMm,
+    float speedCps)
+{
+    if (controller == NULL)
+    {
+        return false;
+    }
+
+    if (radiusMm == 0.0f)
+    {
+        return false;
+    }
+
+    float curvaturePerMm =
+        1.0f / radiusMm;
+
+    float steeringAngleRad =
+        RobotKinematics_GetSteeringAngleRad(
+            controller->kinematics,
+            curvaturePerMm);
+
+    /*
+     * Reject paths outside the experimentally calibrated
+     * effective steering range rather than allowing
+     * SteeringController to silently clamp them.
+     */
+    float minSteeringAngleRad =
+        SteeringController_GetMinEffectiveAngleRad(
+            controller->steering);
+
+    float maxSteeringAngleRad =
+        SteeringController_GetMaxEffectiveAngleRad(
+            controller->steering);
+
+    if (steeringAngleRad < minSteeringAngleRad ||
+        steeringAngleRad > maxSteeringAngleRad)
+    {
+        return false;
+    }
+
+    /*
+     * Use the existing profiled-motion setup.
+     */
+    if (!MotionController_BeginMotion(
+        controller,
+        distanceMm,
+        speedCps))
+    {
+        return false;
+    }
+
+    /*
+     * Replace the straight-path geometry with the
+     * requested constant-curvature geometry.
+     */
+    controller->targetCurvaturePerMm =
+        curvaturePerMm;
+
+    controller->targetSteeringAngleRad =
+        steeringAngleRad;
+
+    controller->mode = MOTIONCONTROLLER_ARC;
 
     return true;
 }
@@ -423,40 +524,24 @@ static float MotionController_Clamp(
 static void MotionController_UpdateWheelSynchronisation(
     MotionController *controller)
 {
-    /*
-     * --------------------------------------------------------
-     * KINEMATIC FEEDFORWARD
-     * --------------------------------------------------------
-     *
-     * Bicycle model:
-     *
-     *     kappa = tan(delta) / L
-     *
-     * Rear-wheel path-speed relationship:
-     *
-     *     vL = v * (1 - W*kappa/2)
-     *     vR = v * (1 + W*kappa/2)
-     */
     float steeringAngleRad =
         SteeringController_GetEffectiveAngleRad(
             controller->steering);
 
     float curvaturePerMm =
-        tanf(steeringAngleRad) /
-        controller->kinematics->wheelbaseMm;
+        RobotKinematics_GetCurvaturePerMm(
+            controller->kinematics,
+            steeringAngleRad);
 
-    float halfTrackCurvature =
-        0.5f *
-        controller->kinematics->rearTrackWidthMm *
-        curvaturePerMm;
+    float leftBaseTargetCps;
+    float rightBaseTargetCps;
 
-    float leftBaseTargetCps =
-        controller->targetSpeedCps *
-        (1.0f - halfTrackCurvature);
-
-    float rightBaseTargetCps =
-        controller->targetSpeedCps *
-        (1.0f + halfTrackCurvature);
+    RobotKinematics_GetRearWheelSpeedTargets(
+        controller->kinematics,
+        controller->targetSpeedCps,
+        curvaturePerMm,
+        &leftBaseTargetCps,
+        &rightBaseTargetCps);
 
     /*
      * --------------------------------------------------------
@@ -639,37 +724,99 @@ bool MotionController_Update(
         return false;
     }
 
-    /*
-     * Desired relative heading for straight travel is zero.
-     *
-     * Keep the heading controller internally in radians:
-     *
-     *     error [rad]
-     *         -> PID
-     *         -> target effective steering angle [rad]
-     */
-    float headingErrorRad =
-        -controller->yawDeg *
-        (MOTION_PI / 180.0f);
+    float targetSteeringAngleRad;
 
-    float steeringAngleCorrectionRad =
-        PIDController_Update(
-            &controller->headingPID,
-            headingErrorRad,
-            dt);
+    if (controller->mode == MOTIONCONTROLLER_STRAIGHT)
+    {
+        /*
+         * Straight-line heading feedback.
+         * Desired relative yaw = 0.
+         */
+        float headingErrorRad =
+            -controller->yawDeg *
+            (MOTION_PI / 180.0f);
 
-    /*
-     * For reverse travel, the same physical steering angle
-     * generates the opposite yaw direction.
-     */
-    float targetSteeringAngleRad =
-        steeringAngleCorrectionRad *
-        (float)controller->motionDirection;
+        float steeringAngleCorrectionRad =
+            PIDController_Update(
+                &controller->headingPID,
+                headingErrorRad,
+                dt);
+
+        /*
+         * Reverse motion reverses the yaw response
+         * produced by a given physical steering angle.
+         */
+        targetSteeringAngleRad =
+            steeringAngleCorrectionRad *
+            (float)controller->motionDirection;
+    }
+    else if (controller->mode == MOTIONCONTROLLER_ARC)
+    {
+        /*
+         * Desired relative heading for a constant-curvature path:
+         *
+         *     psi_d = kappa * s
+         *
+         * travelledDistanceMm is signed, so reverse motion
+         * naturally produces the corresponding opposite yaw.
+         */
+        float desiredYawRad =
+            controller->targetCurvaturePerMm *
+            controller->travelledDistanceMm;
+
+        float measuredYawRad =
+            controller->yawDeg *
+            (MOTION_PI / 180.0f);
+
+        float headingErrorRad =
+            desiredYawRad -
+            measuredYawRad;
+
+        /*
+         * Heading feedback is a correction around the
+         * geometric feedforward steering angle.
+         */
+        float steeringAngleCorrectionRad =
+            PIDController_Update(
+                &controller->headingPID,
+                headingErrorRad,
+                dt);
+
+        /*
+         * As for straight motion, reversing the vehicle reverses
+         * the yaw response of a given steering correction.
+         */
+        steeringAngleCorrectionRad *=
+            (float)controller->motionDirection;
+
+        targetSteeringAngleRad =
+            controller->targetSteeringAngleRad +
+            steeringAngleCorrectionRad;
+
+        /*
+         * The PID output itself is limited, but feedforward +
+         * feedback can still exceed the available effective
+         * steering envelope.
+         */
+        targetSteeringAngleRad =
+            MotionController_Clamp(
+                targetSteeringAngleRad,
+                SteeringController_GetMinEffectiveAngleRad(
+                    controller->steering),
+                SteeringController_GetMaxEffectiveAngleRad(
+                    controller->steering));
+    }
+    else
+    {
+        MotionController_Stop(controller);
+        return false;
+    }
 
     SteeringController_SetEffectiveAngleRad(
         controller->steering,
         targetSteeringAngleRad,
-		dt);
+        dt);
+
     /*
      * --------------------------------------------------------
      * REAR-WHEEL SYNCHRONISATION
