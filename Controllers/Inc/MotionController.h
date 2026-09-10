@@ -94,6 +94,17 @@ typedef struct
 	float wheelSyncErrorMm;
 	float wheelSyncCorrectionCps;
 
+
+	/*
+	 * Diagnostics: most recently computed geometric wheel reference.
+	 *
+	 * These fields are observational only and must not be used
+	 * as inputs to the control law.
+	 */
+	float wheelReferenceCurvaturePerMm;
+	float leftBaseTargetCps;
+	float rightBaseTargetCps;
+
 	MotionControllerMode mode;
 
 	/*

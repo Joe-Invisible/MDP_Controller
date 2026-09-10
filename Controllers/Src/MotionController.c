@@ -391,6 +391,10 @@ static bool MotionController_BeginMotion(
     controller->wheelSyncErrorMm = 0.0f;
     controller->wheelSyncCorrectionCps = 0.0f;
 
+    controller->wheelReferenceCurvaturePerMm = 0.0f;
+    controller->leftBaseTargetCps = 0.0f;
+    controller->rightBaseTargetCps = 0.0f;
+
     PIDController_Reset(&controller->headingPID);
 
     MotionController_ResetOdometry(controller);
@@ -551,6 +555,9 @@ static void MotionController_UpdateWheelSynchronisation(
 	    MotionController_GetWheelReferenceCurvaturePerMm(
 	        controller);
 
+	controller->wheelReferenceCurvaturePerMm =
+	    curvaturePerMm;
+
     float leftBaseTargetCps;
     float rightBaseTargetCps;
 
@@ -560,6 +567,12 @@ static void MotionController_UpdateWheelSynchronisation(
         curvaturePerMm,
         &leftBaseTargetCps,
         &rightBaseTargetCps);
+
+    controller->leftBaseTargetCps =
+        leftBaseTargetCps;
+
+    controller->rightBaseTargetCps =
+        rightBaseTargetCps;
 
     /*
      * --------------------------------------------------------
