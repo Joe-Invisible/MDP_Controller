@@ -61,8 +61,20 @@ Adding a whole new **include directory** additionally requires
 Project Properties → C/C++ Build → Settings → Include paths in CubeIDE,
 *and* a matching entry in `gen-compile-commands.sh`.
 
-Existing source roots (`Apps/`, `PeripheralDrivers/`, `Tests/`) and their `Inc/`
-directories are already registered in both places.
+These roots are registered in both places: `Apps/`, `Controllers/`,
+`PeripheralDrivers/`, `Tests/` with their `Inc/` directories, plus `Core/Inc`,
+`Core/ThreadSafe`, and `Tests/Common` (which holds headers alongside sources
+rather than in an `Inc/`).
+
+`gen-compile-commands.sh` cross-checks itself against `.cproject` and warns on
+any include directory CubeIDE knows about that the script omits:
+
+```
+warning: .cproject includes Controllers/Inc, absent from this script
+```
+
+That is the drift to watch for — CubeIDE keeps building fine while nvim reports
+phantom missing headers. Silence from the script means the two agree.
 
 ## Board connections (WHEELTEC C30D-V2.1)
 
@@ -219,14 +231,27 @@ Two views worth knowing, both hard to replicate over plain GDB:
 | File | Purpose | Tracked |
 |---|---|---|
 | `gen-compile-commands.sh` | Regenerates the compilation DB. Auto-locates CubeIDE's bundled toolchain | yes |
-| `.clangd` | Strips GCC-only flags clang rejects (`--specs=`, `-fcyclomatic-complexity`, `-fstack-usage`) | yes |
+| `.clangd` | Strips GCC-only flags clang rejects (`--specs=`, `-fcyclomatic-complexity`, `-fstack-usage`) and pins `-std=gnu11` against ancestor configs | yes |
 | `compile_commands.json` | clangd's flag database — contains absolute machine paths | no |
 | `.cache/` | clangd's `--background-index` store | no |
 | `Debug/` | CubeIDE build output and generated makefiles | no |
 
 The flags in `gen-compile-commands.sh` mirror the real compiler invocation
-CubeIDE writes into `Debug/Core/Src/subdir.mk`. If CubeIDE's build settings
-change, re-check them against that file.
+CubeIDE writes into `Debug/Core/Src/subdir.mk`:
+
+```sh
+grep arm-none-eabi-gcc Debug/Core/Src/subdir.mk
+```
+
+That file shows what actually compiled, but `Debug/` is untracked and only
+regenerated on a build, so it lags behind project changes — right now it predates
+`Controllers/` entirely. `.cproject` is the durable manifest; read the registered
+include directories straight out of it:
+
+```sh
+grep -o '<listOptionValue builtIn="false" value="[^"]*"' .cproject |
+  sed 's/.*value="//;s/"$//' | sort -u
+```
 
 ## Notes
 
@@ -239,20 +264,34 @@ change, re-check them against that file.
   rewrites an `env-hash` field when it re-fingerprints the toolchain
   environment. Harmless.
 - **clangd config is per-directory and inherited from ancestors.** A stray
-  `.clangd` or a user-level config at `~/Library/Preferences/clangd/config.yaml`
-  (macOS) applies here too. Note that a user-level `Add:` is applied *after* a
-  project-level `Remove:`, so this repo's `.clangd` cannot override one — check
-  there first if flags appear from nowhere.
+  `.clangd` in any parent directory, or a user config at
+  `~/Library/Preferences/clangd/config.yaml` (macOS), applies here too.
+  `~/.clangd` currently carries `Add: -std=c++223` — a typo for `c++23` that
+  makes every C file in this repo fail to parse. A project-level `Remove:` does
+  win over an ancestor's `Add:`, so this repo's `.clangd` strips `-std=*` and
+  re-adds `-std=gnu11` to immunise itself. Fixing `~/.clangd` is still worth
+  doing for every other project under `~`.
 
 ## Troubleshooting
 
 **clangd reports errors on every file, e.g. an unexpected `-std=`**
-A user-level config is injecting flags. Check
+An ancestor config is injecting flags — check `~/.clangd` first, then
 `~/Library/Preferences/clangd/config.yaml`, then any `.clangd` in a parent
-directory. Diagnose with:
+directory. Diagnose by reading the flags clangd actually assembled:
 
 ```sh
 clangd --check=Core/Src/main.c 2>&1 | grep "Compile command from CDB"
+```
+
+Anything in that line which is not in `compile_commands.json` came from a config
+file. Add a matching `Remove:` to this repo's `.clangd`.
+
+A clean run ends in `All checks completed, 1 errors` — that one is a
+`tweak: DefineInline` registration message, not a diagnostic on your code.
+Filter it out with:
+
+```sh
+clangd --check=Core/Src/main.c 2>&1 | grep -E '^E\[|error:'
 ```
 
 **`'xyz.h' file not found` after adding a file or include path**

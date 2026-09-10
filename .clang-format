@@ -1,0 +1,7 @@
+# Formatting is intentionally disabled repo-wide: most sources are
+# CubeMX/ST-generated and get rewritten in ST's own style on every
+# "Generate Code", so an editor formatter only creates churn and has
+# already mangled main.c once. Hand-written code follows the existing
+# per-file style instead.
+DisableFormat: true
+SortIncludes: Never

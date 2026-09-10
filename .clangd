@@ -6,5 +6,9 @@ CompileFlags:
     - --specs=*
     - -fcyclomatic-complexity
     - -fstack-usage
+    # An ancestor config (~/.clangd) adds a C++ -std that this C project rejects.
+    - -std=*
+  Add:
+    - -std=gnu11
 Diagnostics:
   UnusedIncludes: None
