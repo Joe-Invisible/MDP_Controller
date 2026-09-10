@@ -383,23 +383,30 @@ bool SteeringController_Init(
     }
 
     /*
-     * Both tables must cover the configured operating range.
+     * The configured min/max command now define the overall raw actuator
+     * envelope.
+     *
+     * Individual hysteresis branches are allowed to cover smaller,
+     * asymmetric monotonic interpolation ranges.
+     *
+     * Every calibration point must, however, remain inside the permitted
+     * raw servo-command envelope.
      */
-    if (calibration->increasingPoints[0].command >
+    if (calibration->increasingPoints[0].command <
             calibration->minCommand ||
         calibration->increasingPoints[
             calibration->increasingPointCount - 1U
-        ].command <
+        ].command >
             calibration->maxCommand)
     {
         return false;
     }
 
-    if (calibration->decreasingPoints[0].command >
+    if (calibration->decreasingPoints[0].command <
             calibration->minCommand ||
         calibration->decreasingPoints[
             calibration->decreasingPointCount - 1U
-        ].command <
+        ].command >
             calibration->maxCommand)
     {
         return false;

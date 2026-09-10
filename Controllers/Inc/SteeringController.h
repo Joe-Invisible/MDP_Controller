@@ -44,8 +44,15 @@ typedef struct
     uint32_t decreasingPointCount;
 
     /*
-     * Command range over which the effective-angle model
-     * has been experimentally calibrated.
+     * Overall raw Servo_SetSteering() command envelope.
+     *
+     * Individual increasing/decreasing calibration tables may cover
+     * smaller and asymmetric monotonic interpolation ranges.
+     *
+     * Effective-angle inverse control is limited by the endpoints of
+     * the selected branch table; this raw envelope also permits
+     * deterministic hysteresis-preconditioning moves outside those
+     * precision interpolation ranges.
      */
     float minCommand;
     float maxCommand;
