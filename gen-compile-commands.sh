@@ -13,7 +13,8 @@ GCC=$(find /Applications/STM32CubeIDE.app -name arm-none-eabi-gcc 2>/dev/null | 
 FLAGS="-mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard -std=gnu11 \
 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F407xx -DSTM32_THREAD_SAFE_STRATEGY=4"
 
-for inc in Core/Inc Core/ThreadSafe Apps/Inc PeripheralDrivers/Inc Tests/Inc \
+for inc in Core/Inc Core/ThreadSafe Apps/Inc Controllers/Inc PeripheralDrivers/Inc \
+           Tests/Inc Tests/Common \
            Drivers/STM32F4xx_HAL_Driver/Inc Drivers/STM32F4xx_HAL_Driver/Inc/Legacy \
            Drivers/CMSIS/Device/ST/STM32F4xx/Include Drivers/CMSIS/Include \
            Middlewares/Third_Party/FreeRTOS/Source/include \
@@ -21,6 +22,17 @@ for inc in Core/Inc Core/ThreadSafe Apps/Inc PeripheralDrivers/Inc Tests/Inc \
            Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM4F; do
   FLAGS="$FLAGS -I$ROOT/$inc"
 done
+
+# .cproject is the manifest CubeIDE builds from. Anything it lists that the loop
+# above omits would compile in CubeIDE but show as a missing header in nvim.
+while IFS= read -r inc; do
+  [ -d "$inc" ] || continue
+  case " $FLAGS " in
+    *" -I$ROOT/$inc "*) ;;
+    *) echo "warning: .cproject includes $inc, absent from this script" >&2 ;;
+  esac
+done < <(grep -o 'workspace_loc:/\${ProjName}/[^}]*' .cproject |
+         sed 's|.*ProjName}/||' | sort -u)
 
 {
   echo "["
@@ -30,7 +42,7 @@ done
     first=0
     printf '  {"directory": "%s", "file": "%s", "command": "%s %s -c %s"}' \
       "$ROOT" "$ROOT/$f" "$GCC" "$FLAGS" "$ROOT/$f"
-  done < <(find Core Apps PeripheralDrivers Tests Drivers Middlewares \
+  done < <(find Core Apps Controllers PeripheralDrivers Tests Drivers Middlewares \
              -name '*.c' -not -path '*/Debug/*' | sort)
   echo ""
   echo "]"
