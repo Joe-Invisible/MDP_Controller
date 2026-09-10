@@ -1,8 +1,11 @@
 set print elements unlimited
 set print repeats unlimited
 
-set logging file right_kp_0.02_11.3V.txt
+set logging file steer_cal_repeatability.txt
 set logging overwrite on
 set logging enabled on
 
-p *debugSamples@2400
+p g_steeringPreconditioningArcRepeatSummary
+p g_steeringPreconditioningArcRepeatLogCount
+p g_steeringPreconditioningArcRepeatLog
+x/s g_steeringPreconditioningArcRepeatInfo
