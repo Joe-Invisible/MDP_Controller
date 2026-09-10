@@ -58,6 +58,10 @@ typedef struct
     /*
      * Wheel synchronisation
      */
+    float wheelReferenceCurvaturePerMm;
+    float leftBaseTargetCps;
+    float rightBaseTargetCps;
+
     float desiredWheelTravelDifferenceMm;
     float wheelSyncErrorMm;
     float wheelSyncCorrectionCps;

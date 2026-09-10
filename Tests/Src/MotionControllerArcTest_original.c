@@ -315,6 +315,15 @@ static void MotionControllerArcTest_LogSample(
 
 
     /* Synchronisation */
+    sample->wheelReferenceCurvaturePerMm =
+        motionController->wheelReferenceCurvaturePerMm;
+
+    sample->leftBaseTargetCps =
+        motionController->leftBaseTargetCps;
+
+    sample->rightBaseTargetCps =
+        motionController->rightBaseTargetCps;
+
     sample->desiredWheelTravelDifferenceMm =
         motionController->desiredWheelTravelDifferenceMm;
 
@@ -323,7 +332,6 @@ static void MotionControllerArcTest_LogSample(
 
     sample->wheelSyncCorrectionCps =
         motionController->wheelSyncCorrectionCps;
-
 
     /* Heading */
     sample->yawDeg =
