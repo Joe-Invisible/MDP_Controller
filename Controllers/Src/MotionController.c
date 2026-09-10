@@ -26,6 +26,34 @@ static float MotionController_GetMmPerCount(
         (float)controller->kinematics->rearEncoderCountsPerRev;
 }
 
+static float MotionController_GetWheelReferenceCurvaturePerMm(
+    const MotionController *controller)
+{
+    /*
+     * ARC:
+     * Rear-wheel coordination follows the requested path
+     * curvature directly. It must not depend on the estimated
+     * steering angle or wheelbase-based steering model.
+     *
+     * STRAIGHT:
+     * Preserve the existing behaviour. Small heading
+     * corrections have already been experimentally validated
+     * with the existing steering calibration, so rear-wheel
+     * coordination continues to accommodate those corrections.
+     */
+    if (controller->mode == MOTIONCONTROLLER_ARC)
+    {
+        return controller->targetCurvaturePerMm;
+    }
+
+    float steeringAngleRad =
+        SteeringController_GetEffectiveAngleRad(
+            controller->steering);
+
+    return RobotKinematics_GetCurvaturePerMm(
+        controller->kinematics,
+        steeringAngleRad);
+}
 
 static void MotionController_ResetOdometry(
     MotionController *controller)
@@ -92,14 +120,9 @@ static void MotionController_UpdateOdometry(
      * SteeringController retains the effective-angle estimate
      * associated with that command.
      */
-    float steeringAngleRad =
-        SteeringController_GetEffectiveAngleRad(
-            controller->steering);
-
     float curvaturePerMm =
-        RobotKinematics_GetCurvaturePerMm(
-        		controller->kinematics,
-			steeringAngleRad);
+        MotionController_GetWheelReferenceCurvaturePerMm(
+            controller);
 
     /*
      * Bicycle-model rear-wheel relationship:
@@ -524,14 +547,9 @@ static float MotionController_Clamp(
 static void MotionController_UpdateWheelSynchronisation(
     MotionController *controller)
 {
-    float steeringAngleRad =
-        SteeringController_GetEffectiveAngleRad(
-            controller->steering);
-
-    float curvaturePerMm =
-        RobotKinematics_GetCurvaturePerMm(
-            controller->kinematics,
-            steeringAngleRad);
+	float curvaturePerMm =
+	    MotionController_GetWheelReferenceCurvaturePerMm(
+	        controller);
 
     float leftBaseTargetCps;
     float rightBaseTargetCps;
