@@ -43,10 +43,10 @@ static float MotionController_GetWheelReferenceCurvaturePerMm(
      * with the existing steering calibration, so rear-wheel
      * coordination continues to accommodate those corrections.
      */
-    if (controller->mode == MOTIONCONTROLLER_ARC)
-    {
-        return controller->targetCurvaturePerMm;
-    }
+	if (controller->mode == MOTIONCONTROLLER_ARC)
+	{
+	    return controller->arcCommandedCurvaturePerMm;
+	}
 
     float steeringAngleRad =
         SteeringController_GetEffectiveAngleRad(
@@ -226,6 +226,9 @@ bool MotionController_Init(
 	float arcYawRateKi,
 	float arcYawRateKd,
 	float maxArcSteeringCommandCorrection,
+
+	float arcHeadingKpPerSec,
+
     float wheelSyncKpCpsPerMm,
     float maxWheelSyncCorrectionCps,
 	float motionAccelerationMmps2,
@@ -292,6 +295,11 @@ bool MotionController_Init(
         return false;
     }
 
+    if (arcHeadingKpPerSec < 0.0f)
+    {
+        return false;
+    }
+
     *controller = (MotionController){0};
 
     controller->leftWheel = leftWheel;
@@ -338,6 +346,9 @@ bool MotionController_Init(
     {
         return false;
     }
+
+    controller->arcHeadingKpPerSec =
+        arcHeadingKpPerSec;
 
     return true;
 }
@@ -423,10 +434,15 @@ static bool MotionController_BeginMotion(
 
     controller->yawRateDps = 0.0f;
     controller->filteredYawRateDps = 0.0f;
+
+    controller->arcDesiredYawRad = 0.0f;
+    controller->arcHeadingErrorRad = 0.0f;
+
+    controller->arcFeedforwardYawRateRadPerSec = 0.0f;
+    controller->arcHeadingYawRateCorrectionRadPerSec = 0.0f;
     controller->arcTargetYawRateRadPerSec = 0.0f;
-    controller->arcYawRateErrorRadPerSec = 0.0f;
-    controller->arcSteeringCorrectionCommand = 0.0f;
-    controller->arcSteeringTargetCommand = 0.0f;
+
+    controller->arcCommandedCurvaturePerMm = 0.0f;
 
     PIDController_Reset(&controller->headingPID);
     PIDController_Reset(&controller->arcYawRatePID);
@@ -490,6 +506,9 @@ bool MotionController_MoveArc(
 
     controller->targetCurvaturePerMm =
         1.0f / radiusMm;
+
+    controller->arcCommandedCurvaturePerMm =
+        controller->targetCurvaturePerMm;
 
     controller->mode =
         MOTIONCONTROLLER_ARC;
@@ -813,21 +832,110 @@ bool MotionController_Update(
     else if (controller->mode == MOTIONCONTROLLER_ARC)
     {
         /*
-         * Requested yaw rate for the requested curvature:
-         *
-         *     omega = kappa * v
-         *
-         * targetSpeedCps is signed, therefore reverse motion
-         * naturally reverses the required yaw rate.
+         * Signed rear-axle-centre reference speed.
          */
         float signedSpeedMmps =
             controller->targetSpeedCps *
             mmPerCount;
 
-        float targetYawRateRadPerSec =
+
+        /*
+         * --------------------------------------------------------
+         * PHASE 2B: OUTER HEADING LOOP
+         * --------------------------------------------------------
+         *
+         * Desired heading along the requested constant-curvature
+         * path:
+         *
+         *     psi_d = kappa_path * s
+         *
+         * travelledDistanceMm is signed, so reverse motion is
+         * naturally handled here.
+         */
+        float desiredYawRad =
+            controller->targetCurvaturePerMm *
+            controller->travelledDistanceMm;
+
+        float measuredYawRad =
+            controller->yawDeg *
+            (MOTION_PI / 180.0f);
+
+        float headingErrorRad =
+            desiredYawRad -
+            measuredYawRad;
+
+
+        /*
+         * Nominal geometric yaw-rate feedforward:
+         *
+         *     omega_ff = kappa_path * v
+         */
+        float feedforwardYawRateRadPerSec =
             controller->targetCurvaturePerMm *
             signedSpeedMmps;
 
+
+        /*
+         * Heading error directly biases the requested yaw rate:
+         *
+         *     omega_heading = K_heading * e_heading
+         */
+        float headingYawRateCorrectionRadPerSec =
+            controller->arcHeadingKpPerSec *
+            headingErrorRad;
+
+
+        /*
+         * Keep the feedback-generated curvature bounded as the
+         * profile approaches zero speed.
+         *
+         * Allow heading feedback to add up to 2x the nominal
+         * yaw-rate magnitude, i.e. total demand can reach 3x
+         * nominal curvature.
+         */
+        float headingCorrectionLimitRadPerSec =
+            2.0f *
+            fabsf(feedforwardYawRateRadPerSec);
+
+        headingYawRateCorrectionRadPerSec =
+            MotionController_Clamp(
+                headingYawRateCorrectionRadPerSec,
+                -headingCorrectionLimitRadPerSec,
+                +headingCorrectionLimitRadPerSec);
+
+
+        /*
+         * Final yaw-rate request seen by the inner Phase-2A loop.
+         */
+        float targetYawRateRadPerSec =
+            feedforwardYawRateRadPerSec +
+            headingYawRateCorrectionRadPerSec;
+
+
+        /*
+         * Rear-wheel geometry follows the same corrected motion
+         * request as the steering controller.
+         *
+         * Since heading correction is itself limited relative to
+         * feedforward yaw rate, commanded curvature remains
+         * bounded even near the ends of the speed profile.
+         */
+        float commandedCurvaturePerMm =
+            controller->targetCurvaturePerMm;
+
+        if (fabsf(signedSpeedMmps) > 1.0f)
+        {
+            commandedCurvaturePerMm =
+                targetYawRateRadPerSec /
+                signedSpeedMmps;
+        }
+
+
+        /*
+         * --------------------------------------------------------
+         * PHASE 2A: INNER YAW-RATE LOOP
+         * --------------------------------------------------------
+         */
         float measuredYawRateRadPerSec =
             controller->filteredYawRateDps *
             (MOTION_PI / 180.0f);
@@ -842,21 +950,44 @@ bool MotionController_Update(
                 yawRateErrorRadPerSec,
                 dt);
 
+
         /*
-         * Increasing raw steering command produces
-         * negative steering angle.
+         * Raw steering correction is relative to deterministic
+         * actuator centre.
          *
-         * Reverse motion also reverses the yaw response,
-         * hence motionDirection appears here.
+         * Increasing raw command produces negative steering.
          */
         float targetCommand =
-            controller->arcCentreCommand
-            - (float)controller->motionDirection *
-                steeringCorrectionCommand;
+            controller->arcCentreCommand -
+            (float)controller->motionDirection *
+            steeringCorrectionCommand;
+
+
+        /*
+         * Phase-2B diagnostics.
+         */
+        controller->arcDesiredYawRad =
+            desiredYawRad;
+
+        controller->arcHeadingErrorRad =
+            headingErrorRad;
+
+        controller->arcFeedforwardYawRateRadPerSec =
+            feedforwardYawRateRadPerSec;
+
+        controller->arcHeadingYawRateCorrectionRadPerSec =
+            headingYawRateCorrectionRadPerSec;
 
         controller->arcTargetYawRateRadPerSec =
             targetYawRateRadPerSec;
 
+        controller->arcCommandedCurvaturePerMm =
+            commandedCurvaturePerMm;
+
+
+        /*
+         * Phase-2A diagnostics.
+         */
         controller->arcYawRateErrorRadPerSec =
             yawRateErrorRadPerSec;
 
@@ -865,6 +996,7 @@ bool MotionController_Update(
 
         controller->arcSteeringTargetCommand =
             targetCommand;
+
 
         SteeringController_SetCommandRateLimited(
             controller->steering,

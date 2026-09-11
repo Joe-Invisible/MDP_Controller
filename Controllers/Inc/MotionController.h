@@ -77,11 +77,30 @@ typedef struct
 	PIDController arcYawRatePID;
 
 	/*
+	 * ARC outer heading controller.
+	 *
+	 * Input:  heading error [rad]
+	 * Output: yaw-rate correction [rad/s]
+	 *
+	 * Units of gain: 1/s
+	 */
+	float arcHeadingKpPerSec;
+
+	/*
 	 * ARC diagnostics
 	 */
-	float yawRateDps;		/* raw gyro Z */
-	float filteredYawRateDps;  /* LPF output used by ARC controller */
+	float yawRateDps;
+	float filteredYawRateDps;
+
+	float arcDesiredYawRad;
+	float arcHeadingErrorRad;
+
+	float arcFeedforwardYawRateRadPerSec;
+	float arcHeadingYawRateCorrectionRadPerSec;
 	float arcTargetYawRateRadPerSec;
+
+	float arcCommandedCurvaturePerMm;
+
 	float arcYawRateErrorRadPerSec;
 	float arcSteeringCorrectionCommand;
 	float arcSteeringTargetCommand;
@@ -196,6 +215,9 @@ bool MotionController_Init(
 	float arcYawRateKi,
 	float arcYawRateKd,
 	float maxArcSteeringCommandCorrection,
+
+	float arcHeadingKpPerSec,
+
     float wheelSyncKpCpsPerMm,
     float maxWheelSyncCorrectionCps,
 	float motionAccelerationMmps2,
