@@ -176,6 +176,15 @@ void SteeringController_SetCommand(
     float command);
 
 /**
+ * Rate-limited command setting. Configurable command
+ * rate via SteeringControllerConfig.
+ */
+void SteeringController_SetCommandRateLimited(
+    SteeringController *controller,
+    float command,
+    float dt);
+
+/**
  * @brief Request an effective bicycle-model steering angle.
  *
  * The requested angle is clamped to the range that is

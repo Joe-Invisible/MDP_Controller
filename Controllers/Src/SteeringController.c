@@ -575,7 +575,6 @@ static void SteeringController_ApplyCommandRateLimited(
         controller->command + deltaCommand);
 }
 
-
 void SteeringController_SetCommand(
     SteeringController *controller,
     float command)
@@ -591,6 +590,40 @@ void SteeringController_SetCommand(
         controller,
         command);
 
+    controller->targetEffectiveAngleRad =
+        controller->effectiveAngleRad;
+
+    controller->reversalPending = false;
+}
+
+void SteeringController_SetCommandRateLimited(
+    SteeringController *controller,
+    float command,
+    float dt)
+{
+    if (controller == NULL ||
+        controller->servo == NULL ||
+        controller->calibration == NULL ||
+        dt <= 0.0f)
+    {
+        return;
+    }
+
+    if (controller->centreState != STEERING_CENTRE_IDLE)
+    {
+        return;
+    }
+
+    SteeringController_ApplyCommandRateLimited(
+        controller,
+        command,
+        dt);
+
+    /*
+     * Raw-command operation deliberately does not use
+     * the effective-angle estimate for actuation.
+     * Keep it updated only as a diagnostic/model state.
+     */
     controller->targetEffectiveAngleRad =
         controller->effectiveAngleRad;
 
