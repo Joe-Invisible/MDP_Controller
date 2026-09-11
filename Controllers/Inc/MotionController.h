@@ -69,6 +69,24 @@ typedef struct
 	PIDController headingPID;
 
 	/*
+	 * ARC yaw-rate controller.
+	 *
+	 * Input:  yaw-rate error [rad/s]
+	 * Output: raw steering-command correction
+	 */
+	PIDController arcYawRatePID;
+
+	/*
+	 * ARC diagnostics
+	 */
+	float yawRateDps;		/* raw gyro Z */
+	float filteredYawRateDps;  /* LPF output used by ARC controller */
+	float arcTargetYawRateRadPerSec;
+	float arcYawRateErrorRadPerSec;
+	float arcSteeringCorrectionCommand;
+	float arcSteeringTargetCommand;
+
+	/*
 	 * Rear-wheel synchronization controller.
 	 *
 	 * Error convention:
@@ -94,6 +112,7 @@ typedef struct
 	float wheelSyncErrorMm;
 	float wheelSyncCorrectionCps;
 
+	float arcCentreCommand;
 
 	/*
 	 * Diagnostics: most recently computed geometric wheel reference.
@@ -122,11 +141,12 @@ typedef struct
 	 *
 	 * Straight:
 	 *     curvature = 0
-	 *     steering  = 0
 	 *
 	 * Arc:
 	 *     curvature = 1 / radius
-	 *     steering  = atan(L * curvature)
+	 *
+	 * ARC steering is controlled from measured yaw rate
+	 * and does not require a physical steering-angle model.
 	 */
 	float targetCurvaturePerMm;
 	float targetSteeringAngleRad;
@@ -137,6 +157,7 @@ typedef struct
 	 * Relative heading since motion began.
 	 */
 	float yawDeg;
+
 
 	/*
 	 * Encoder odometry since motion began.
@@ -168,6 +189,13 @@ bool MotionController_Init(
     float headingKi,
     float headingKd,
     float maxHeadingSteeringAngleRad,
+	/* We are separating the steering PID with
+	 * existing heading PID, might clean up later
+	 */
+	float arcYawRateKp,
+	float arcYawRateKi,
+	float arcYawRateKd,
+	float maxArcSteeringCommandCorrection,
     float wheelSyncKpCpsPerMm,
     float maxWheelSyncCorrectionCps,
 	float motionAccelerationMmps2,

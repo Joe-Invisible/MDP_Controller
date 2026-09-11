@@ -12,6 +12,8 @@
 
 #define MOTION_PI 3.14159265358979323846f
 
+#define MOTIONCONTROLLER_ARC_YAW_RATE_FILTER_TAU_SEC  0.10f
+
 
 static float MotionController_GetMmPerCount(
     const MotionController *controller)
@@ -220,6 +222,10 @@ bool MotionController_Init(
     float headingKi,
     float headingKd,
     float maxHeadingSteeringAngleRad,
+	float arcYawRateKp,
+	float arcYawRateKi,
+	float arcYawRateKd,
+	float maxArcSteeringCommandCorrection,
     float wheelSyncKpCpsPerMm,
     float maxWheelSyncCorrectionCps,
 	float motionAccelerationMmps2,
@@ -275,6 +281,11 @@ bool MotionController_Init(
         return false;
     }
 
+    if (maxArcSteeringCommandCorrection <= 0.0f)
+    {
+        return false;
+    }
+
     if (wheelSyncKpCpsPerMm < 0.0f ||
         maxWheelSyncCorrectionCps < 0.0f)
     {
@@ -317,6 +328,17 @@ bool MotionController_Init(
         return false;
     }
 
+    if (!PIDController_Init(
+            &controller->arcYawRatePID,
+            arcYawRateKp,
+            arcYawRateKi,
+            arcYawRateKd,
+            -maxArcSteeringCommandCorrection,
+            +maxArcSteeringCommandCorrection))
+    {
+        return false;
+    }
+
     return true;
 }
 
@@ -340,6 +362,10 @@ static bool MotionController_BeginMotion(
 
     if (distanceMm == 0.0f)
         return true;
+
+    controller->arcCentreCommand =
+        SteeringController_GetCommand(
+            controller->steering);
 
     controller->motionDirection = distanceMm > 0.0f ? 1 : -1;
 
@@ -395,7 +421,15 @@ static bool MotionController_BeginMotion(
     controller->leftBaseTargetCps = 0.0f;
     controller->rightBaseTargetCps = 0.0f;
 
+    controller->yawRateDps = 0.0f;
+    controller->filteredYawRateDps = 0.0f;
+    controller->arcTargetYawRateRadPerSec = 0.0f;
+    controller->arcYawRateErrorRadPerSec = 0.0f;
+    controller->arcSteeringCorrectionCommand = 0.0f;
+    controller->arcSteeringTargetCommand = 0.0f;
+
     PIDController_Reset(&controller->headingPID);
+    PIDController_Reset(&controller->arcYawRatePID);
 
     MotionController_ResetOdometry(controller);
 
@@ -440,65 +474,25 @@ bool MotionController_MoveArc(
     float radiusMm,
     float speedCps)
 {
-    if (controller == NULL)
+    if (controller == NULL ||
+        radiusMm == 0.0f)
     {
         return false;
     }
 
-    if (radiusMm == 0.0f)
+    if (!MotionController_BeginMotion(
+            controller,
+            distanceMm,
+            speedCps))
     {
         return false;
     }
 
-    float curvaturePerMm =
+    controller->targetCurvaturePerMm =
         1.0f / radiusMm;
 
-    float steeringAngleRad =
-        RobotKinematics_GetSteeringAngleRad(
-            controller->kinematics,
-            curvaturePerMm);
-
-    /*
-     * Reject paths outside the experimentally calibrated
-     * effective steering range rather than allowing
-     * SteeringController to silently clamp them.
-     */
-    float minSteeringAngleRad =
-        SteeringController_GetMinEffectiveAngleRad(
-            controller->steering);
-
-    float maxSteeringAngleRad =
-        SteeringController_GetMaxEffectiveAngleRad(
-            controller->steering);
-
-    if (steeringAngleRad < minSteeringAngleRad ||
-        steeringAngleRad > maxSteeringAngleRad)
-    {
-        return false;
-    }
-
-    /*
-     * Use the existing profiled-motion setup.
-     */
-    if (!MotionController_BeginMotion(
-        controller,
-        distanceMm,
-        speedCps))
-    {
-        return false;
-    }
-
-    /*
-     * Replace the straight-path geometry with the
-     * requested constant-curvature geometry.
-     */
-    controller->targetCurvaturePerMm =
-        curvaturePerMm;
-
-    controller->targetSteeringAngleRad =
-        steeringAngleRad;
-
-    controller->mode = MOTIONCONTROLLER_ARC;
+    controller->mode =
+        MOTIONCONTROLLER_ARC;
 
     return true;
 }
@@ -518,17 +512,46 @@ bool MotionController_Brake(MotionController *controller) {
     return true;
 }
 
-static bool MotionController_UpdateYawEstimate(MotionController *controller, float dt) {
+static bool MotionController_UpdateYawEstimate(
+    MotionController *controller,
+    float dt)
+{
     ICM20948Measurement measurement;
-    if (!ICM20948_ReadMeasurement(controller->imu, &measurement)) {
+
+    if (!ICM20948_ReadMeasurement(
+            controller->imu,
+            &measurement))
+    {
         return false;
     }
+
     /*
-     * Relative yaw:
+     * Raw gyro yaw rate.
      *
-     *     yaw[k+1] = yaw[k] + gyroZ * dt
+     * Keep this unfiltered for yaw integration.
      */
-    controller->yawDeg += measurement.gyroDps.z * dt;
+    controller->yawRateDps =
+        measurement.gyroDps.z;
+
+    controller->yawDeg +=
+        controller->yawRateDps * dt;
+
+    /*
+     * First-order low-pass filter used only by
+     * ARC yaw-rate feedback.
+     *
+     * alpha = dt / (tau + dt)
+     */
+    const float tau =
+        MOTIONCONTROLLER_ARC_YAW_RATE_FILTER_TAU_SEC;
+
+    float alpha =
+        dt / (tau + dt);
+
+    controller->filteredYawRateDps +=
+        alpha *
+        (controller->yawRateDps -
+         controller->filteredYawRateDps);
 
     return true;
 }
@@ -780,73 +803,79 @@ bool MotionController_Update(
         targetSteeringAngleRad =
             steeringAngleCorrectionRad *
             (float)controller->motionDirection;
+
+        SteeringController_SetEffectiveAngleRad(
+            controller->steering,
+            targetSteeringAngleRad,
+            dt);
+
     }
     else if (controller->mode == MOTIONCONTROLLER_ARC)
     {
         /*
-         * Desired relative heading for a constant-curvature path:
+         * Requested yaw rate for the requested curvature:
          *
-         *     psi_d = kappa * s
+         *     omega = kappa * v
          *
-         * travelledDistanceMm is signed, so reverse motion
-         * naturally produces the corresponding opposite yaw.
+         * targetSpeedCps is signed, therefore reverse motion
+         * naturally reverses the required yaw rate.
          */
-        float desiredYawRad =
-            controller->targetCurvaturePerMm *
-            controller->travelledDistanceMm;
+        float signedSpeedMmps =
+            controller->targetSpeedCps *
+            mmPerCount;
 
-        float measuredYawRad =
-            controller->yawDeg *
+        float targetYawRateRadPerSec =
+            controller->targetCurvaturePerMm *
+            signedSpeedMmps;
+
+        float measuredYawRateRadPerSec =
+            controller->filteredYawRateDps *
             (MOTION_PI / 180.0f);
 
-        float headingErrorRad =
-            desiredYawRad -
-            measuredYawRad;
+        float yawRateErrorRadPerSec =
+            targetYawRateRadPerSec -
+            measuredYawRateRadPerSec;
 
-        /*
-         * Heading feedback is a correction around the
-         * geometric feedforward steering angle.
-         */
-        float steeringAngleCorrectionRad =
+        float steeringCorrectionCommand =
             PIDController_Update(
-                &controller->headingPID,
-                headingErrorRad,
+                &controller->arcYawRatePID,
+                yawRateErrorRadPerSec,
                 dt);
 
         /*
-         * As for straight motion, reversing the vehicle reverses
-         * the yaw response of a given steering correction.
+         * Increasing raw steering command produces
+         * negative steering angle.
+         *
+         * Reverse motion also reverses the yaw response,
+         * hence motionDirection appears here.
          */
-        steeringAngleCorrectionRad *=
-            (float)controller->motionDirection;
+        float targetCommand =
+            controller->arcCentreCommand
+            - (float)controller->motionDirection *
+                steeringCorrectionCommand;
 
-        targetSteeringAngleRad =
-            controller->targetSteeringAngleRad +
-            steeringAngleCorrectionRad;
+        controller->arcTargetYawRateRadPerSec =
+            targetYawRateRadPerSec;
 
-        /*
-         * The PID output itself is limited, but feedforward +
-         * feedback can still exceed the available effective
-         * steering envelope.
-         */
-        targetSteeringAngleRad =
-            MotionController_Clamp(
-                targetSteeringAngleRad,
-                SteeringController_GetMinEffectiveAngleRad(
-                    controller->steering),
-                SteeringController_GetMaxEffectiveAngleRad(
-                    controller->steering));
+        controller->arcYawRateErrorRadPerSec =
+            yawRateErrorRadPerSec;
+
+        controller->arcSteeringCorrectionCommand =
+            steeringCorrectionCommand;
+
+        controller->arcSteeringTargetCommand =
+            targetCommand;
+
+        SteeringController_SetCommandRateLimited(
+            controller->steering,
+            targetCommand,
+            dt);
     }
     else
     {
         MotionController_Stop(controller);
         return false;
     }
-
-    SteeringController_SetEffectiveAngleRad(
-        controller->steering,
-        targetSteeringAngleRad,
-        dt);
 
     /*
      * --------------------------------------------------------
@@ -884,6 +913,7 @@ void MotionController_Stop(
     SteeringController_Centre(controller->steering);
 
     PIDController_Reset(&controller->headingPID);
+    PIDController_Reset(&controller->arcYawRatePID);
 
     controller->mode = MOTIONCONTROLLER_IDLE;
 }
