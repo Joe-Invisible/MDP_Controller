@@ -1,7 +1,7 @@
 set print elements unlimited
 set print repeats unlimited
 
-set logging file mctrl_arc_r-10k_d1k_run12.txt
+set logging file mctrl_cal_free_p1_run05.txt
 set logging overwrite on
 set logging enabled on
 
