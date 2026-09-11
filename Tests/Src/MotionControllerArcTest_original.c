@@ -83,6 +83,7 @@
 #define ARC_TEST_YAWRATE_KD				 (0.0f)
 #define ARC_TEST_YAWRATE_LIMIT_UNIT		 (20.0f)
 
+#define ARC_TEST_HEADING_OUTER_KP_PER_SEC   (1.0f)
 
 /*
  * Current motion-profile parameters.
@@ -280,6 +281,16 @@ static void MotionControllerArcTest_LogSample(
     sample->feedforwardSteeringAngleRad =
         motionController->targetSteeringAngleRad;
 
+    /* Geometric path command */
+    sample->targetCurvaturePerMm =
+        motionController->targetCurvaturePerMm;
+
+    sample->arcCommandedCurvaturePerMm =
+        motionController->arcCommandedCurvaturePerMm;
+
+    sample->feedforwardSteeringAngleRad =
+        motionController->targetSteeringAngleRad;
+
 
     /* Steering controller */
     sample->steeringTargetAngleRad =
@@ -290,7 +301,35 @@ static void MotionControllerArcTest_LogSample(
         SteeringController_GetEffectiveAngleRad(
             motionController->steering);
 
-    /* Phase 2A yaw-rate / raw-command control */
+    /* Steering controller */
+    sample->steeringTargetAngleRad =
+        SteeringController_GetTargetEffectiveAngleRad(
+            motionController->steering);
+
+    sample->effectiveSteeringAngleRad =
+        SteeringController_GetEffectiveAngleRad(
+            motionController->steering);
+
+
+    /*
+     * Phase 2B: outer heading loop
+     */
+    sample->arcDesiredYawRad =
+        motionController->arcDesiredYawRad;
+
+    sample->arcHeadingErrorRad =
+        motionController->arcHeadingErrorRad;
+
+    sample->arcFeedforwardYawRateRadPerSec =
+        motionController->arcFeedforwardYawRateRadPerSec;
+
+    sample->arcHeadingYawRateCorrectionRadPerSec =
+        motionController->arcHeadingYawRateCorrectionRadPerSec;
+
+
+    /*
+     * Phase 2A: inner yaw-rate loop
+     */
     sample->yawRateDps =
         motionController->yawRateDps;
 
@@ -309,14 +348,17 @@ static void MotionControllerArcTest_LogSample(
     sample->arcSteeringTargetCommand =
         motionController->arcSteeringTargetCommand;
 
+    /*
+     * Explicitly log the actual feedback quantity seen
+     * by the inner PI.
+     */
+    sample->measuredYawRateRadPerSec =
+        motionController->filteredYawRateDps *
+        (ARC_TEST_PI / 180.0f);
+
     sample->steeringCommand =
         SteeringController_GetCommand(
             motionController->steering);
-
-    sample->measuredYawRateRadPerSec =
-    	    motionController->filteredYawRateDps *
-    	    (ARC_TEST_PI / 180.0f);
-
 
     /* Wheel-speed controllers */
     sample->leftTargetCps =
@@ -511,6 +553,8 @@ static bool MotionControllerArcTest_Init(
 		ARC_TEST_YAWRATE_KI,
 		ARC_TEST_YAWRATE_KD,
 		ARC_TEST_YAWRATE_LIMIT_UNIT,
+
+		ARC_TEST_HEADING_OUTER_KP_PER_SEC,
 
         ARC_TEST_SYNC_KP_CPS_PER_MM,
         ARC_TEST_SYNC_MAX_CORRECTION_CPS,

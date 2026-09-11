@@ -123,6 +123,9 @@ bool RobotTestFixture_InitMotionController(
 		float arcYawRateKi,
 		float arcYawRateKd,
 		float maxArcSteeringCommandCorrection,
+
+		float arcHeadingKpPerSec,
+
 		float wheelSyncKpCpsPerMm,
 		float maxWheelSyncCorrectionCps,
 		float motionAccelerationMmps2,
@@ -150,7 +153,11 @@ bool RobotTestFixture_InitMotionController(
 			 * existing heading PID, might clean up later
 			 */
 			arcYawRateKp, arcYawRateKi, arcYawRateKd, maxArcSteeringCommandCorrection,
+			arcHeadingKpPerSec,
+
 			wheelSyncKpCpsPerMm, maxWheelSyncCorrectionCps,
+
+
 			motionAccelerationMmps2,
 			motionDecelerationMmps2))
 		return false;

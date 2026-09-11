@@ -19,26 +19,31 @@ typedef struct
     uint32_t timeMs;
     uint32_t state;
 
-    /*
-     * Motion profile / progress
-     */
+    /* Motion profile */
     float profileTargetSpeedCps;
     float travelledDistanceMm;
 
-    /*
-     * Arc command
-     */
+    /* Geometric path command */
     float targetCurvaturePerMm;
+    float arcCommandedCurvaturePerMm;
+
     float feedforwardSteeringAngleRad;
 
-    /*
-     * Steering
-     */
+    /* Steering controller */
     float steeringTargetAngleRad;
     float effectiveSteeringAngleRad;
 
     /*
-     * Phase 2A yaw-rate / raw-steering control
+     * Phase 2B: outer heading loop
+     */
+    float arcDesiredYawRad;
+    float arcHeadingErrorRad;
+
+    float arcFeedforwardYawRateRadPerSec;
+    float arcHeadingYawRateCorrectionRadPerSec;
+
+    /*
+     * Phase 2A: inner yaw-rate loop
      */
     float yawRateDps;
     float filteredYawRateDps;
@@ -51,15 +56,9 @@ typedef struct
 
     float measuredYawRateRadPerSec;
 
-    /*
-     * Actual raw command after SteeringController
-     * rate limiting.
-     */
     float steeringCommand;
 
-    /*
-     * Wheel speed control
-     */
+    /* Wheel-speed controllers */
     float leftTargetCps;
     float rightTargetCps;
 
@@ -69,38 +68,24 @@ typedef struct
     float leftPwm;
     float rightPwm;
 
-    /*
-     * Independently reconstructed wheel travel
-     */
     float leftDistanceMm;
     float rightDistanceMm;
 
-    /*
-     * Wheel synchronisation
-     */
+    /* Rear-wheel geometry */
     float wheelReferenceCurvaturePerMm;
     float leftBaseTargetCps;
     float rightBaseTargetCps;
 
+    /* Synchronisation */
     float desiredWheelTravelDifferenceMm;
     float wheelSyncErrorMm;
     float wheelSyncCorrectionCps;
 
-    /*
-     * Heading
-     *
-     * idealYawDeg is the geometric prediction:
-     *
-     *     psi = s * curvature
-     *
-     * It is most meaningful while state == MOTIONCONTROLLER_ARC.
-     */
+    /* Heading */
     float yawDeg;
     float idealYawDeg;
 
-    /*
-     * Braking
-     */
+    /* Dynamic braking */
     WheelSpeedActuatorMode leftActuatorMode;
     WheelSpeedActuatorMode rightActuatorMode;
 
@@ -111,7 +96,6 @@ typedef struct
     float rightBrakePWM;
 
 } MotionControllerArcTestLogSample;
-
 
 void MotionControllerArcTestRun(void);
 

@@ -73,6 +73,8 @@ bool RobotTestFixture_InitMotionController(
 		float arcYawRateKd,
 		float maxArcSteeringCommandCorrection,
 
+		float arcHeadingKpPerSec,
+
 		float wheelSyncKpCpsPerMm,
 		float maxWheelSyncCorrectionCps,
 		float motionAccelerationMmps2,
