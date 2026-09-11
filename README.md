@@ -168,6 +168,19 @@ The leading `z` in `zdocs/` has no special technical meaning. It was chosen simp
 * [ ] Closed-loop steering and turning
 * [ ] Higher-level robot motion commands
 
+## Raspberry Pi command interface
+
+The current application accepts one batch of up to eight movements over
+USART3 at a time, for example `12:F100;B50` followed by a newline. Acceptance
+is silent; `DONE 12` reports physical completion. The Pi waits for that
+outcome before sending the next batch. `STATUS` queries the current/latest
+batch, and standalone `S` cancels the remaining movements and brakes.
+
+See [Command protocol](zdocs/COMMAND_PROTOCOL.md) for replies, sequence IDs,
+fault recovery, supported commands, and host tests. The protocol and motion
+state have one owner (`MotionTask`); there is no shared frame-history table
+or queue of future batches.
+
 ## Building
 
 1. Clone the repository.

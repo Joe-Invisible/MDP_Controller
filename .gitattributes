@@ -1,0 +1,13 @@
+# Normalise line endings in the repo. Without this, a CubeIDE write on
+# one OS rewrites whole generated files and every merge conflicts.
+* text=auto eol=lf
+
+# Binary, never touch.
+*.bin binary
+*.elf binary
+*.hex binary
+*.pdf binary
+*.png binary
+*.jpg binary
+*.xlsx binary
+*.docx binary

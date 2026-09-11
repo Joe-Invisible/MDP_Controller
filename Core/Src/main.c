@@ -19,9 +19,10 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "cmsis_os.h"
+#include "gpio.h"
 #include "i2c.h"
 #include "tim.h"
-#include "gpio.h"
+#include "usart.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -36,7 +37,7 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 // Branch to standalone OS-less test modules. Enters infinite loop after the test exits
-#define BRANCH_TO_TESTS 1
+#define BRANCH_TO_TESTS 0
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -99,6 +100,7 @@ int main(void)
   MX_TIM8_Init();
   MX_TIM14_Init();
   MX_TIM12_Init();
+  MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
 
 #if BRANCH_TO_TESTS

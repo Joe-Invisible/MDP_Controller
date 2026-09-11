@@ -58,6 +58,7 @@
 extern TIM_HandleTypeDef htim8;
 extern TIM_HandleTypeDef htim12;
 extern TIM_HandleTypeDef htim14;
+extern UART_HandleTypeDef huart3;
 extern TIM_HandleTypeDef htim7;
 
 /* USER CODE BEGIN EV */
@@ -161,6 +162,20 @@ void DebugMon_Handler(void)
 /* For the available peripheral interrupt handler names,                      */
 /* please refer to the startup file (startup_stm32f4xx.s).                    */
 /******************************************************************************/
+
+/**
+  * @brief This function handles USART3 global interrupt.
+  */
+void USART3_IRQHandler(void)
+{
+  /* USER CODE BEGIN USART3_IRQn 0 */
+
+  /* USER CODE END USART3_IRQn 0 */
+  HAL_UART_IRQHandler(&huart3);
+  /* USER CODE BEGIN USART3_IRQn 1 */
+
+  /* USER CODE END USART3_IRQn 1 */
+}
 
 /**
   * @brief This function handles TIM8 break interrupt and TIM12 global interrupt.
