@@ -38,6 +38,26 @@ typedef struct
     float effectiveSteeringAngleRad;
 
     /*
+     * Phase 2A yaw-rate / raw-steering control
+     */
+    float yawRateDps;
+    float filteredYawRateDps;
+
+    float arcTargetYawRateRadPerSec;
+    float arcYawRateErrorRadPerSec;
+
+    float arcSteeringCorrectionCommand;
+    float arcSteeringTargetCommand;
+
+    float measuredYawRateRadPerSec;
+
+    /*
+     * Actual raw command after SteeringController
+     * rate limiting.
+     */
+    float steeringCommand;
+
+    /*
      * Wheel speed control
      */
     float leftTargetCps;

@@ -36,7 +36,7 @@
 /* -------------------------------------------------------------------------- */
 
 #define ARC_TEST_DISTANCE_MM              (1000.0f)
-#define ARC_TEST_RADIUS_MM                (-10000.0f)
+#define ARC_TEST_RADIUS_MM                (-5000.0f)
 #define ARC_TEST_SPEED_CPS                (2000.0f)
 
 #define ARC_TEST_STEERING_SETTLE_MS       (500U)
@@ -77,6 +77,11 @@
 #define ARC_TEST_HEADING_KI               (0.05f)
 #define ARC_TEST_HEADING_KD               (0.0f)
 #define ARC_TEST_HEADING_LIMIT_RAD        (0.015f)
+
+#define ARC_TEST_YAWRATE_KP				 (200.0f)
+#define ARC_TEST_YAWRATE_KI				 (200.0f)
+#define ARC_TEST_YAWRATE_KD				 (0.0f)
+#define ARC_TEST_YAWRATE_LIMIT_UNIT		 (20.0f)
 
 
 /*
@@ -285,6 +290,33 @@ static void MotionControllerArcTest_LogSample(
         SteeringController_GetEffectiveAngleRad(
             motionController->steering);
 
+    /* Phase 2A yaw-rate / raw-command control */
+    sample->yawRateDps =
+        motionController->yawRateDps;
+
+    sample->filteredYawRateDps =
+        motionController->filteredYawRateDps;
+
+    sample->arcTargetYawRateRadPerSec =
+        motionController->arcTargetYawRateRadPerSec;
+
+    sample->arcYawRateErrorRadPerSec =
+        motionController->arcYawRateErrorRadPerSec;
+
+    sample->arcSteeringCorrectionCommand =
+        motionController->arcSteeringCorrectionCommand;
+
+    sample->arcSteeringTargetCommand =
+        motionController->arcSteeringTargetCommand;
+
+    sample->steeringCommand =
+        SteeringController_GetCommand(
+            motionController->steering);
+
+    sample->measuredYawRateRadPerSec =
+    	    motionController->filteredYawRateDps *
+    	    (ARC_TEST_PI / 180.0f);
+
 
     /* Wheel-speed controllers */
     sample->leftTargetCps =
@@ -405,53 +437,53 @@ static void MotionControllerArcTest_CaptureArcExit(
 }
 
 
-static void MotionControllerArcTest_PrepositionSteering(
-    RobotTestFixture *fixture)
-{
-    float curvaturePerMm =
-        1.0f / ARC_TEST_RADIUS_MM;
-
-    float targetSteeringAngleRad =
-        RobotKinematics_GetSteeringAngleRad(
-            fixture->motionController.kinematics,
-            curvaturePerMm);
-
-
-    uint32_t startTick =
-        HAL_GetTick();
-
-    uint32_t lastUpdateTick =
-        startTick;
-
-
-    /*
-     * Repeatedly command the same target because
-     * SteeringController_SetEffectiveAngleRad() applies
-     * the configured steering slew-rate limit.
-     *
-     * After the target has been reached, continuing to call
-     * it simply holds the steering there for the remainder
-     * of the settling interval.
-     */
-    while ((HAL_GetTick() - startTick) <
-           ARC_TEST_STEERING_SETTLE_MS)
-    {
-        uint32_t now =
-            HAL_GetTick();
-
-        if ((now - lastUpdateTick) >=
-            ARC_TEST_CONTROL_PERIOD_MS)
-        {
-            lastUpdateTick +=
-                ARC_TEST_CONTROL_PERIOD_MS;
-
-            SteeringController_SetEffectiveAngleRad(
-                &fixture->steeringController,
-                targetSteeringAngleRad,
-                ARC_TEST_CONTROL_PERIOD_S);
-        }
-    }
-}
+//static void MotionControllerArcTest_PrepositionSteering(
+//    RobotTestFixture *fixture)
+//{
+//    float curvaturePerMm =
+//        1.0f / ARC_TEST_RADIUS_MM;
+//
+//    float targetSteeringAngleRad =
+//        RobotKinematics_GetSteeringAngleRad(
+//            fixture->motionController.kinematics,
+//            curvaturePerMm);
+//
+//
+//    uint32_t startTick =
+//        HAL_GetTick();
+//
+//    uint32_t lastUpdateTick =
+//        startTick;
+//
+//
+//    /*
+//     * Repeatedly command the same target because
+//     * SteeringController_SetEffectiveAngleRad() applies
+//     * the configured steering slew-rate limit.
+//     *
+//     * After the target has been reached, continuing to call
+//     * it simply holds the steering there for the remainder
+//     * of the settling interval.
+//     */
+//    while ((HAL_GetTick() - startTick) <
+//           ARC_TEST_STEERING_SETTLE_MS)
+//    {
+//        uint32_t now =
+//            HAL_GetTick();
+//
+//        if ((now - lastUpdateTick) >=
+//            ARC_TEST_CONTROL_PERIOD_MS)
+//        {
+//            lastUpdateTick +=
+//                ARC_TEST_CONTROL_PERIOD_MS;
+//
+//            SteeringController_SetEffectiveAngleRad(
+//                &fixture->steeringController,
+//                targetSteeringAngleRad,
+//                ARC_TEST_CONTROL_PERIOD_S);
+//        }
+//    }
+//}
 
 
 /* -------------------------------------------------------------------------- */
@@ -474,6 +506,11 @@ static bool MotionControllerArcTest_Init(
         ARC_TEST_HEADING_KI,
         ARC_TEST_HEADING_KD,
         ARC_TEST_HEADING_LIMIT_RAD,
+
+		ARC_TEST_YAWRATE_KP,
+		ARC_TEST_YAWRATE_KI,
+		ARC_TEST_YAWRATE_KD,
+		ARC_TEST_YAWRATE_LIMIT_UNIT,
 
         ARC_TEST_SYNC_KP_CPS_PER_MM,
         ARC_TEST_SYNC_MAX_CORRECTION_CPS,
@@ -576,15 +613,14 @@ void MotionControllerArcTestRun(void)
      * This removes steering slew / initial mechanical
      * settling as a variable in this experiment.
      */
-    OLED_Printf(
-        0, 0,
-        "Pre-steering...");
+//    OLED_Printf(
+//        0, 0,
+//        "Pre-steering...");
 
     OLED_Refresh_Gram();
 
-
-    MotionControllerArcTest_PrepositionSteering(
-        &fixture);
+//    MotionControllerArcTest_PrepositionSteering(
+//        &fixture);
 
 
     /*

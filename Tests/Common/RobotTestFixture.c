@@ -112,8 +112,17 @@ bool RobotTestFixture_InitSteeringController(RobotTestFixture *fixture) {
 
 bool RobotTestFixture_InitMotionController(
 		RobotTestFixture *fixture,
-		float headingKp, float headingKi, float headingKd,
+		float headingKp,
+		float headingKi,
+		float headingKd,
 		float maxHeadingSteeringAngleRad,
+		/* We are separating the steering PID with
+		 * existing heading PID, might clean up later
+		 */
+		float arcYawRateKp,
+		float arcYawRateKi,
+		float arcYawRateKd,
+		float maxArcSteeringCommandCorrection,
 		float wheelSyncKpCpsPerMm,
 		float maxWheelSyncCorrectionCps,
 		float motionAccelerationMmps2,
@@ -137,6 +146,10 @@ bool RobotTestFixture_InitMotionController(
 			&fixture->steeringController,
 			&fixture->imu,
 			&kinematics, headingKp, headingKi, headingKd, maxHeadingSteeringAngleRad,
+			/* We are separating the steering PID with
+			 * existing heading PID, might clean up later
+			 */
+			arcYawRateKp, arcYawRateKi, arcYawRateKd, maxArcSteeringCommandCorrection,
 			wheelSyncKpCpsPerMm, maxWheelSyncCorrectionCps,
 			motionAccelerationMmps2,
 			motionDecelerationMmps2))
