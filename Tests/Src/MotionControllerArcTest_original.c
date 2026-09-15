@@ -36,7 +36,7 @@
 /* -------------------------------------------------------------------------- */
 
 #define ARC_TEST_DISTANCE_MM              (1000.0f)
-#define ARC_TEST_RADIUS_MM                (-5000.0f)
+#define ARC_TEST_RADIUS_MM                (-1000.0f)
 #define ARC_TEST_SPEED_CPS                (2000.0f)
 
 #define ARC_TEST_STEERING_SETTLE_MS       (500U)
@@ -63,6 +63,7 @@
 #define ARC_TEST_SYNC_KP_CPS_PER_MM       (10.0f)
 #define ARC_TEST_SYNC_MAX_CORRECTION_CPS  (100.0f)
 
+#define ARC_TEST_FF_EXP	(1)
 
 /*
  * Heading PID is deliberately not used during ARC mode.
@@ -78,12 +79,23 @@
 #define ARC_TEST_HEADING_KD               (0.0f)
 #define ARC_TEST_HEADING_LIMIT_RAD        (0.015f)
 
-#define ARC_TEST_YAWRATE_KP				 (200.0f)
-#define ARC_TEST_YAWRATE_KI				 (200.0f)
-#define ARC_TEST_YAWRATE_KD				 (0.0f)
-#define ARC_TEST_YAWRATE_LIMIT_UNIT		 (20.0f)
+#if ARC_TEST_FF_EXP == 0
+#define ARC_TEST_YAWRATE_KP              (10.0f)
+#define ARC_TEST_YAWRATE_KI              (0.0f)
+#define ARC_TEST_YAWRATE_KD              (0.0f)
+#define ARC_TEST_YAWRATE_LIMIT_UNIT      (20.0f)
 
-#define ARC_TEST_HEADING_OUTER_KP_PER_SEC   (1.0f)
+#define ARC_TEST_HEADING_OUTER_KP_PER_SEC (1.0f)
+
+#else	/* Disable feedback */
+
+#define ARC_TEST_YAWRATE_KP				 	(0.0f)
+#define ARC_TEST_YAWRATE_KI				 	(0.0f)
+#define ARC_TEST_YAWRATE_KD				 	(0.0f)
+#define ARC_TEST_YAWRATE_LIMIT_UNIT		 	(20.0f)
+
+#define ARC_TEST_HEADING_OUTER_KP_PER_SEC	(0.0f)
+#endif	/* ARC_TEST_FF_EXP */
 
 /*
  * Current motion-profile parameters.
@@ -703,6 +715,20 @@ void MotionControllerArcTestRun(void)
         SW1_WhileNotPressed();
         return;
     }
+
+    /*
+     * MoveArc() has already captured the deterministic centre
+     * and selected the curvature feedforward command.
+     *
+     * Pre-position through SteeringController so that both the
+     * physical servo and SteeringController's internal raw-command
+     * state agree before motion begins.
+     */
+    SteeringController_SetRawCommand(
+        &fixture.steeringController,
+        fixture.motionController.arcSteeringFeedforwardCommand);
+
+    HAL_Delay(ARC_TEST_STEERING_SETTLE_MS);
 
 
     /*
