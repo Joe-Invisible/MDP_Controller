@@ -57,6 +57,130 @@ static float MotionController_GetWheelReferenceCurvaturePerMm(
         steeringAngleRad);
 }
 
+typedef struct
+{
+    float curvaturePerMm;
+    float rawCommand;
+} MotionControllerArcFeedforwardPoint;
+
+
+/*
+ * Temporary curvature -> absolute raw steering feedforward table.
+ *
+ * IMPORTANT:
+ * Keep points ordered from MOST NEGATIVE curvature
+ * to LEAST NEGATIVE curvature.
+ *
+ * Example:
+ *
+ * R = -1500 mm -> kappa = -0.0006667 /mm
+ * R = -2500 mm -> kappa = -0.0004000 /mm
+ *
+ * Therefore the -1500 point goes ABOVE the -2500 point.
+ *
+ * Once calibration is complete this table should be moved
+ * into MotionControllerConfig.
+ */
+static const MotionControllerArcFeedforwardPoint
+arcSteeringFeedforwardPoints[] =
+{
+    /*
+     * Add tighter-radius points here as they are calibrated.
+     */
+
+	{ -1.0f / 1000.0f, 23.8f },
+	{ -1.0f / 1500.0f, 16.5f },
+    { -1.0f / 2500.0f, 12.0f },
+};
+
+
+static float MotionController_GetArcSteeringFeedforwardCommand(
+    const MotionController *controller,
+    float curvaturePerMm)
+{
+    const unsigned int pointCount =
+        sizeof(arcSteeringFeedforwardPoints) /
+        sizeof(arcSteeringFeedforwardPoints[0]);
+
+    const float curvatureMatchTolerance = 1.0e-7f;
+
+    /*
+     * We currently only have calibration data for
+     * negative curvature.
+     *
+     * Positive-curvature operation therefore falls back
+     * to deterministic centre until we calibrate that side.
+     */
+    if (curvaturePerMm >= 0.0f)
+    {
+        return controller->arcCentreCommand;
+    }
+
+    /*
+     * First handle an exact calibrated operating point.
+     *
+     * This is also necessary while the table contains
+     * only one point.
+     */
+    for (unsigned int i = 0U; i < pointCount; ++i)
+    {
+        if (fabsf(
+                curvaturePerMm -
+                arcSteeringFeedforwardPoints[i].curvaturePerMm)
+            <= curvatureMatchTolerance)
+        {
+            return arcSteeringFeedforwardPoints[i].rawCommand;
+        }
+    }
+
+    /*
+     * If the requested curvature is tighter than our
+     * tightest calibrated point, clamp to that feedforward
+     * point rather than extrapolating.
+     */
+    if (curvaturePerMm <
+        arcSteeringFeedforwardPoints[0].curvaturePerMm)
+    {
+        return arcSteeringFeedforwardPoints[0].rawCommand;
+    }
+
+    /*
+     * Search for two calibrated points which bracket
+     * the requested curvature, then linearly interpolate.
+     */
+    for (unsigned int i = 0U; i + 1U < pointCount; ++i)
+    {
+        const MotionControllerArcFeedforwardPoint *tightPoint =
+            &arcSteeringFeedforwardPoints[i];
+
+        const MotionControllerArcFeedforwardPoint *loosePoint =
+            &arcSteeringFeedforwardPoints[i + 1U];
+
+        if ((curvaturePerMm >= tightPoint->curvaturePerMm) &&
+            (curvaturePerMm <= loosePoint->curvaturePerMm))
+        {
+            const float interpolationFraction =
+                (curvaturePerMm - tightPoint->curvaturePerMm) /
+                (loosePoint->curvaturePerMm -
+                 tightPoint->curvaturePerMm);
+
+            return tightPoint->rawCommand +
+                interpolationFraction *
+                (loosePoint->rawCommand -
+                 tightPoint->rawCommand);
+        }
+    }
+
+    /*
+     * Requested turn is looser than the loosest non-zero
+     * calibrated point.
+     *
+     * Preserve our existing behaviour for now rather than
+     * inventing a feedforward value between that point
+     * and straight ahead.
+     */
+    return controller->arcCentreCommand;
+}
 static void MotionController_ResetOdometry(
     MotionController *controller)
 {
@@ -374,9 +498,15 @@ static bool MotionController_BeginMotion(
     if (distanceMm == 0.0f)
         return true;
 
+    /*
+     * Capture deterministic centering command
+     */
     controller->arcCentreCommand =
         SteeringController_GetCommand(
             controller->steering);
+
+    controller->arcSteeringFeedforwardCommand =
+        controller->arcCentreCommand;
 
     controller->motionDirection = distanceMm > 0.0f ? 1 : -1;
 
@@ -509,6 +639,11 @@ bool MotionController_MoveArc(
 
     controller->arcCommandedCurvaturePerMm =
         controller->targetCurvaturePerMm;
+
+    controller->arcSteeringFeedforwardCommand =
+        MotionController_GetArcSteeringFeedforwardCommand(
+            controller,
+            controller->targetCurvaturePerMm);
 
     controller->mode =
         MOTIONCONTROLLER_ARC;
@@ -952,13 +1087,13 @@ bool MotionController_Update(
 
 
         /*
-         * Raw steering correction is relative to deterministic
-         * actuator centre.
+         * Raw steering correction is relative to calibrated
+         * command-to-curvature feedforward
          *
          * Increasing raw command produces negative steering.
          */
         float targetCommand =
-            controller->arcCentreCommand -
+            controller->arcSteeringFeedforwardCommand -
             (float)controller->motionDirection *
             steeringCorrectionCommand;
 

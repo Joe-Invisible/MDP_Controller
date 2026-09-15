@@ -134,6 +134,12 @@ typedef struct
 	float arcCentreCommand;
 
 	/*
+	 * Absolute raw steering command supplied by curvature
+	 * feedforward. Feedback correction is applied around this.
+	 */
+	float arcSteeringFeedforwardCommand;
+
+	/*
 	 * Diagnostics: most recently computed geometric wheel reference.
 	 *
 	 * These fields are observational only and must not be used
