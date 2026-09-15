@@ -95,9 +95,6 @@
 						</toolChain>
 					</folderInfo>
 					<fileInfo id="com.st.stm32cube.ide.mcu.gnu.managedbuild.config.exe.debug.1234613617.1805278501" name="oledfont.h" rcbsApplicability="disable" resourcePath="PeripheralDrivers/Inc/oledfont.h" toolsToInvoke=""/>
-					<fileInfo id="com.st.stm32cube.ide.mcu.gnu.managedbuild.config.exe.debug.1234613617.529309250" name="MotionControllerTest.c" rcbsApplicability="disable" resourcePath="Tests/Src/MotionControllerTest.c" toolsToInvoke="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.1640541497.1540096465">
-						<tool id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.1640541497.1540096465" name="MCU/MPU GCC Compiler" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.1640541497"/>
-					</fileInfo>
 					<fileInfo id="com.st.stm32cube.ide.mcu.gnu.managedbuild.config.exe.debug.1234613617.1377366655" name="SteeringGeometryCalibrationTest.h" rcbsApplicability="disable" resourcePath="Tests/Inc/SteeringGeometryCalibrationTest.h" toolsToInvoke=""/>
 					<sourceEntries>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Apps"/>
