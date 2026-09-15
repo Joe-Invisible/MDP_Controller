@@ -1,15 +1,15 @@
 set print elements unlimited
 set print repeats unlimited
 
-set logging file mctrl_cal_free_p2a_run17.txt
+set logging file mctrl_cal_free_p3_run09.txt
 set logging overwrite on
 set logging enabled on
 
 p "Kp=1.2, Ki=0.05, Kd=0, Limit=0.015"
 p "control arc yaw rate in raw command space; no preconditioning except deterministic centering"
-p "(Yaw Rate Control) Kp=200.0, Ki=200.0, Kd=0.0, Limit=20.0"
-p "radius changed from -10000 to -5000 mm"
-p "added Yaw filtering"
+p "(Yaw Rate Control Retuning) Kp=10.0, Ki=0.0, Kd=0.0, Limit=20.0"
+p "(Outer Heading Loop) Kp=1.0"
+p "Radius -1500 mm w/ feedback validation"
 
 p motionControllerArcTestLogCount
 p motionControllerArcTestLog[0] @ motionControllerArcTestLogCount
