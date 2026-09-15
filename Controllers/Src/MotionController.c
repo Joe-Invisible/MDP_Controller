@@ -1132,8 +1132,7 @@ bool MotionController_Update(
         controller->arcSteeringTargetCommand =
             targetCommand;
 
-
-        SteeringController_SetCommandRateLimited(
+        SteeringController_SetRawCommandRateLimited(
             controller->steering,
             targetCommand,
             dt);

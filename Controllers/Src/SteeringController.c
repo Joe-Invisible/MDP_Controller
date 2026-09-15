@@ -507,6 +507,99 @@ bool SteeringController_Init(
 }
 
 
+static void SteeringController_ApplyRawCommand(
+    SteeringController *controller,
+    float command)
+{
+    if (controller == NULL ||
+        controller->servo == NULL)
+    {
+        return;
+    }
+
+    /*
+     * Physical normalized servo-command range.
+     *
+     * Do NOT use calibration->minCommand/maxCommand here:
+     * those bounds belong to the legacy effective-angle model.
+     */
+    float clampedCommand =
+        SteeringController_Clamp(
+            command,
+            SERVO_STEER_MIN,
+            SERVO_STEER_MAX);
+
+    /*
+     * Keep the controller's raw command state synchronized with
+     * the command actually sent to the servo.
+     *
+     * Deliberately do NOT call SteeringController_UpdateModel().
+     * The effective-angle calibration is not defined over the
+     * full physical raw-command range.
+     */
+    controller->command = clampedCommand;
+
+    Servo_SetSteering(
+        controller->servo,
+        clampedCommand);
+}
+
+
+void SteeringController_SetRawCommand(
+    SteeringController *controller,
+    float command)
+{
+    SteeringController_ApplyRawCommand(
+        controller,
+        command);
+}
+
+
+void SteeringController_SetRawCommandRateLimited(
+    SteeringController *controller,
+    float desiredCommand,
+    float dt)
+{
+    if (controller == NULL ||
+        controller->servo == NULL ||
+        controller->calibration == NULL ||
+        dt <= 0.0f)
+    {
+        return;
+    }
+
+    desiredCommand =
+        SteeringController_Clamp(
+            desiredCommand,
+            SERVO_STEER_MIN,
+            SERVO_STEER_MAX);
+
+    /*
+     * Reuse the experimentally validated steering-command slew
+     * rate for now. This can later be moved out of the legacy
+     * calibration configuration.
+     */
+    float maxDeltaCommand =
+        controller->calibration->maxCommandRatePerSec * dt;
+
+    float deltaCommand =
+        desiredCommand - controller->command;
+
+    if (deltaCommand > maxDeltaCommand)
+    {
+        deltaCommand = maxDeltaCommand;
+    }
+    else if (deltaCommand < -maxDeltaCommand)
+    {
+        deltaCommand = -maxDeltaCommand;
+    }
+
+    SteeringController_ApplyRawCommand(
+        controller,
+        controller->command + deltaCommand);
+}
+
+
 static void SteeringController_ApplyCommand(
     SteeringController *controller,
     float command)
