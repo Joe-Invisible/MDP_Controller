@@ -84,15 +84,22 @@ typedef struct
 static const MotionControllerArcFeedforwardPoint
 arcSteeringFeedforwardPoints[] =
 {
-    /*
-     * Add tighter-radius points here as they are calibrated.
-     */
-
-	{ -1.0f / 1000.0f, 23.8f },
-	{ -1.0f / 1500.0f, 16.5f },
+    /* Negative curvature */
+    { -1.0f /  275.0f, 95.0f },
+    { -1.0f /  300.0f, 84.2f },
+    { -1.0f /  400.0f, 59.7f },
+    { -1.0f /  500.0f, 47.5f },
+    { -1.0f / 1000.0f, 23.8f },
+    { -1.0f / 1500.0f, 16.5f },
     { -1.0f / 2500.0f, 12.0f },
-};
 
+    /* Positive curvature */
+    {  1.0f / 1500.0f, -22.5f },
+    {  1.0f / 1000.0f, -27.7f },
+    {  1.0f /  500.0f, -47.5f },
+    {  1.0f /  300.0f, -75.0f },
+    {  1.0f /  275.0f, -81.7f },
+};
 
 static float MotionController_GetArcSteeringFeedforwardCommand(
     const MotionController *controller,
@@ -103,18 +110,6 @@ static float MotionController_GetArcSteeringFeedforwardCommand(
         sizeof(arcSteeringFeedforwardPoints[0]);
 
     const float curvatureMatchTolerance = 1.0e-7f;
-
-    /*
-     * We currently only have calibration data for
-     * negative curvature.
-     *
-     * Positive-curvature operation therefore falls back
-     * to deterministic centre until we calibrate that side.
-     */
-    if (curvaturePerMm >= 0.0f)
-    {
-        return controller->arcCentreCommand;
-    }
 
     /*
      * First handle an exact calibrated operating point.
