@@ -24,6 +24,7 @@
 
 #include "oledutils.h"
 #include "userbutton.h"
+#include "buzzer.h"
 #include "RobotTestFixture.h"
 #include "RobotKinematics.h"
 
@@ -35,8 +36,8 @@
 /* Test configuration                                                         */
 /* -------------------------------------------------------------------------- */
 
-#define ARC_TEST_DISTANCE_MM              (1000.0f)
-#define ARC_TEST_RADIUS_MM                (-1000.0f)
+#define ARC_TEST_DISTANCE_MM              (500.0f)
+#define ARC_TEST_RADIUS_MM                (-350.0f)
 #define ARC_TEST_SPEED_CPS                (2000.0f)
 
 #define ARC_TEST_STEERING_SETTLE_MS       (500U)
@@ -63,7 +64,7 @@
 #define ARC_TEST_SYNC_KP_CPS_PER_MM       (10.0f)
 #define ARC_TEST_SYNC_MAX_CORRECTION_CPS  (100.0f)
 
-#define ARC_TEST_FF_EXP	(1)
+#define ARC_TEST_FF_EXP	(0)
 
 /*
  * Heading PID is deliberately not used during ARC mode.
@@ -83,7 +84,7 @@
 #define ARC_TEST_YAWRATE_KP              (10.0f)
 #define ARC_TEST_YAWRATE_KI              (0.0f)
 #define ARC_TEST_YAWRATE_KD              (0.0f)
-#define ARC_TEST_YAWRATE_LIMIT_UNIT      (20.0f)
+#define ARC_TEST_YAWRATE_LIMIT_UNIT      (5.0f)
 
 #define ARC_TEST_HEADING_OUTER_KP_PER_SEC (1.0f)
 
@@ -491,55 +492,6 @@ static void MotionControllerArcTest_CaptureArcExit(
 }
 
 
-//static void MotionControllerArcTest_PrepositionSteering(
-//    RobotTestFixture *fixture)
-//{
-//    float curvaturePerMm =
-//        1.0f / ARC_TEST_RADIUS_MM;
-//
-//    float targetSteeringAngleRad =
-//        RobotKinematics_GetSteeringAngleRad(
-//            fixture->motionController.kinematics,
-//            curvaturePerMm);
-//
-//
-//    uint32_t startTick =
-//        HAL_GetTick();
-//
-//    uint32_t lastUpdateTick =
-//        startTick;
-//
-//
-//    /*
-//     * Repeatedly command the same target because
-//     * SteeringController_SetEffectiveAngleRad() applies
-//     * the configured steering slew-rate limit.
-//     *
-//     * After the target has been reached, continuing to call
-//     * it simply holds the steering there for the remainder
-//     * of the settling interval.
-//     */
-//    while ((HAL_GetTick() - startTick) <
-//           ARC_TEST_STEERING_SETTLE_MS)
-//    {
-//        uint32_t now =
-//            HAL_GetTick();
-//
-//        if ((now - lastUpdateTick) >=
-//            ARC_TEST_CONTROL_PERIOD_MS)
-//        {
-//            lastUpdateTick +=
-//                ARC_TEST_CONTROL_PERIOD_MS;
-//
-//            SteeringController_SetEffectiveAngleRad(
-//                &fixture->steeringController,
-//                targetSteeringAngleRad,
-//                ARC_TEST_CONTROL_PERIOD_S);
-//        }
-//    }
-//}
-
-
 /* -------------------------------------------------------------------------- */
 /* Initialisation                                                              */
 /* -------------------------------------------------------------------------- */
@@ -661,22 +613,7 @@ void MotionControllerArcTestRun(void)
     HAL_Delay(100U);
 
 
-    /*
-     * Pre-position the front steering to the required
-     * constant-curvature feedforward angle BEFORE the
-     * robot starts moving.
-     *
-     * This removes steering slew / initial mechanical
-     * settling as a variable in this experiment.
-     */
-//    OLED_Printf(
-//        0, 0,
-//        "Pre-steering...");
-
     OLED_Refresh_Gram();
-
-//    MotionControllerArcTest_PrepositionSteering(
-//        &fixture);
 
 
     /*
@@ -888,6 +825,7 @@ void MotionControllerArcTestRun(void)
         }
     }
 
+    Buzzer_BlockingBuzz(500);
 
     /*
      * Guaranteed final sample.

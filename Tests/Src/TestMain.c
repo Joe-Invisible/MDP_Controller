@@ -19,10 +19,8 @@
 #include "MotionProfileTest.h"
 #include "RobotKinematicsTest.h"
 #include "MotionControllerArcTest.h"
+#include "MotionControllerSequenceTest.h"
 #include "MotionControllerTest.h"
-#include "SteeringGeometryCalibrationTest_selfpropelled.h"
-#include "SteeringGeometryCalibrationIterationTest.h"
-#include "SteeringPreconditioningArcRepeatTest.h"
 #include "oled.h"
 #include "led3.h"
 
@@ -32,7 +30,7 @@ void InvokeTest() {
 
 	LED_On();
 
-	MotionControllerArcTestRun();
+	MotionControllerSequenceTestRun();
 
 	while (1) {
 		// Test ended. Loop forever.
