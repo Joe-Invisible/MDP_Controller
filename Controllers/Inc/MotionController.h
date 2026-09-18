@@ -25,6 +25,15 @@
 #include "icm20948.h"
 
 #define MOTIONCONTROLLER_STOP_STABLE_SAMPLES 3U
+/**
+ * MotionProfile exact endpoint crossing can deadlock
+ * finite-distance motion near the encoder-resolution
+ * limit. The motions require a explicit completion
+ * tolerance.
+ *
+ * 0.5 mm is about 4 encoder counts.
+ */
+#define MOTION_PROFILE_COMPLETION_TOLERANCE_MM 	(0.5f)
 
 typedef enum
 {

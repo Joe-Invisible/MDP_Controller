@@ -12,8 +12,7 @@
 
 #define MOTION_PI 3.14159265358979323846f
 
-#define MOTIONCONTROLLER_ARC_YAW_RATE_FILTER_TAU_SEC  0.10f
-
+#define MOTIONCONTROLLER_ARC_YAW_RATE_FILTER_TAU_SEC		(0.10f)
 
 static float MotionController_GetMmPerCount(
     const MotionController *controller)
@@ -438,7 +437,8 @@ bool MotionController_Init(
     if (!MotionProfile_Init(
             &controller->motionProfile,
             motionAccelerationMmps2,
-            motionDecelerationMmps2))
+            motionDecelerationMmps2,
+			MOTION_PROFILE_COMPLETION_TOLERANCE_MM))
     {
         return false;
     }
