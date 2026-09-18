@@ -8,6 +8,7 @@
 #include "MotionProfileTest.h"
 
 #include "MotionProfile.h"
+#include "MotionController.h" // for tolerance definiton
 
 #include <math.h>
 #include <stdbool.h>
@@ -94,7 +95,8 @@ static void MotionProfileTest_RunCase(
     result->initPassed = MotionProfile_Init(
         &profile,
         TEST_ACCELERATION_MMPS2,
-        TEST_DECELERATION_MMPS2);
+        TEST_DECELERATION_MMPS2,
+		MOTION_PROFILE_COMPLETION_TOLERANCE_MM);
 
     if (!result->initPassed)
         return;

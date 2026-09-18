@@ -37,7 +37,7 @@
 /* -------------------------------------------------------------------------- */
 
 #define ARC_TEST_DISTANCE_MM              (500.0f)
-#define ARC_TEST_RADIUS_MM                (-350.0f)
+#define ARC_TEST_RADIUS_MM                (-300.0f)
 #define ARC_TEST_SPEED_CPS                (2000.0f)
 
 #define ARC_TEST_STEERING_SETTLE_MS       (500U)
@@ -143,6 +143,37 @@ volatile uint32_t motionControllerArcTestLogCount = 0U;
  */
 volatile bool motionControllerArcTestCommandAccepted = false;
 volatile bool motionControllerArcTestTimedOut = false;
+/*
+ * State preserved at the instant the hard timeout is detected,
+ * before timeout handling changes MotionController state.
+ */
+volatile MotionControllerMode
+motionControllerArcTestTimeoutMode =
+    MOTIONCONTROLLER_IDLE;
+
+volatile float
+motionControllerArcTestTimeoutDistanceMm = 0.0f;
+
+volatile float
+motionControllerArcTestTimeoutTargetDistanceMm = 0.0f;
+
+volatile bool
+motionControllerArcTestTimeoutProfileActive = false;
+
+volatile uint32_t
+motionControllerArcTestTimeoutStationarySamples = 0U;
+
+volatile float
+motionControllerArcTestTimeoutLeftCps = 0.0f;
+
+volatile float
+motionControllerArcTestTimeoutRightCps = 0.0f;
+
+volatile float
+motionControllerArcTestTimeoutYawDeg = 0.0f;
+
+volatile bool
+motionControllerArcTestTimeoutArcExitCaptured = false;
 
 
 /*
@@ -210,6 +241,18 @@ static void MotionControllerArcTest_ResetLog(void)
 
     motionControllerArcTestFinalLeftDistanceMm = 0.0f;
     motionControllerArcTestFinalRightDistanceMm = 0.0f;
+
+    motionControllerArcTestTimeoutMode =
+        MOTIONCONTROLLER_IDLE;
+
+    motionControllerArcTestTimeoutDistanceMm = 0.0f;
+    motionControllerArcTestTimeoutTargetDistanceMm = 0.0f;
+    motionControllerArcTestTimeoutProfileActive = false;
+    motionControllerArcTestTimeoutStationarySamples = 0U;
+    motionControllerArcTestTimeoutLeftCps = 0.0f;
+    motionControllerArcTestTimeoutRightCps = 0.0f;
+    motionControllerArcTestTimeoutYawDeg = 0.0f;
+    motionControllerArcTestTimeoutArcExitCaptured = false;
 }
 
 
@@ -453,6 +496,40 @@ static void MotionControllerArcTest_LogSample(
     motionControllerArcTestLogCount++;
 }
 
+static void MotionControllerArcTest_CaptureTimeout(
+    RobotTestFixture *fixture)
+{
+    MotionController *motionController =
+        &fixture->motionController;
+
+    motionControllerArcTestTimeoutMode =
+        motionController->mode;
+
+    motionControllerArcTestTimeoutDistanceMm =
+        motionController->travelledDistanceMm;
+
+    motionControllerArcTestTimeoutTargetDistanceMm =
+        motionController->targetDistanceMm;
+
+    motionControllerArcTestTimeoutProfileActive =
+        MotionProfile_IsActive(
+            &motionController->motionProfile);
+
+    motionControllerArcTestTimeoutStationarySamples =
+        motionController->stationarySamples;
+
+    motionControllerArcTestTimeoutLeftCps =
+        motionController->leftWheel->measuredSpeedCps;
+
+    motionControllerArcTestTimeoutRightCps =
+        motionController->rightWheel->measuredSpeedCps;
+
+    motionControllerArcTestTimeoutYawDeg =
+        motionController->yawDeg;
+
+    motionControllerArcTestTimeoutArcExitCaptured =
+        motionControllerArcTestArcExitCaptured;
+}
 
 static void MotionControllerArcTest_CaptureArcExit(
     RobotTestFixture *fixture,
@@ -699,6 +776,14 @@ void MotionControllerArcTestRun(void)
         if ((now - startTick) >=
             ARC_TEST_TIMEOUT_MS)
         {
+            /*
+             * Preserve the state that caused the timeout before
+             * MotionController_Brake() changes the controller mode
+             * and motion-profile state.
+             */
+            MotionControllerArcTest_CaptureTimeout(
+                &fixture);
+
             motionControllerArcTestTimedOut = true;
 
             MotionController_Brake(
@@ -853,33 +938,85 @@ void MotionControllerArcTestRun(void)
      */
     OLED_Clear();
 
-    OLED_Printf(
-        0, 0,
-        "Arc Exit:%+.2f",
-        motionControllerArcTestArcExitYawDeg);
+    if (motionControllerArcTestTimedOut)
+    {
+        /*
+         * Diagnostic timeout screen.
+         *
+         * Mode values:
+         *   0 = IDLE
+         *   1 = STRAIGHT
+         *   2 = ARC
+         *   3 = BRAKING
+         *
+         * P    = MotionProfile active
+         * Stat = consecutive stationary samples
+         * Exit = whether the normal ARC-exit transition
+         *        had already been observed
+         */
+        OLED_Printf(
+            0, 0,
+            "TIMEOUT M:%lu P:%u",
+            (unsigned long)
+                motionControllerArcTestTimeoutMode,
+            motionControllerArcTestTimeoutProfileActive
+                ? 1U : 0U);
 
-    OLED_Printf(
-        0, 1,
-        "Ideal:%+.2f",
-        motionControllerArcTestArcExitIdealYawDeg);
+        OLED_Printf(
+            0, 1,
+            "D:%.1f/%.1f",
+            motionControllerArcTestTimeoutDistanceMm,
+            motionControllerArcTestTimeoutTargetDistanceMm);
 
-    OLED_Printf(
-        0, 2,
-        "Final:%+.2f",
-        motionControllerArcTestFinalYawDeg);
+        OLED_Printf(
+            0, 2,
+            "Stat:%lu Exit:%u",
+            (unsigned long)
+                motionControllerArcTestTimeoutStationarySamples,
+            motionControllerArcTestTimeoutArcExitCaptured
+                ? 1U : 0U);
 
-    OLED_Printf(
-        0, 3,
-        "Dist:%6.1f",
-        motionControllerArcTestFinalDistanceMm);
+        OLED_Printf(
+            0, 3,
+            "L:%+.0f R:%+.0f",
+            motionControllerArcTestTimeoutLeftCps,
+            motionControllerArcTestTimeoutRightCps);
 
-    OLED_Printf(
-        0, 4,
-        "N:%lu%s",
-        motionControllerArcTestLogCount,
-        motionControllerArcTestTimedOut
-            ? " TIMEOUT"
-            : "");
+        OLED_Printf(
+            0, 4,
+            "Yaw:%+.2f",
+            motionControllerArcTestTimeoutYawDeg);
+    }
+    else
+    {
+        /*
+         * Normal successful result screen.
+         */
+        OLED_Printf(
+            0, 0,
+            "Arc Exit:%+.2f",
+            motionControllerArcTestArcExitYawDeg);
+
+        OLED_Printf(
+            0, 1,
+            "Ideal:%+.2f",
+            motionControllerArcTestArcExitIdealYawDeg);
+
+        OLED_Printf(
+            0, 2,
+            "Final:%+.2f",
+            motionControllerArcTestFinalYawDeg);
+
+        OLED_Printf(
+            0, 3,
+            "Dist:%6.1f",
+            motionControllerArcTestFinalDistanceMm);
+
+        OLED_Printf(
+            0, 4,
+            "N:%lu",
+            motionControllerArcTestLogCount);
+    }
 
     OLED_Refresh_Gram();
 
