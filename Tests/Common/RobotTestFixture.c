@@ -112,25 +112,8 @@ bool RobotTestFixture_InitSteeringController(RobotTestFixture *fixture) {
 
 bool RobotTestFixture_InitMotionController(
 		RobotTestFixture *fixture,
-		float headingKp,
-		float headingKi,
-		float headingKd,
-		float maxHeadingSteeringAngleRad,
-		/* We are separating the steering PID with
-		 * existing heading PID, might clean up later
-		 */
-		float arcYawRateKp,
-		float arcYawRateKi,
-		float arcYawRateKd,
-		float maxArcSteeringCommandCorrection,
-
-		float arcHeadingKpPerSec,
-
-		float wheelSyncKpCpsPerMm,
-		float maxWheelSyncCorrectionCps,
-		float motionAccelerationMmps2,
-		float motionDecelerationMmps2) {
-	if (fixture == NULL) return false;
+		const MotionControllerConfig *config) {
+	if (fixture == NULL || config == NULL) return false;
 
 	if (!RobotTestFixture_InitIMU(fixture)) return false;
 
@@ -142,27 +125,14 @@ bool RobotTestFixture_InitMotionController(
 
 	if (!RobotTestFixture_InitWheelControllers(fixture)) return false;
 
-	if (!MotionController_Init(
+	if (MotionController_Init(
 			&fixture->motionController,
 			&fixture->leftWheelController,
 			&fixture->rightWheelController,
 			&fixture->steeringController,
 			&fixture->imu,
-			&kinematics,
-			&arcMotionConfig,
-
-			headingKp, headingKi, headingKd, maxHeadingSteeringAngleRad,
-			/* We are separating the steering PID with
-			 * existing heading PID, might clean up later
-			 */
-			arcYawRateKp, arcYawRateKi, arcYawRateKd, maxArcSteeringCommandCorrection,
-			arcHeadingKpPerSec,
-
-			wheelSyncKpCpsPerMm, maxWheelSyncCorrectionCps,
-
-
-			motionAccelerationMmps2,
-			motionDecelerationMmps2))
+			config) !=
+		MOTIONCONTROLLER_STATUS_OK)
 		return false;
 
 #if CONFIGURE_DYNAMIC_BRAKES == 1

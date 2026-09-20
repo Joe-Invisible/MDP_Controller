@@ -78,24 +78,6 @@
 /*
  * Current production-candidate controller tuning.
  */
-#define SEQ_TEST_SYNC_KP_CPS_PER_MM             (10.0f)
-#define SEQ_TEST_SYNC_MAX_CORRECTION_CPS        (100.0f)
-
-#define SEQ_TEST_HEADING_KP                     (1.2f)
-#define SEQ_TEST_HEADING_KI                     (0.05f)
-#define SEQ_TEST_HEADING_KD                     (0.0f)
-#define SEQ_TEST_HEADING_LIMIT_RAD              (0.015f)
-
-#define SEQ_TEST_YAWRATE_KP                     (10.0f)
-#define SEQ_TEST_YAWRATE_KI                     (0.0f)
-#define SEQ_TEST_YAWRATE_KD                     (0.0f)
-#define SEQ_TEST_YAWRATE_LIMIT_UNIT             (5.0f)
-
-#define SEQ_TEST_HEADING_OUTER_KP_PER_SEC       (1.0f)
-
-#define SEQ_TEST_ACCELERATION_MMPS2             (500.0f)
-#define SEQ_TEST_DECELERATION_MMPS2             (250.0f)
-
 
 #define SEQ_TEST_PI                             (3.14159265358979323846f)
 #define SEQ_TEST_RAD_TO_DEG                     (180.0f / SEQ_TEST_PI)
@@ -668,24 +650,7 @@ static bool MotionControllerSequenceTest_Init(
 
     return RobotTestFixture_InitMotionController(
         fixture,
-
-        SEQ_TEST_HEADING_KP,
-        SEQ_TEST_HEADING_KI,
-        SEQ_TEST_HEADING_KD,
-        SEQ_TEST_HEADING_LIMIT_RAD,
-
-        SEQ_TEST_YAWRATE_KP,
-        SEQ_TEST_YAWRATE_KI,
-        SEQ_TEST_YAWRATE_KD,
-        SEQ_TEST_YAWRATE_LIMIT_UNIT,
-
-        SEQ_TEST_HEADING_OUTER_KP_PER_SEC,
-
-        SEQ_TEST_SYNC_KP_CPS_PER_MM,
-        SEQ_TEST_SYNC_MAX_CORRECTION_CPS,
-
-        SEQ_TEST_ACCELERATION_MMPS2,
-        SEQ_TEST_DECELERATION_MMPS2);
+        &motionControllerConfig);
 }
 
 

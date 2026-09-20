@@ -30,6 +30,7 @@
 #define SPEED_EPSILON_MMPS          0.01f
 #define DISTANCE_TOLERANCE_MM       0.5f
 
+#define TEST_COMPLETION_TOLERANCE_MM (0.5)
 
 typedef struct {
     float timeSec;
@@ -96,7 +97,7 @@ static void MotionProfileTest_RunCase(
         &profile,
         TEST_ACCELERATION_MMPS2,
         TEST_DECELERATION_MMPS2,
-		MOTION_PROFILE_COMPLETION_TOLERANCE_MM);
+		TEST_COMPLETION_TOLERANCE_MM);
 
     if (!result->initPassed)
         return;
