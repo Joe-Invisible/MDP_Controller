@@ -23,8 +23,6 @@
 
 #include "icm20948.h"
 
-#define MOTIONCONTROLLER_STOP_STABLE_SAMPLES 3U
-
 typedef enum
 {
 	/**

@@ -450,7 +450,8 @@ MotionControllerStatus MotionController_Init(
 
     if (config->arcHeadingKpPerSec < 0.0f ||
         config->motionCompletionToleranceMm <= 0.0f ||
-        config->arcYawRateFilterTauSec < 0.0f)
+        config->arcYawRateFilterTauSec < 0.0f ||
+        config->stopStableSampleCount == 0U)
     {
         return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
     }
@@ -915,112 +916,283 @@ static void MotionController_UpdateWheelSynchronisation(
         rightBaseTargetCps - correctionCps);
 }
 
-MotionControllerStatus MotionController_Update(
+static MotionControllerStatus MotionController_UpdateArcPreparation(
     MotionController *controller,
     float dt)
 {
-    if (controller == NULL)
-        return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
+    float remainingSettlingTimeSec =
+        controller->config->arcConfig->steeringSettlingTimeSec -
+        controller->arcPreparationElapsedSec;
 
-    if (!controller->initialized)
-        return MOTIONCONTROLLER_STATUS_NOT_INITIALIZED;
-
-    if (!isfinite(dt) || dt <= 0.0f)
-        return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
-
-    if (controller->mode == MOTIONCONTROLLER_IDLE)
-        return MOTIONCONTROLLER_STATUS_OK;
-
-    if (controller->mode == MOTIONCONTROLLER_ARC_PREPARING)
+    if (dt + MOTIONCONTROLLER_TIME_EPSILON_SEC <
+        remainingSettlingTimeSec)
     {
-        float remainingSettlingTimeSec =
-            controller->config->arcConfig->steeringSettlingTimeSec -
-            controller->arcPreparationElapsedSec;
+        controller->arcPreparationElapsedSec += dt;
+        return MOTIONCONTROLLER_STATUS_OK;
+    }
 
-        if (dt + MOTIONCONTROLLER_TIME_EPSILON_SEC <
-            remainingSettlingTimeSec)
+    controller->arcPreparationElapsedSec =
+        controller->config->arcConfig->steeringSettlingTimeSec;
+
+    /*
+     * Establish the motion origin after the mechanical hold so any
+     * incidental encoder movement during preparation is excluded.
+     */
+    controller->yawDeg = 0.0f;
+    controller->yawRateDps = 0.0f;
+    controller->filteredYawRateDps = 0.0f;
+
+    MotionController_ResetOdometry(controller);
+
+    controller->mode = MOTIONCONTROLLER_ARC;
+
+    return MOTIONCONTROLLER_STATUS_OK;
+}
+
+
+static MotionControllerStatus MotionController_UpdateBraking(
+    MotionController *controller,
+    float dt)
+{
+    /* Keep odometry running so endpoint overshoot is captured. */
+    MotionController_UpdateOdometry(controller);
+
+    /*
+     * Target is already zero. Update() still measures encoder velocity
+     * before handling the zero target, which lets us determine when the
+     * chassis has actually stopped.
+     */
+    WheelSpeedController_Update(
+        controller->leftWheel,
+        dt);
+
+    WheelSpeedController_Update(
+        controller->rightWheel,
+        dt);
+
+    /* Retain yaw caused by asymmetric braking for diagnostics. */
+    MotionController_UpdateYawEstimate(controller, dt);
+
+    bool leftStationary = WheelSpeedController_IsStationary(
+        controller->leftWheel);
+
+    bool rightStationary = WheelSpeedController_IsStationary(
+        controller->rightWheel);
+
+    if (leftStationary && rightStationary)
+    {
+        controller->stationarySamples++;
+
+        if (controller->stationarySamples >=
+            controller->config->stopStableSampleCount)
         {
-            controller->arcPreparationElapsedSec += dt;
-            return MOTIONCONTROLLER_STATUS_OK;
+            MotionController_FinishBraking(controller);
         }
+    }
+    else
+    {
+        controller->stationarySamples = 0U;
+    }
 
-        controller->arcPreparationElapsedSec =
-            controller->config->arcConfig->steeringSettlingTimeSec;
+    return MOTIONCONTROLLER_STATUS_OK;
+}
 
-        /*
-         * Establish the motion origin after the mechanical hold so any
-         * incidental encoder movement during preparation is excluded.
-         */
-        controller->yawDeg = 0.0f;
-        controller->yawRateDps = 0.0f;
-        controller->filteredYawRateDps = 0.0f;
 
-        MotionController_ResetOdometry(controller);
+static void MotionController_UpdateStraightSteering(
+    MotionController *controller,
+    float dt)
+{
+    /* Straight-line heading feedback. Desired relative yaw = 0. */
+    float headingErrorRad =
+        -controller->yawDeg *
+        (MOTION_PI / 180.0f);
 
-        controller->mode = MOTIONCONTROLLER_ARC;
+    float steeringAngleCorrectionRad =
+        PIDController_Update(
+            &controller->headingPID,
+            headingErrorRad,
+            dt);
+
+    /*
+     * Reverse motion reverses the yaw response produced by a given
+     * physical steering angle.
+     */
+    float targetSteeringAngleRad =
+        steeringAngleCorrectionRad *
+        (float)controller->motionDirection;
+
+    SteeringController_SetEffectiveAngleRad(
+        controller->steering,
+        targetSteeringAngleRad,
+        dt);
+}
+
+
+static void MotionController_UpdateArcSteering(
+    MotionController *controller,
+    float dt,
+    float mmPerCount)
+{
+    /* Signed rear-axle-centre reference speed. */
+    float signedSpeedMmps =
+        controller->targetSpeedCps *
+        mmPerCount;
+
+    /*
+     * --------------------------------------------------------
+     * PHASE 2B: OUTER HEADING LOOP
+     * --------------------------------------------------------
+     *
+     * Desired heading along the requested constant-curvature path:
+     *
+     *     psi_d = kappa_path * s
+     *
+     * travelledDistanceMm is signed, so reverse motion is naturally
+     * handled here.
+     */
+    float desiredYawRad =
+        controller->targetCurvaturePerMm *
+        controller->travelledDistanceMm;
+
+    float measuredYawRad =
+        controller->yawDeg *
+        (MOTION_PI / 180.0f);
+
+    float headingErrorRad =
+        desiredYawRad -
+        measuredYawRad;
+
+    /*
+     * Nominal geometric yaw-rate feedforward:
+     *
+     *     omega_ff = kappa_path * v
+     */
+    float feedforwardYawRateRadPerSec =
+        controller->targetCurvaturePerMm *
+        signedSpeedMmps;
+
+    /*
+     * Heading error directly biases the requested yaw rate:
+     *
+     *     omega_heading = K_heading * e_heading
+     */
+    float headingYawRateCorrectionRadPerSec =
+        controller->config->arcHeadingKpPerSec *
+        headingErrorRad;
+
+    /*
+     * Keep the feedback-generated curvature bounded as the profile
+     * approaches zero speed.
+     *
+     * Allow heading feedback to add up to 2x the nominal yaw-rate
+     * magnitude, i.e. total demand can reach 3x nominal curvature.
+     */
+    float headingCorrectionLimitRadPerSec =
+        2.0f *
+        fabsf(feedforwardYawRateRadPerSec);
+
+    headingYawRateCorrectionRadPerSec =
+        MotionController_Clamp(
+            headingYawRateCorrectionRadPerSec,
+            -headingCorrectionLimitRadPerSec,
+            +headingCorrectionLimitRadPerSec);
+
+    /* Final yaw-rate request seen by the inner Phase-2A loop. */
+    float targetYawRateRadPerSec =
+        feedforwardYawRateRadPerSec +
+        headingYawRateCorrectionRadPerSec;
+
+    /*
+     * Rear-wheel geometry follows the same corrected motion request as
+     * the steering controller. Since heading correction is limited
+     * relative to feedforward yaw rate, commanded curvature remains
+     * bounded even near the ends of the speed profile.
+     */
+    float commandedCurvaturePerMm =
+        controller->targetCurvaturePerMm;
+
+    if (fabsf(signedSpeedMmps) > 1.0f)
+    {
+        commandedCurvaturePerMm =
+            targetYawRateRadPerSec /
+            signedSpeedMmps;
     }
 
     /*
-     * Keep odometry running during both normal motion and
-     * braking, so endpoint overshoot is captured.
+     * --------------------------------------------------------
+     * PHASE 2A: INNER YAW-RATE LOOP
+     * --------------------------------------------------------
      */
+    float measuredYawRateRadPerSec =
+        controller->filteredYawRateDps *
+        (MOTION_PI / 180.0f);
+
+    float yawRateErrorRadPerSec =
+        targetYawRateRadPerSec -
+        measuredYawRateRadPerSec;
+
+    float steeringCorrectionCommand =
+        PIDController_Update(
+            &controller->arcYawRatePID,
+            yawRateErrorRadPerSec,
+            dt);
+
+    /*
+     * Raw steering correction is relative to calibrated
+     * command-to-curvature feedforward. Increasing raw command produces
+     * negative steering.
+     */
+    float targetCommand =
+        controller->arcSteeringFeedforwardCommand -
+        (float)controller->motionDirection *
+        steeringCorrectionCommand;
+
+    /* Phase-2B diagnostics. */
+    controller->arcDesiredYawRad =
+        desiredYawRad;
+
+    controller->arcHeadingErrorRad =
+        headingErrorRad;
+
+    controller->arcFeedforwardYawRateRadPerSec =
+        feedforwardYawRateRadPerSec;
+
+    controller->arcHeadingYawRateCorrectionRadPerSec =
+        headingYawRateCorrectionRadPerSec;
+
+    controller->arcTargetYawRateRadPerSec =
+        targetYawRateRadPerSec;
+
+    controller->arcCommandedCurvaturePerMm =
+        commandedCurvaturePerMm;
+
+    /* Phase-2A diagnostics. */
+    controller->arcYawRateErrorRadPerSec =
+        yawRateErrorRadPerSec;
+
+    controller->arcSteeringCorrectionCommand =
+        steeringCorrectionCommand;
+
+    controller->arcSteeringTargetCommand =
+        targetCommand;
+
+    SteeringController_SetRawCommandRateLimited(
+        controller->steering,
+        targetCommand,
+        dt);
+}
+
+
+static MotionControllerStatus MotionController_UpdateActiveMotion(
+    MotionController *controller,
+    float dt)
+{
+    /* Keep odometry running so endpoint overshoot is captured. */
     MotionController_UpdateOdometry(controller);
 
     /*
      * --------------------------------------------------------
-     * STOPPING
-     * --------------------------------------------------------
-     */
-    if (controller->mode == MOTIONCONTROLLER_BRAKING)
-    {
-        /*
-         * Target is already zero. Update() still measures
-         * encoder velocity before handling the zero target,
-         * which lets us determine when the chassis has
-         * actually stopped.
-         */
-        WheelSpeedController_Update(
-            controller->leftWheel,
-            dt);
-
-        WheelSpeedController_Update(
-            controller->rightWheel,
-            dt);
-
-        /**
-         * Continue to measure yaw,
-         * Could be useful for inspecting yaw
-         * caused by asymmetric braking.
-         */
-        MotionController_UpdateYawEstimate(controller, dt);
-
-        bool leftStationary = WheelSpeedController_IsStationary(
-            controller->leftWheel);
-
-        bool rightStationary = WheelSpeedController_IsStationary(
-            controller->rightWheel);
-
-        if (leftStationary && rightStationary)
-        {
-            controller->stationarySamples++;
-
-            if (controller->stationarySamples >=
-                MOTIONCONTROLLER_STOP_STABLE_SAMPLES)
-            {
-                MotionController_FinishBraking(controller);
-            }
-        }
-        else
-        {
-            controller->stationarySamples = 0U;
-        }
-
-        return MOTIONCONTROLLER_STATUS_OK;
-    }
-
-    /*
-     * --------------------------------------------------------
-     * STRAIGHT
+     * ACTIVE MOTION PROFILE
      * --------------------------------------------------------
      */
 
@@ -1069,215 +1241,24 @@ MotionControllerStatus MotionController_Update(
         return MOTIONCONTROLLER_STATUS_IMU_ERROR;
     }
 
-    float targetSteeringAngleRad;
-
-    if (controller->mode == MOTIONCONTROLLER_STRAIGHT)
+    switch (controller->mode)
     {
-        /*
-         * Straight-line heading feedback.
-         * Desired relative yaw = 0.
-         */
-        float headingErrorRad =
-            -controller->yawDeg *
-            (MOTION_PI / 180.0f);
-
-        float steeringAngleCorrectionRad =
-            PIDController_Update(
-                &controller->headingPID,
-                headingErrorRad,
+        case MOTIONCONTROLLER_STRAIGHT:
+            MotionController_UpdateStraightSteering(
+                controller,
                 dt);
+            break;
 
-        /*
-         * Reverse motion reverses the yaw response
-         * produced by a given physical steering angle.
-         */
-        targetSteeringAngleRad =
-            steeringAngleCorrectionRad *
-            (float)controller->motionDirection;
+        case MOTIONCONTROLLER_ARC:
+            MotionController_UpdateArcSteering(
+                controller,
+                dt,
+                mmPerCount);
+            break;
 
-        SteeringController_SetEffectiveAngleRad(
-            controller->steering,
-            targetSteeringAngleRad,
-            dt);
-
-    }
-    else if (controller->mode == MOTIONCONTROLLER_ARC)
-    {
-        /*
-         * Signed rear-axle-centre reference speed.
-         */
-        float signedSpeedMmps =
-            controller->targetSpeedCps *
-            mmPerCount;
-
-
-        /*
-         * --------------------------------------------------------
-         * PHASE 2B: OUTER HEADING LOOP
-         * --------------------------------------------------------
-         *
-         * Desired heading along the requested constant-curvature
-         * path:
-         *
-         *     psi_d = kappa_path * s
-         *
-         * travelledDistanceMm is signed, so reverse motion is
-         * naturally handled here.
-         */
-        float desiredYawRad =
-            controller->targetCurvaturePerMm *
-            controller->travelledDistanceMm;
-
-        float measuredYawRad =
-            controller->yawDeg *
-            (MOTION_PI / 180.0f);
-
-        float headingErrorRad =
-            desiredYawRad -
-            measuredYawRad;
-
-
-        /*
-         * Nominal geometric yaw-rate feedforward:
-         *
-         *     omega_ff = kappa_path * v
-         */
-        float feedforwardYawRateRadPerSec =
-            controller->targetCurvaturePerMm *
-            signedSpeedMmps;
-
-
-        /*
-         * Heading error directly biases the requested yaw rate:
-         *
-         *     omega_heading = K_heading * e_heading
-         */
-        float headingYawRateCorrectionRadPerSec =
-            controller->config->arcHeadingKpPerSec *
-            headingErrorRad;
-
-
-        /*
-         * Keep the feedback-generated curvature bounded as the
-         * profile approaches zero speed.
-         *
-         * Allow heading feedback to add up to 2x the nominal
-         * yaw-rate magnitude, i.e. total demand can reach 3x
-         * nominal curvature.
-         */
-        float headingCorrectionLimitRadPerSec =
-            2.0f *
-            fabsf(feedforwardYawRateRadPerSec);
-
-        headingYawRateCorrectionRadPerSec =
-            MotionController_Clamp(
-                headingYawRateCorrectionRadPerSec,
-                -headingCorrectionLimitRadPerSec,
-                +headingCorrectionLimitRadPerSec);
-
-
-        /*
-         * Final yaw-rate request seen by the inner Phase-2A loop.
-         */
-        float targetYawRateRadPerSec =
-            feedforwardYawRateRadPerSec +
-            headingYawRateCorrectionRadPerSec;
-
-
-        /*
-         * Rear-wheel geometry follows the same corrected motion
-         * request as the steering controller.
-         *
-         * Since heading correction is itself limited relative to
-         * feedforward yaw rate, commanded curvature remains
-         * bounded even near the ends of the speed profile.
-         */
-        float commandedCurvaturePerMm =
-            controller->targetCurvaturePerMm;
-
-        if (fabsf(signedSpeedMmps) > 1.0f)
-        {
-            commandedCurvaturePerMm =
-                targetYawRateRadPerSec /
-                signedSpeedMmps;
-        }
-
-
-        /*
-         * --------------------------------------------------------
-         * PHASE 2A: INNER YAW-RATE LOOP
-         * --------------------------------------------------------
-         */
-        float measuredYawRateRadPerSec =
-            controller->filteredYawRateDps *
-            (MOTION_PI / 180.0f);
-
-        float yawRateErrorRadPerSec =
-            targetYawRateRadPerSec -
-            measuredYawRateRadPerSec;
-
-        float steeringCorrectionCommand =
-            PIDController_Update(
-                &controller->arcYawRatePID,
-                yawRateErrorRadPerSec,
-                dt);
-
-
-        /*
-         * Raw steering correction is relative to calibrated
-         * command-to-curvature feedforward
-         *
-         * Increasing raw command produces negative steering.
-         */
-        float targetCommand =
-            controller->arcSteeringFeedforwardCommand -
-            (float)controller->motionDirection *
-            steeringCorrectionCommand;
-
-
-        /*
-         * Phase-2B diagnostics.
-         */
-        controller->arcDesiredYawRad =
-            desiredYawRad;
-
-        controller->arcHeadingErrorRad =
-            headingErrorRad;
-
-        controller->arcFeedforwardYawRateRadPerSec =
-            feedforwardYawRateRadPerSec;
-
-        controller->arcHeadingYawRateCorrectionRadPerSec =
-            headingYawRateCorrectionRadPerSec;
-
-        controller->arcTargetYawRateRadPerSec =
-            targetYawRateRadPerSec;
-
-        controller->arcCommandedCurvaturePerMm =
-            commandedCurvaturePerMm;
-
-
-        /*
-         * Phase-2A diagnostics.
-         */
-        controller->arcYawRateErrorRadPerSec =
-            yawRateErrorRadPerSec;
-
-        controller->arcSteeringCorrectionCommand =
-            steeringCorrectionCommand;
-
-        controller->arcSteeringTargetCommand =
-            targetCommand;
-
-        SteeringController_SetRawCommandRateLimited(
-            controller->steering,
-            targetCommand,
-            dt);
-    }
-    else
-    {
-        MotionController_Stop(controller);
-        return MOTIONCONTROLLER_STATUS_INVALID_STATE;
+        default:
+            MotionController_Stop(controller);
+            return MOTIONCONTROLLER_STATUS_INVALID_STATE;
     }
 
     /*
@@ -1303,6 +1284,66 @@ MotionControllerStatus MotionController_Update(
 
     return MOTIONCONTROLLER_STATUS_OK;
 }
+
+
+MotionControllerStatus MotionController_Update(
+    MotionController *controller,
+    float dt)
+{
+    if (controller == NULL)
+        return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
+
+    if (!controller->initialized)
+        return MOTIONCONTROLLER_STATUS_NOT_INITIALIZED;
+
+    if (!isfinite(dt) || dt <= 0.0f)
+        return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
+
+    switch (controller->mode)
+    {
+        case MOTIONCONTROLLER_IDLE:
+            return MOTIONCONTROLLER_STATUS_OK;
+
+        case MOTIONCONTROLLER_ARC_PREPARING:
+        {
+            MotionControllerStatus status =
+                MotionController_UpdateArcPreparation(
+                    controller,
+                    dt);
+
+            if (status != MOTIONCONTROLLER_STATUS_OK ||
+                controller->mode == MOTIONCONTROLLER_ARC_PREPARING)
+            {
+                return status;
+            }
+
+            /*
+             * Preserve the existing boundary behavior: the update that
+             * completes preparation also executes the first active arc
+             * control cycle.
+             */
+            return MotionController_UpdateActiveMotion(
+                controller,
+                dt);
+        }
+
+        case MOTIONCONTROLLER_STRAIGHT:
+        case MOTIONCONTROLLER_ARC:
+            return MotionController_UpdateActiveMotion(
+                controller,
+                dt);
+
+        case MOTIONCONTROLLER_BRAKING:
+            return MotionController_UpdateBraking(
+                controller,
+                dt);
+
+        default:
+            MotionController_Stop(controller);
+            return MOTIONCONTROLLER_STATUS_INVALID_STATE;
+    }
+}
+
 
 MotionControllerStatus MotionController_Stop(
     MotionController *controller)

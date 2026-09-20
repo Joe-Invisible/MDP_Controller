@@ -68,6 +68,9 @@ typedef struct
     float motionCompletionToleranceMm;
 
     float arcYawRateFilterTauSec;
+
+    /* Consecutive stationary updates required to complete braking. */
+    uint8_t stopStableSampleCount;
 } MotionControllerConfig;
 
 extern const RobotKinematics kinematics;
