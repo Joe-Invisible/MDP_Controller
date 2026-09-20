@@ -96,6 +96,35 @@
 #define TEST_ACCELERATION_MMPS2           (500.0f)
 #define TEST_DECELERATION_MMPS2           (250.0f)
 
+static const MotionControllerConfig testMotionConfig =
+{
+    .kinematics = &kinematics,
+    .arcConfig = &arcMotionConfig,
+
+    .headingKp = TEST_HEADING_KP,
+    .headingKi = TEST_HEADING_KI,
+    .headingKd = TEST_HEADING_KD,
+    .maxHeadingSteeringAngleRad = TEST_HEADING_LIMIT_RAD,
+
+    .arcYawRateKp = 10.0f,
+    .arcYawRateKi = 0.0f,
+    .arcYawRateKd = 0.0f,
+    .maxArcSteeringCommandCorrection = 5.0f,
+
+    .arcHeadingKpPerSec = 1.0f,
+
+    .wheelSyncKpCpsPerMm = TEST_SYNC_KP_CPS_PER_MM,
+    .maxWheelSyncCorrectionCps = TEST_SYNC_MAX_CORRECTION_CPS,
+
+    .motionAccelerationMmps2 = TEST_ACCELERATION_MMPS2,
+    .motionDecelerationMmps2 = TEST_DECELERATION_MMPS2,
+    .motionCompletionToleranceMm = 0.5f,
+
+    .arcYawRateFilterTauSec = 0.10f,
+
+    .stopStableSampleCount = 3U,
+};
+
 
 #define TEST_PI                           (3.14159265358979323846f)
 #define TEST_RAD_TO_DEG                   (180.0f / TEST_PI)
@@ -192,7 +221,7 @@ static void Test_PrepositionArcSteering(
 {
     const float targetSteeringAngleRad =
         RobotKinematics_GetSteeringAngleRad(
-            fixture->motionController.kinematics,
+            fixture->motionController.config->kinematics,
             TEST_CURVATURE_PER_MM);
 
     const uint32_t updateCount =
@@ -557,9 +586,8 @@ static bool Test_RunOneArc(
             &fixture->motionController,
             TEST_DISTANCE_MM,
             TEST_RADIUS_MM,
-            TEST_SPEED_CPS)
-        ? 1U
-        : 0U;
+            TEST_SPEED_CPS) ==
+        MOTIONCONTROLLER_STATUS_OK;
 
 
     if (!summary->commandAccepted)
@@ -625,9 +653,10 @@ static bool Test_RunOneArc(
                 fixture->motionController.mode;
 
 
-            if (!MotionController_Update(
+            if (MotionController_Update(
                     &fixture->motionController,
-                    TEST_CONTROL_PERIOD_S))
+                    TEST_CONTROL_PERIOD_S) !=
+                MOTIONCONTROLLER_STATUS_OK)
             {
                 summary->updateFailed =
                     1U;
@@ -691,9 +720,10 @@ static bool Test_RunOneArc(
                 lastControlTick +=
                     TEST_CONTROL_PERIOD_MS;
 
-                if (!MotionController_Update(
+                if (MotionController_Update(
                         &fixture->motionController,
-                        TEST_CONTROL_PERIOD_S))
+                        TEST_CONTROL_PERIOD_S) !=
+                    MOTIONCONTROLLER_STATUS_OK)
                 {
                     summary->updateFailed =
                         1U;
@@ -781,17 +811,7 @@ static bool Test_Init(
 
     if (!RobotTestFixture_InitMotionController(
         fixture,
-
-        TEST_HEADING_KP,
-        TEST_HEADING_KI,
-        TEST_HEADING_KD,
-        TEST_HEADING_LIMIT_RAD,
-
-        TEST_SYNC_KP_CPS_PER_MM,
-        TEST_SYNC_MAX_CORRECTION_CPS,
-
-        TEST_ACCELERATION_MMPS2,
-        TEST_DECELERATION_MMPS2))
+        &testMotionConfig))
     {
         return false;
     }

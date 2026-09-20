@@ -126,58 +126,70 @@
 
 
 static const MotionControllerSequenceTestCommand
-motionControllerSequenceTestCommands[] =
-{
-	// BL
-    SEQ_STRAIGHT(
-        500.0f,
-        6000.0f),
-
-    /*
-     * Quarter-circle:
-     *     s = |R| * pi / 2
-     *
-     * Positive distance + negative radius gives negative yaw.
-     */
-	// TL
-    SEQ_ARC(
-        350.0f * SEQ_TEST_PI / 2.0f,
-        -350.0f,
-        2000.0f),
-
-	// TL
-    SEQ_STRAIGHT(
-        500.0f,
-        6000.0f),
-
-	// TR
-    SEQ_ARC(
-        350.0f * SEQ_TEST_PI / 2.0f,
-        -350.0f,
-        2000.0f),
-
-	// TR
+motionControllerSequenceTestCommands[] = {
 	SEQ_STRAIGHT(
-		500.0f,
+		2000.0f,
 		6000.0f),
-
-	// BR
 	SEQ_ARC(
 		350.0f * SEQ_TEST_PI / 2.0f,
 		-350.0f,
 		2000.0f),
-
-	// BR
 	SEQ_STRAIGHT(
-		500.0f,
+		800.0f,
 		6000.0f),
-
-	// BL
-	SEQ_ARC(
-		350.0f * SEQ_TEST_PI / 2.0f,
-		-350.0f,
-		2000.0f),
 };
+//motionControllerSequenceTestCommands[] =
+//{
+//	// BL
+//    SEQ_STRAIGHT(
+//        500.0f,
+//        6000.0f),
+//
+//    /*
+//     * Quarter-circle:
+//     *     s = |R| * pi / 2
+//     *
+//     * Positive distance + negative radius gives negative yaw.
+//     */
+//	// TL
+//    SEQ_ARC(
+//        350.0f * SEQ_TEST_PI / 2.0f,
+//        -350.0f,
+//        2000.0f),
+//
+//	// TL
+//    SEQ_STRAIGHT(
+//        500.0f,
+//        6000.0f),
+//
+//	// TR
+//    SEQ_ARC(
+//        350.0f * SEQ_TEST_PI / 2.0f,
+//        -350.0f,
+//        2000.0f),
+//
+//	// TR
+//	SEQ_STRAIGHT(
+//		500.0f,
+//		6000.0f),
+//
+//	// BR
+//	SEQ_ARC(
+//		350.0f * SEQ_TEST_PI / 2.0f,
+//		-350.0f,
+//		2000.0f),
+//
+//	// BR
+//	SEQ_STRAIGHT(
+//		500.0f,
+//		6000.0f),
+//
+//	// BL
+//	SEQ_ARC(
+//		350.0f * SEQ_TEST_PI / 2.0f,
+//		-350.0f,
+//		2000.0f),
+//};
 
 
 static const uint32_t
