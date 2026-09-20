@@ -37,7 +37,41 @@ typedef struct
     float steeringSettlingTimeSec;
 } MotionControllerArcConfig;
 
+/**
+ * Immutable tuning and geometry used by one MotionController instance.
+ *
+ * The referenced kinematics and arc calibration must remain valid for the
+ * lifetime of the controller.
+ */
+typedef struct
+{
+    const RobotKinematics *kinematics;
+    const MotionControllerArcConfig *arcConfig;
+
+    float headingKp;
+    float headingKi;
+    float headingKd;
+    float maxHeadingSteeringAngleRad;
+
+    float arcYawRateKp;
+    float arcYawRateKi;
+    float arcYawRateKd;
+    float maxArcSteeringCommandCorrection;
+
+    float arcHeadingKpPerSec;
+
+    float wheelSyncKpCpsPerMm;
+    float maxWheelSyncCorrectionCps;
+
+    float motionAccelerationMmps2;
+    float motionDecelerationMmps2;
+    float motionCompletionToleranceMm;
+
+    float arcYawRateFilterTauSec;
+} MotionControllerConfig;
+
 extern const RobotKinematics kinematics;
 extern const MotionControllerArcConfig arcMotionConfig;
+extern const MotionControllerConfig motionControllerConfig;
 
 #endif /* INC_MOTIONCONTROLLERCONFIG_H_ */

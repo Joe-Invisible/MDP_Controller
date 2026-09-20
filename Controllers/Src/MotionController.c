@@ -12,7 +12,6 @@
 
 #define MOTION_PI 3.14159265358979323846f
 
-#define MOTIONCONTROLLER_ARC_YAW_RATE_FILTER_TAU_SEC		(0.10f)
 #define MOTIONCONTROLLER_TIME_EPSILON_SEC                (1.0e-6f)
 
 static float MotionController_GetMmPerCount(
@@ -24,8 +23,8 @@ static float MotionController_GetMmPerCount(
      * Relativistic physics?
      */
     return MOTION_PI *
-        controller->kinematics->rearWheelDiameterMm /
-        (float)controller->kinematics->rearEncoderCountsPerRev;
+        controller->config->kinematics->rearWheelDiameterMm /
+        (float)controller->config->kinematics->rearEncoderCountsPerRev;
 }
 
 static float MotionController_GetWheelReferenceCurvaturePerMm(
@@ -53,7 +52,7 @@ static float MotionController_GetWheelReferenceCurvaturePerMm(
             controller->steering);
 
     return RobotKinematics_GetCurvaturePerMm(
-        controller->kinematics,
+        controller->config->kinematics,
         steeringAngleRad);
 }
 
@@ -176,7 +175,8 @@ static bool MotionController_GetArcSteeringFeedforwardCommand(
     float *rawSteeringCommand)
 {
     if (controller == NULL ||
-        controller->arcConfig == NULL ||
+        controller->config == NULL ||
+        controller->config->arcConfig == NULL ||
         rawSteeringCommand == NULL ||
         curvaturePerMm == 0.0f)
     {
@@ -186,15 +186,15 @@ static bool MotionController_GetArcSteeringFeedforwardCommand(
     if (curvaturePerMm < 0.0f)
     {
         return MotionController_InterpolateArcFeedforwardBranch(
-            controller->arcConfig->negativePoints,
-            controller->arcConfig->negativePointCount,
+            controller->config->arcConfig->negativePoints,
+            controller->config->arcConfig->negativePointCount,
             curvaturePerMm,
             rawSteeringCommand);
     }
 
     return MotionController_InterpolateArcFeedforwardBranch(
-        controller->arcConfig->positivePoints,
-        controller->arcConfig->positivePointCount,
+        controller->config->arcConfig->positivePoints,
+        controller->config->arcConfig->positivePointCount,
         curvaturePerMm,
         rawSteeringCommand);
 }
@@ -276,7 +276,7 @@ static void MotionController_UpdateOdometry(
      * commanded path curvature.
      */
     controller->desiredWheelTravelDifferenceMm +=
-        controller->kinematics->rearTrackWidthMm *
+        controller->config->kinematics->rearTrackWidthMm *
         curvaturePerMm *
         deltaCentreMm;
 
@@ -358,23 +358,7 @@ MotionControllerStatus MotionController_Init(
     WheelSpeedController *rightWheel,
     SteeringController *steering,
     ICM20948 *imu,
-    const RobotKinematics *kinematics,
-    const MotionControllerArcConfig *arcConfig,
-    float headingKp,
-    float headingKi,
-    float headingKd,
-    float maxHeadingSteeringAngleRad,
-	float arcYawRateKp,
-	float arcYawRateKi,
-	float arcYawRateKd,
-	float maxArcSteeringCommandCorrection,
-
-	float arcHeadingKpPerSec,
-
-    float wheelSyncKpCpsPerMm,
-    float maxWheelSyncCorrectionCps,
-	float motionAccelerationMmps2,
-	float motionDecelerationMmps2)
+    const MotionControllerConfig *config)
 {
 	if (controller == NULL ||
 	    leftWheel == NULL ||
@@ -383,35 +367,39 @@ MotionControllerStatus MotionController_Init(
 	    rightWheel->motor == NULL ||
 	    steering == NULL ||
 	    imu == NULL ||
-	    kinematics == NULL ||
-	    arcConfig == NULL)
+	    config == NULL ||
+	    config->kinematics == NULL ||
+	    config->arcConfig == NULL)
     {
         return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
     }
 
-    if (kinematics->rearEncoderCountsPerRev == 0U ||
-        !isfinite(kinematics->rearWheelDiameterMm) ||
-        !isfinite(kinematics->wheelbaseMm) ||
-        !isfinite(kinematics->rearTrackWidthMm) ||
-        kinematics->rearWheelDiameterMm <= 0.0f ||
-        kinematics->wheelbaseMm <= 0.0f ||
-        kinematics->rearTrackWidthMm <= 0.0f) {
+    if (config->kinematics->rearEncoderCountsPerRev == 0U ||
+        !isfinite(config->kinematics->rearWheelDiameterMm) ||
+        !isfinite(config->kinematics->wheelbaseMm) ||
+        !isfinite(config->kinematics->rearTrackWidthMm) ||
+        config->kinematics->rearWheelDiameterMm <= 0.0f ||
+        config->kinematics->wheelbaseMm <= 0.0f ||
+        config->kinematics->rearTrackWidthMm <= 0.0f)
+    {
         return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
     }
 
-    if (!isfinite(headingKp) ||
-        !isfinite(headingKi) ||
-        !isfinite(headingKd) ||
-        !isfinite(maxHeadingSteeringAngleRad) ||
-        !isfinite(arcYawRateKp) ||
-        !isfinite(arcYawRateKi) ||
-        !isfinite(arcYawRateKd) ||
-        !isfinite(maxArcSteeringCommandCorrection) ||
-        !isfinite(arcHeadingKpPerSec) ||
-        !isfinite(wheelSyncKpCpsPerMm) ||
-        !isfinite(maxWheelSyncCorrectionCps) ||
-        !isfinite(motionAccelerationMmps2) ||
-        !isfinite(motionDecelerationMmps2))
+    if (!isfinite(config->headingKp) ||
+        !isfinite(config->headingKi) ||
+        !isfinite(config->headingKd) ||
+        !isfinite(config->maxHeadingSteeringAngleRad) ||
+        !isfinite(config->arcYawRateKp) ||
+        !isfinite(config->arcYawRateKi) ||
+        !isfinite(config->arcYawRateKd) ||
+        !isfinite(config->maxArcSteeringCommandCorrection) ||
+        !isfinite(config->arcHeadingKpPerSec) ||
+        !isfinite(config->wheelSyncKpCpsPerMm) ||
+        !isfinite(config->maxWheelSyncCorrectionCps) ||
+        !isfinite(config->motionAccelerationMmps2) ||
+        !isfinite(config->motionDecelerationMmps2) ||
+        !isfinite(config->motionCompletionToleranceMm) ||
+        !isfinite(config->arcYawRateFilterTauSec))
     {
         return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
     }
@@ -442,30 +430,32 @@ MotionControllerStatus MotionController_Init(
             -minEffectiveAngleRad,
             maxEffectiveAngleRad);
 
-    if (maxHeadingSteeringAngleRad <= 0.0f ||
-        maxHeadingSteeringAngleRad >
+    if (config->maxHeadingSteeringAngleRad <= 0.0f ||
+        config->maxHeadingSteeringAngleRad >
             maxSymmetricSteeringAngleRad)
     {
         return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
     }
 
-    if (maxArcSteeringCommandCorrection <= 0.0f)
+    if (config->maxArcSteeringCommandCorrection <= 0.0f)
     {
         return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
     }
 
-    if (wheelSyncKpCpsPerMm < 0.0f ||
-        maxWheelSyncCorrectionCps < 0.0f)
+    if (config->wheelSyncKpCpsPerMm < 0.0f ||
+        config->maxWheelSyncCorrectionCps < 0.0f)
     {
         return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
     }
 
-    if (arcHeadingKpPerSec < 0.0f)
+    if (config->arcHeadingKpPerSec < 0.0f ||
+        config->motionCompletionToleranceMm <= 0.0f ||
+        config->arcYawRateFilterTauSec < 0.0f)
     {
         return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
     }
 
-    if (!MotionController_ValidateArcConfig(arcConfig))
+    if (!MotionController_ValidateArcConfig(config->arcConfig))
     {
         return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
     }
@@ -476,22 +466,15 @@ MotionControllerStatus MotionController_Init(
     controller->rightWheel = rightWheel;
     controller->steering = steering;
     controller->imu = imu;
-    controller->kinematics = kinematics;
-    controller->arcConfig = arcConfig;
-
-    controller->wheelSyncKpCpsPerMm =
-        wheelSyncKpCpsPerMm;
-
-    controller->maxWheelSyncCorrectionCps =
-        maxWheelSyncCorrectionCps;
+    controller->config = config;
 
     controller->mode = MOTIONCONTROLLER_IDLE;
 
     if (!MotionProfile_Init(
             &controller->motionProfile,
-            motionAccelerationMmps2,
-            motionDecelerationMmps2,
-			MOTION_PROFILE_COMPLETION_TOLERANCE_MM))
+            config->motionAccelerationMmps2,
+            config->motionDecelerationMmps2,
+			config->motionCompletionToleranceMm))
     {
         return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
     }
@@ -499,28 +482,25 @@ MotionControllerStatus MotionController_Init(
 
     if (!PIDController_Init(
         &controller->headingPID,
-        headingKp,
-        headingKi,
-        headingKd,
-        -maxHeadingSteeringAngleRad,
-		maxHeadingSteeringAngleRad))
+        config->headingKp,
+        config->headingKi,
+        config->headingKd,
+        -config->maxHeadingSteeringAngleRad,
+		config->maxHeadingSteeringAngleRad))
     {
         return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
     }
 
     if (!PIDController_Init(
             &controller->arcYawRatePID,
-            arcYawRateKp,
-            arcYawRateKi,
-            arcYawRateKd,
-            -maxArcSteeringCommandCorrection,
-            +maxArcSteeringCommandCorrection))
+            config->arcYawRateKp,
+            config->arcYawRateKi,
+            config->arcYawRateKd,
+            -config->maxArcSteeringCommandCorrection,
+            +config->maxArcSteeringCommandCorrection))
     {
         return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
     }
-
-    controller->arcHeadingKpPerSec =
-        arcHeadingKpPerSec;
 
     controller->initialized = true;
 
@@ -761,7 +741,7 @@ MotionControllerStatus MotionController_MoveArc(
         feedforwardCommand);
 
     controller->mode =
-        controller->arcConfig->steeringSettlingTimeSec > 0.0f
+        controller->config->arcConfig->steeringSettlingTimeSec > 0.0f
             ? MOTIONCONTROLLER_ARC_PREPARING
             : MOTIONCONTROLLER_ARC;
 
@@ -819,7 +799,7 @@ static bool MotionController_UpdateYawEstimate(
      * alpha = dt / (tau + dt)
      */
     const float tau =
-        MOTIONCONTROLLER_ARC_YAW_RATE_FILTER_TAU_SEC;
+        controller->config->arcYawRateFilterTauSec;
 
     float alpha =
         dt / (tau + dt);
@@ -861,7 +841,7 @@ static void MotionController_UpdateWheelSynchronisation(
     float rightBaseTargetCps;
 
     RobotKinematics_GetRearWheelSpeedTargets(
-        controller->kinematics,
+        controller->config->kinematics,
         controller->targetSpeedCps,
         curvaturePerMm,
         &leftBaseTargetCps,
@@ -893,7 +873,7 @@ static void MotionController_UpdateWheelSynchronisation(
      *     [CPS/mm] * [mm] = [CPS]
      */
     float correctionCps =
-        controller->wheelSyncKpCpsPerMm *
+        controller->config->wheelSyncKpCpsPerMm *
         controller->wheelSyncErrorMm;
 
     /*
@@ -910,7 +890,7 @@ static void MotionController_UpdateWheelSynchronisation(
 
     float correctionLimitCps =
         fminf(
-            controller->maxWheelSyncCorrectionCps,
+            controller->config->maxWheelSyncCorrectionCps,
             smallestBaseTargetMagnitudeCps);
 
     correctionCps =
@@ -954,7 +934,7 @@ MotionControllerStatus MotionController_Update(
     if (controller->mode == MOTIONCONTROLLER_ARC_PREPARING)
     {
         float remainingSettlingTimeSec =
-            controller->arcConfig->steeringSettlingTimeSec -
+            controller->config->arcConfig->steeringSettlingTimeSec -
             controller->arcPreparationElapsedSec;
 
         if (dt + MOTIONCONTROLLER_TIME_EPSILON_SEC <
@@ -965,7 +945,7 @@ MotionControllerStatus MotionController_Update(
         }
 
         controller->arcPreparationElapsedSec =
-            controller->arcConfig->steeringSettlingTimeSec;
+            controller->config->arcConfig->steeringSettlingTimeSec;
 
         /*
          * Establish the motion origin after the mechanical hold so any
@@ -1173,7 +1153,7 @@ MotionControllerStatus MotionController_Update(
          *     omega_heading = K_heading * e_heading
          */
         float headingYawRateCorrectionRadPerSec =
-            controller->arcHeadingKpPerSec *
+            controller->config->arcHeadingKpPerSec *
             headingErrorRad;
 
 

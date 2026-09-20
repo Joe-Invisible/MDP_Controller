@@ -20,20 +20,10 @@
 #include "MotionProfile.h"
 
 #include "MotionControllerConfig.h"
-#include "RobotKinematics.h"
 
 #include "icm20948.h"
 
 #define MOTIONCONTROLLER_STOP_STABLE_SAMPLES 3U
-/**
- * MotionProfile exact endpoint crossing can deadlock
- * finite-distance motion near the encoder-resolution
- * limit. The motions require a explicit completion
- * tolerance.
- *
- * 0.5 mm is about 4 encoder counts.
- */
-#define MOTION_PROFILE_COMPLETION_TOLERANCE_MM 	(0.5f)
 
 typedef enum
 {
@@ -100,8 +90,7 @@ typedef struct
 
 	ICM20948 *imu;
 
-	const RobotKinematics *kinematics;
-	const MotionControllerArcConfig *arcConfig;
+	const MotionControllerConfig *config;
 
 	/*
 	 * Straight-line heading controller
@@ -115,16 +104,6 @@ typedef struct
 	 * Output: raw steering-command correction
 	 */
 	PIDController arcYawRatePID;
-
-	/*
-	 * ARC outer heading controller.
-	 *
-	 * Input:  heading error [rad]
-	 * Output: yaw-rate correction [rad/s]
-	 *
-	 * Units of gain: 1/s
-	 */
-	float arcHeadingKpPerSec;
 
 	/*
 	 * ARC diagnostics
@@ -164,9 +143,6 @@ typedef struct
 	 * this difference should be derived from the robot
 	 * model.
 	 */
-	float wheelSyncKpCpsPerMm;
-	float maxWheelSyncCorrectionCps;
-
 	float desiredWheelTravelDifferenceMm;
 	float wheelSyncErrorMm;
 	float wheelSyncCorrectionCps;
@@ -250,26 +226,7 @@ MotionControllerStatus MotionController_Init(
     WheelSpeedController *rightWheel,
     SteeringController *steering,
     ICM20948 *imu,
-    const RobotKinematics *kinematics,
-    const MotionControllerArcConfig *arcConfig,
-    float headingKp,
-    float headingKi,
-    float headingKd,
-    float maxHeadingSteeringAngleRad,
-	/* We are separating the steering PID with
-	 * existing heading PID, might clean up later
-	 */
-	float arcYawRateKp,
-	float arcYawRateKi,
-	float arcYawRateKd,
-	float maxArcSteeringCommandCorrection,
-
-	float arcHeadingKpPerSec,
-
-    float wheelSyncKpCpsPerMm,
-    float maxWheelSyncCorrectionCps,
-	float motionAccelerationMmps2,
-	float motionDecelerationMmps2);
+    const MotionControllerConfig *config);
 
 /**
  * Straight line motion.

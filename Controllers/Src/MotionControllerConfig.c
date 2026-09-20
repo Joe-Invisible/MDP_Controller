@@ -84,3 +84,30 @@ const MotionControllerArcConfig arcMotionConfig =
 
     .steeringSettlingTimeSec = ARC_STEERING_SETTLING_TIME_SEC,
 };
+
+const MotionControllerConfig motionControllerConfig =
+{
+    .kinematics = &kinematics,
+    .arcConfig = &arcMotionConfig,
+
+    .headingKp = 1.2f,
+    .headingKi = 0.05f,
+    .headingKd = 0.0f,
+    .maxHeadingSteeringAngleRad = 0.015f,
+
+    .arcYawRateKp = 10.0f,
+    .arcYawRateKi = 0.0f,
+    .arcYawRateKd = 0.0f,
+    .maxArcSteeringCommandCorrection = 5.0f,
+
+    .arcHeadingKpPerSec = 1.0f,
+
+    .wheelSyncKpCpsPerMm = 10.0f,
+    .maxWheelSyncCorrectionCps = 100.0f,
+
+    .motionAccelerationMmps2 = 500.0f,
+    .motionDecelerationMmps2 = 250.0f,
+    .motionCompletionToleranceMm = 0.5f,
+
+    .arcYawRateFilterTauSec = 0.10f,
+};
