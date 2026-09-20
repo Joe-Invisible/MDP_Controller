@@ -97,13 +97,13 @@
 					<fileInfo id="com.st.stm32cube.ide.mcu.gnu.managedbuild.config.exe.debug.1234613617.1805278501" name="oledfont.h" rcbsApplicability="disable" resourcePath="PeripheralDrivers/Inc/oledfont.h" toolsToInvoke=""/>
 					<fileInfo id="com.st.stm32cube.ide.mcu.gnu.managedbuild.config.exe.debug.1234613617.1377366655" name="SteeringGeometryCalibrationTest.h" rcbsApplicability="disable" resourcePath="Tests/Inc/SteeringGeometryCalibrationTest.h" toolsToInvoke=""/>
 					<sourceEntries>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Apps"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Controllers"/>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Drivers"/>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Middlewares"/>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="PeripheralDrivers"/>
 						<entry excluding="Src/MotionControllerTest.c|Src/SteeringGeometryCalibrationTest_selfpropelled.c|Src/SteeringPreconditioningArcRepeatTest.c|Src/SteeringGeometryCalibrationIterationTest.c|Src/MotionControllerArcTest.c|Inc/SteeringGeometryCalibrationTest.h|Src/SteeringGeometryCalibrationTest.c" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Tests"/>
+						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
+						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="PeripheralDrivers"/>
+						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Middlewares"/>
+						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Apps"/>
+						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Drivers"/>
 					</sourceEntries>
 				</configuration>
 			</storageModule>

@@ -19,6 +19,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "cmsis_os.h"
+#include "adc.h"
 #include "i2c.h"
 #include "tim.h"
 #include "gpio.h"
@@ -99,6 +100,7 @@ int main(void)
   MX_TIM8_Init();
   MX_TIM14_Init();
   MX_TIM12_Init();
+  MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
 
 #if BRANCH_TO_TESTS
