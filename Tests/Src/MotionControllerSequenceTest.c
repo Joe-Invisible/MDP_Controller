@@ -63,7 +63,6 @@
 #define SEQ_TEST_INITIAL_CENTRE_SETTLE_MS       (100U)
 
 #define SEQ_TEST_STRAIGHT_SETTLE_MS             (100U)
-#define SEQ_TEST_ARC_SETTLE_MS                  (500U)
 
 #define SEQ_TEST_BETWEEN_COMMANDS_MS            (200U)
 
@@ -253,7 +252,7 @@ motionControllerSequenceTestFinalTravelledDistanceMm = 0.0f;
 
 volatile const char *motionControllerSequenceTestInfo =
     "Mixed straight/arc sequence; each command completes to IDLE; "
-    "arc raw feedforward pre-positioned before motion";
+    "MotionController owns arc raw preposition and settling";
 
 
 /* -------------------------------------------------------------------------- */
@@ -719,20 +718,21 @@ static bool MotionControllerSequenceTest_BeginCommand(
     RobotTestFixture *fixture,
     const MotionControllerSequenceTestCommand *command)
 {
-    bool accepted = false;
+    MotionControllerStatus status =
+        MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
 
 
     switch (command->type)
     {
         case MOTION_SEQUENCE_TEST_STRAIGHT:
         {
-            accepted =
+            status =
                 MotionController_MoveStraight(
                     &fixture->motionController,
                     command->distanceMm,
                     command->speedCps);
 
-            if (accepted)
+            if (status == MOTIONCONTROLLER_STATUS_OK)
             {
                 /*
                  * MoveStraight() centres steering immediately.
@@ -748,32 +748,12 @@ static bool MotionControllerSequenceTest_BeginCommand(
 
         case MOTION_SEQUENCE_TEST_ARC:
         {
-            accepted =
+            status =
                 MotionController_MoveArc(
                     &fixture->motionController,
                     command->distanceMm,
                     command->radiusMm,
                     command->speedCps);
-
-            if (accepted)
-            {
-                /*
-                 * Keep the currently accepted abrupt pre-positioning
-                 * behaviour for ARC motion.
-                 *
-                 * MoveArc() has already selected the empirical raw
-                 * feedforward command. Set the physical servo and the
-                 * SteeringController internal raw-command state to that
-                 * value before the first MotionController_Update().
-                 */
-                SteeringController_SetRawCommand(
-                    &fixture->steeringController,
-                    fixture->motionController
-                        .arcSteeringFeedforwardCommand);
-
-                HAL_Delay(
-                    SEQ_TEST_ARC_SETTLE_MS);
-            }
 
             break;
         }
@@ -781,13 +761,14 @@ static bool MotionControllerSequenceTest_BeginCommand(
 
         default:
         {
-            accepted = false;
+            status =
+                MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
             break;
         }
     }
 
 
-    return accepted;
+    return status == MOTIONCONTROLLER_STATUS_OK;
 }
 
 

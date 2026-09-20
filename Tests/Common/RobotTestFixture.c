@@ -148,7 +148,10 @@ bool RobotTestFixture_InitMotionController(
 			&fixture->rightWheelController,
 			&fixture->steeringController,
 			&fixture->imu,
-			&kinematics, headingKp, headingKi, headingKd, maxHeadingSteeringAngleRad,
+			&kinematics,
+			&arcMotionConfig,
+
+			headingKp, headingKi, headingKd, maxHeadingSteeringAngleRad,
 			/* We are separating the steering PID with
 			 * existing heading PID, might clean up later
 			 */
