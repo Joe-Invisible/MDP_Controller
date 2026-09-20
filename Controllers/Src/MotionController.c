@@ -13,6 +13,7 @@
 #define MOTION_PI 3.14159265358979323846f
 
 #define MOTIONCONTROLLER_ARC_YAW_RATE_FILTER_TAU_SEC		(0.10f)
+#define MOTIONCONTROLLER_TIME_EPSILON_SEC                (1.0e-6f)
 
 static float MotionController_GetMmPerCount(
     const MotionController *controller)
@@ -56,124 +57,146 @@ static float MotionController_GetWheelReferenceCurvaturePerMm(
         steeringAngleRad);
 }
 
-typedef struct
+static bool MotionController_ValidateArcFeedforwardBranch(
+    const MotionControllerArcFeedforwardPoint *points,
+    uint32_t pointCount,
+    bool negativeCurvature)
 {
-    float curvaturePerMm;
-    float rawCommand;
-} MotionControllerArcFeedforwardPoint;
+    if (points == NULL || pointCount == 0U)
+    {
+        return false;
+    }
 
+    for (uint32_t i = 0U; i < pointCount; ++i)
+    {
+        if (!isfinite(points[i].curvaturePerMm) ||
+            !isfinite(points[i].rawSteeringCommand) ||
+            points[i].rawSteeringCommand < SERVO_STEER_MIN ||
+            points[i].rawSteeringCommand > SERVO_STEER_MAX)
+        {
+            return false;
+        }
 
-/*
- * Temporary curvature -> absolute raw steering feedforward table.
- *
- * IMPORTANT:
- * Keep points ordered from MOST NEGATIVE curvature
- * to LEAST NEGATIVE curvature.
- *
- * Example:
- *
- * R = -1500 mm -> kappa = -0.0006667 /mm
- * R = -2500 mm -> kappa = -0.0004000 /mm
- *
- * Therefore the -1500 point goes ABOVE the -2500 point.
- *
- * Once calibration is complete this table should be moved
- * into MotionControllerConfig.
- */
-static const MotionControllerArcFeedforwardPoint
-arcSteeringFeedforwardPoints[] =
+        if ((negativeCurvature &&
+             points[i].curvaturePerMm >= 0.0f) ||
+            (!negativeCurvature &&
+             points[i].curvaturePerMm <= 0.0f))
+        {
+            return false;
+        }
+
+        if (i > 0U &&
+            (points[i].curvaturePerMm <=
+                 points[i - 1U].curvaturePerMm ||
+             points[i].rawSteeringCommand >=
+                 points[i - 1U].rawSteeringCommand))
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static bool MotionController_ValidateArcConfig(
+    const MotionControllerArcConfig *config)
 {
-    /* Negative curvature */
-    { -1.0f /  275.0f, 95.0f },
-    { -1.0f /  300.0f, 84.2f },
-    { -1.0f /  400.0f, 59.7f },
-    { -1.0f /  500.0f, 47.5f },
-    { -1.0f / 1000.0f, 23.8f },
-    { -1.0f / 1500.0f, 16.5f },
-    { -1.0f / 2500.0f, 12.0f },
+    if (config == NULL ||
+        !isfinite(config->steeringSettlingTimeSec) ||
+        config->steeringSettlingTimeSec < 0.0f)
+    {
+        return false;
+    }
 
-    /* Positive curvature */
-    {  1.0f / 1500.0f, -22.5f },
-    {  1.0f / 1000.0f, -27.7f },
-    {  1.0f /  500.0f, -47.5f },
-    {  1.0f /  300.0f, -75.0f },
-    {  1.0f /  275.0f, -81.7f },
-};
+    return MotionController_ValidateArcFeedforwardBranch(
+            config->negativePoints,
+            config->negativePointCount,
+            true) &&
+        MotionController_ValidateArcFeedforwardBranch(
+            config->positivePoints,
+            config->positivePointCount,
+            false);
+}
 
-static float MotionController_GetArcSteeringFeedforwardCommand(
+static bool MotionController_InterpolateArcFeedforwardBranch(
+    const MotionControllerArcFeedforwardPoint *points,
+    uint32_t pointCount,
+    float curvaturePerMm,
+    float *rawSteeringCommand)
+{
+    if (points == NULL ||
+        pointCount == 0U ||
+        rawSteeringCommand == NULL ||
+        curvaturePerMm < points[0].curvaturePerMm ||
+        curvaturePerMm > points[pointCount - 1U].curvaturePerMm)
+    {
+        return false;
+    }
+
+    if (pointCount == 1U)
+    {
+        if (curvaturePerMm != points[0].curvaturePerMm)
+        {
+            return false;
+        }
+
+        *rawSteeringCommand = points[0].rawSteeringCommand;
+        return true;
+    }
+
+    for (uint32_t i = 0U; i + 1U < pointCount; ++i)
+    {
+        const MotionControllerArcFeedforwardPoint *lower =
+            &points[i];
+        const MotionControllerArcFeedforwardPoint *upper =
+            &points[i + 1U];
+
+        if (curvaturePerMm <= upper->curvaturePerMm)
+        {
+            float fraction =
+                (curvaturePerMm - lower->curvaturePerMm) /
+                (upper->curvaturePerMm - lower->curvaturePerMm);
+
+            *rawSteeringCommand =
+                lower->rawSteeringCommand +
+                fraction *
+                (upper->rawSteeringCommand -
+                 lower->rawSteeringCommand);
+
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static bool MotionController_GetArcSteeringFeedforwardCommand(
     const MotionController *controller,
-    float curvaturePerMm)
+    float curvaturePerMm,
+    float *rawSteeringCommand)
 {
-    const unsigned int pointCount =
-        sizeof(arcSteeringFeedforwardPoints) /
-        sizeof(arcSteeringFeedforwardPoints[0]);
-
-    const float curvatureMatchTolerance = 1.0e-7f;
-
-    /*
-     * First handle an exact calibrated operating point.
-     *
-     * This is also necessary while the table contains
-     * only one point.
-     */
-    for (unsigned int i = 0U; i < pointCount; ++i)
+    if (controller == NULL ||
+        controller->arcConfig == NULL ||
+        rawSteeringCommand == NULL ||
+        curvaturePerMm == 0.0f)
     {
-        if (fabsf(
-                curvaturePerMm -
-                arcSteeringFeedforwardPoints[i].curvaturePerMm)
-            <= curvatureMatchTolerance)
-        {
-            return arcSteeringFeedforwardPoints[i].rawCommand;
-        }
+        return false;
     }
 
-    /*
-     * If the requested curvature is tighter than our
-     * tightest calibrated point, clamp to that feedforward
-     * point rather than extrapolating.
-     */
-    if (curvaturePerMm <
-        arcSteeringFeedforwardPoints[0].curvaturePerMm)
+    if (curvaturePerMm < 0.0f)
     {
-        return arcSteeringFeedforwardPoints[0].rawCommand;
+        return MotionController_InterpolateArcFeedforwardBranch(
+            controller->arcConfig->negativePoints,
+            controller->arcConfig->negativePointCount,
+            curvaturePerMm,
+            rawSteeringCommand);
     }
 
-    /*
-     * Search for two calibrated points which bracket
-     * the requested curvature, then linearly interpolate.
-     */
-    for (unsigned int i = 0U; i + 1U < pointCount; ++i)
-    {
-        const MotionControllerArcFeedforwardPoint *tightPoint =
-            &arcSteeringFeedforwardPoints[i];
-
-        const MotionControllerArcFeedforwardPoint *loosePoint =
-            &arcSteeringFeedforwardPoints[i + 1U];
-
-        if ((curvaturePerMm >= tightPoint->curvaturePerMm) &&
-            (curvaturePerMm <= loosePoint->curvaturePerMm))
-        {
-            const float interpolationFraction =
-                (curvaturePerMm - tightPoint->curvaturePerMm) /
-                (loosePoint->curvaturePerMm -
-                 tightPoint->curvaturePerMm);
-
-            return tightPoint->rawCommand +
-                interpolationFraction *
-                (loosePoint->rawCommand -
-                 tightPoint->rawCommand);
-        }
-    }
-
-    /*
-     * Requested turn is looser than the loosest non-zero
-     * calibrated point.
-     *
-     * Preserve our existing behaviour for now rather than
-     * inventing a feedforward value between that point
-     * and straight ahead.
-     */
-    return controller->arcCentreCommand;
+    return MotionController_InterpolateArcFeedforwardBranch(
+        controller->arcConfig->positivePoints,
+        controller->arcConfig->positivePointCount,
+        curvaturePerMm,
+        rawSteeringCommand);
 }
 static void MotionController_ResetOdometry(
     MotionController *controller)
@@ -336,6 +359,7 @@ MotionControllerStatus MotionController_Init(
     SteeringController *steering,
     ICM20948 *imu,
     const RobotKinematics *kinematics,
+    const MotionControllerArcConfig *arcConfig,
     float headingKp,
     float headingKi,
     float headingKd,
@@ -359,7 +383,8 @@ MotionControllerStatus MotionController_Init(
 	    rightWheel->motor == NULL ||
 	    steering == NULL ||
 	    imu == NULL ||
-	    kinematics == NULL)
+	    kinematics == NULL ||
+	    arcConfig == NULL)
     {
         return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
     }
@@ -440,6 +465,11 @@ MotionControllerStatus MotionController_Init(
         return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
     }
 
+    if (!MotionController_ValidateArcConfig(arcConfig))
+    {
+        return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
+    }
+
     *controller = (MotionController){0};
 
     controller->leftWheel = leftWheel;
@@ -447,6 +477,7 @@ MotionControllerStatus MotionController_Init(
     controller->steering = steering;
     controller->imu = imu;
     controller->kinematics = kinematics;
+    controller->arcConfig = arcConfig;
 
     controller->wheelSyncKpCpsPerMm =
         wheelSyncKpCpsPerMm;
@@ -496,21 +527,16 @@ MotionControllerStatus MotionController_Init(
     return MOTIONCONTROLLER_STATUS_OK;
 }
 
-/**
- * Common helper for the primitives. Motions
- * share majority of initial state configurations,
- * including the motion profile.
- */
-static MotionControllerStatus MotionController_BeginMotion(
-	MotionController *controller,
-	float distanceMm,
-	float speedCps,
-	bool *motionStarted)
+static MotionControllerStatus MotionController_ValidateMotionRequest(
+    const MotionController *controller,
+    float distanceMm,
+    float speedCps,
+    bool *motionRequired)
 {
-    if (controller == NULL || motionStarted == NULL)
+    if (controller == NULL || motionRequired == NULL)
         return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
 
-    *motionStarted = false;
+    *motionRequired = false;
 
     if (!controller->initialized)
         return MOTIONCONTROLLER_STATUS_NOT_INITIALIZED;
@@ -524,65 +550,48 @@ static MotionControllerStatus MotionController_BeginMotion(
     if (!isfinite(speedCps) || speedCps <= 0.0f)
         return MOTIONCONTROLLER_STATUS_INVALID_SPEED;
 
-    if (distanceMm == 0.0f)
-        return MOTIONCONTROLLER_STATUS_OK;
+    *motionRequired = distanceMm != 0.0f;
 
-    /*
-     * Capture deterministic centering command
-     */
-    controller->arcCentreCommand =
-        SteeringController_GetCommand(
-            controller->steering);
+    return MOTIONCONTROLLER_STATUS_OK;
+}
 
-    controller->arcSteeringFeedforwardCommand =
-        controller->arcCentreCommand;
-
-    controller->motionDirection = distanceMm > 0.0f ? 1 : -1;
-
-    controller->targetDistanceMm = fabsf(distanceMm);
-
-    /*
-     * MotionProfile now responsible for determining the speed
-     * across each control interval.
-     *
-     * Now the robot shall start at 0Cps
-     */
-    controller->maxSpeedCps = speedCps;
-    controller->targetSpeedCps = 0.0f;
-
-    /*
-     * Enforcing uniform state representation for curved and
-     * straight motions
-     */
-    controller->targetCurvaturePerMm = 0.0f;
-    controller->targetSteeringAngleRad = 0.0f;
-
+/**
+ * Initialise state shared by straight and arc commands after the complete
+ * request has been validated. This helper deliberately does not steer.
+ */
+static MotionControllerStatus MotionController_StartMotion(
+	MotionController *controller,
+	float distanceMm,
+	float speedCps)
+{
     float mmPerCount =
         MotionController_GetMmPerCount(controller);
+
+    float targetDistanceMm =
+        fabsf(distanceMm);
 
     float maxSpeedMmps =
         speedCps * mmPerCount;
 
     if (!MotionProfile_Start(
             &controller->motionProfile,
-            controller->targetDistanceMm,
+            targetDistanceMm,
             maxSpeedMmps))
     {
         return MOTIONCONTROLLER_STATUS_PROFILE_ERROR;
     }
 
-    /*
-     * Straight-line heading is relative to the orientation
-     * at the start of this command.
-     */
+    controller->motionDirection = distanceMm > 0.0f ? 1 : -1;
+    controller->targetDistanceMm = targetDistanceMm;
+
+    controller->maxSpeedCps = speedCps;
+    controller->targetSpeedCps = 0.0f;
+
+    controller->targetCurvaturePerMm = 0.0f;
+    controller->targetSteeringAngleRad = 0.0f;
+
     controller->yawDeg = 0.0f;
 
-    /*
-     * The desired wheel relationship starts at zero.
-     * It may subsequently become non-zero while the
-     * heading controller steers the robot back toward
-     * the requested straight path.
-     */
     controller->desiredWheelTravelDifferenceMm = 0.0f;
     controller->wheelSyncErrorMm = 0.0f;
     controller->wheelSyncCorrectionCps = 0.0f;
@@ -602,6 +611,8 @@ static MotionControllerStatus MotionController_BeginMotion(
     controller->arcTargetYawRateRadPerSec = 0.0f;
 
     controller->arcCommandedCurvaturePerMm = 0.0f;
+    controller->arcSteeringFeedforwardCommand = 0.0f;
+    controller->arcPreparationElapsedSec = 0.0f;
 
     PIDController_Reset(&controller->headingPID);
     PIDController_Reset(&controller->arcYawRatePID);
@@ -610,13 +621,11 @@ static MotionControllerStatus MotionController_BeginMotion(
 
     WheelSpeedController_SetTarget(
         controller->leftWheel,
-        controller->targetSpeedCps);
+        0.0f);
 
     WheelSpeedController_SetTarget(
         controller->rightWheel,
-        controller->targetSpeedCps);
-
-    *motionStarted = true;
+        0.0f);
 
     return MOTIONCONTROLLER_STATUS_OK;
 }
@@ -629,19 +638,29 @@ MotionControllerStatus MotionController_MoveStraight(
     if (controller == NULL)
         return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
 
-    bool motionStarted = false;
+    bool motionRequired = false;
 
     MotionControllerStatus status =
-        MotionController_BeginMotion(
+        MotionController_ValidateMotionRequest(
 			controller,
 			distanceMm,
 			speedCps,
-			&motionStarted);
+			&motionRequired);
 
     if (status != MOTIONCONTROLLER_STATUS_OK ||
-        !motionStarted)
+        !motionRequired)
     {
 			return status;
+    }
+
+    status = MotionController_StartMotion(
+        controller,
+        distanceMm,
+        speedCps);
+
+    if (status != MOTIONCONTROLLER_STATUS_OK)
+    {
+        return status;
     }
 
 
@@ -675,17 +694,50 @@ MotionControllerStatus MotionController_MoveArc(
         return MOTIONCONTROLLER_STATUS_INVALID_RADIUS;
     }
 
-    bool motionStarted = false;
+    bool motionRequired = false;
 
     MotionControllerStatus status =
-        MotionController_BeginMotion(
+        MotionController_ValidateMotionRequest(
             controller,
             distanceMm,
             speedCps,
-            &motionStarted);
+            &motionRequired);
 
     if (status != MOTIONCONTROLLER_STATUS_OK ||
-        !motionStarted)
+        !motionRequired)
+    {
+        return status;
+    }
+
+    float feedforwardCommand;
+
+    if (!MotionController_GetArcSteeringFeedforwardCommand(
+            controller,
+            curvaturePerMm,
+            &feedforwardCommand))
+    {
+        return MOTIONCONTROLLER_STATUS_UNSUPPORTED_CURVATURE;
+    }
+
+    float maximumCorrectionCommand =
+        fmaxf(
+            fabsf(controller->arcYawRatePID.outputMin),
+            fabsf(controller->arcYawRatePID.outputMax));
+
+    if (feedforwardCommand - maximumCorrectionCommand <
+            SERVO_STEER_MIN ||
+        feedforwardCommand + maximumCorrectionCommand >
+            SERVO_STEER_MAX)
+    {
+        return MOTIONCONTROLLER_STATUS_UNSUPPORTED_CURVATURE;
+    }
+
+    status = MotionController_StartMotion(
+        controller,
+        distanceMm,
+        speedCps);
+
+    if (status != MOTIONCONTROLLER_STATUS_OK)
     {
         return status;
     }
@@ -697,12 +749,21 @@ MotionControllerStatus MotionController_MoveArc(
         controller->targetCurvaturePerMm;
 
     controller->arcSteeringFeedforwardCommand =
-        MotionController_GetArcSteeringFeedforwardCommand(
-            controller,
-            controller->targetCurvaturePerMm);
+        feedforwardCommand;
+
+    /*
+     * Preserve the experimentally accepted abrupt prepositioning behavior.
+     * MotionController now owns both the physical command and the matching
+     * SteeringController raw-command state.
+     */
+    SteeringController_SetRawCommand(
+        controller->steering,
+        feedforwardCommand);
 
     controller->mode =
-        MOTIONCONTROLLER_ARC;
+        controller->arcConfig->steeringSettlingTimeSec > 0.0f
+            ? MOTIONCONTROLLER_ARC_PREPARING
+            : MOTIONCONTROLLER_ARC;
 
     return MOTIONCONTROLLER_STATUS_OK;
 }
@@ -889,6 +950,35 @@ MotionControllerStatus MotionController_Update(
 
     if (controller->mode == MOTIONCONTROLLER_IDLE)
         return MOTIONCONTROLLER_STATUS_OK;
+
+    if (controller->mode == MOTIONCONTROLLER_ARC_PREPARING)
+    {
+        float remainingSettlingTimeSec =
+            controller->arcConfig->steeringSettlingTimeSec -
+            controller->arcPreparationElapsedSec;
+
+        if (dt + MOTIONCONTROLLER_TIME_EPSILON_SEC <
+            remainingSettlingTimeSec)
+        {
+            controller->arcPreparationElapsedSec += dt;
+            return MOTIONCONTROLLER_STATUS_OK;
+        }
+
+        controller->arcPreparationElapsedSec =
+            controller->arcConfig->steeringSettlingTimeSec;
+
+        /*
+         * Establish the motion origin after the mechanical hold so any
+         * incidental encoder movement during preparation is excluded.
+         */
+        controller->yawDeg = 0.0f;
+        controller->yawRateDps = 0.0f;
+        controller->filteredYawRateDps = 0.0f;
+
+        MotionController_ResetOdometry(controller);
+
+        controller->mode = MOTIONCONTROLLER_ARC;
+    }
 
     /*
      * Keep odometry running during both normal motion and

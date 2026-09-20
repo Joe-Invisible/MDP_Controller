@@ -26,6 +26,8 @@
  */
 #define WHEEL_DIAMETER_MM           65.5f
 
+#define ARC_STEERING_SETTLING_TIME_SEC  (0.5f)
+
 const RobotKinematics kinematics =
 {
     .rearEncoderCountsPerRev = MG512P30_QUAD_RESOLUTION,
@@ -33,4 +35,52 @@ const RobotKinematics kinematics =
 
     .wheelbaseMm = WHEELBASE_MM,
     .rearTrackWidthMm = REAR_TRACK_WIDTH_MM,
+};
+
+/*
+ * Empirical curvature -> absolute raw steering feedforward calibration.
+ *
+ * Each branch is ordered by strictly increasing curvature. The branches
+ * remain separate so interpolation can never cross the uncalibrated region
+ * around zero or assume left/right symmetry.
+ */
+static const MotionControllerArcFeedforwardPoint
+negativeArcFeedforwardPoints[] =
+{
+    { -1.0f /  275.0f, +95.0f },
+    { -1.0f /  300.0f, +84.2f },
+    { -1.0f /  400.0f, +59.7f },
+    { -1.0f /  500.0f, +47.5f },
+    { -1.0f / 1000.0f, +23.8f },
+    { -1.0f / 1500.0f, +16.5f },
+    { -1.0f / 2500.0f, +12.0f },
+};
+
+static const MotionControllerArcFeedforwardPoint
+positiveArcFeedforwardPoints[] =
+{
+    { +1.0f / 1500.0f, -22.5f },
+    { +1.0f / 1000.0f, -27.7f },
+    { +1.0f /  500.0f, -47.5f },
+    { +1.0f /  300.0f, -75.0f },
+    { +1.0f /  275.0f, -81.7f },
+};
+
+#define NEGATIVE_ARC_FEEDFORWARD_POINT_COUNT \
+    ((uint32_t)(sizeof(negativeArcFeedforwardPoints) / \
+        sizeof(negativeArcFeedforwardPoints[0])))
+
+#define POSITIVE_ARC_FEEDFORWARD_POINT_COUNT \
+    ((uint32_t)(sizeof(positiveArcFeedforwardPoints) / \
+        sizeof(positiveArcFeedforwardPoints[0])))
+
+const MotionControllerArcConfig arcMotionConfig =
+{
+    .negativePoints = negativeArcFeedforwardPoints,
+    .negativePointCount = NEGATIVE_ARC_FEEDFORWARD_POINT_COUNT,
+
+    .positivePoints = positiveArcFeedforwardPoints,
+    .positivePointCount = POSITIVE_ARC_FEEDFORWARD_POINT_COUNT,
+
+    .steeringSettlingTimeSec = ARC_STEERING_SETTLING_TIME_SEC,
 };

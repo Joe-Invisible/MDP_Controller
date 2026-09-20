@@ -56,6 +56,11 @@ typedef enum
 	 * the robot to attain zero-velocity.
 	 */
 	MOTIONCONTROLLER_BRAKING,
+	/**
+	 * Arc command accepted; steering has been abruptly positioned at the
+	 * configured raw feedforward command and is settling before motion.
+	 */
+	MOTIONCONTROLLER_ARC_PREPARING,
 } MotionControllerMode;
 
 /**
@@ -96,6 +101,7 @@ typedef struct
 	ICM20948 *imu;
 
 	const RobotKinematics *kinematics;
+	const MotionControllerArcConfig *arcConfig;
 
 	/*
 	 * Straight-line heading controller
@@ -165,13 +171,14 @@ typedef struct
 	float wheelSyncErrorMm;
 	float wheelSyncCorrectionCps;
 
-	float arcCentreCommand;
-
 	/*
 	 * Absolute raw steering command supplied by curvature
 	 * feedforward. Feedback correction is applied around this.
 	 */
 	float arcSteeringFeedforwardCommand;
+
+	/* Elapsed mechanical settling time after arc prepositioning. */
+	float arcPreparationElapsedSec;
 
 	/*
 	 * Diagnostics: most recently computed geometric wheel reference.
@@ -244,6 +251,7 @@ MotionControllerStatus MotionController_Init(
     SteeringController *steering,
     ICM20948 *imu,
     const RobotKinematics *kinematics,
+    const MotionControllerArcConfig *arcConfig,
     float headingKp,
     float headingKi,
     float headingKd,
@@ -297,6 +305,12 @@ MotionControllerStatus MotionController_MoveStraight(
  *     Unsigned centre-speed magnitude.
  *
  * A zero distance is a successful no-op. The controller remains idle.
+ * Non-zero curvature must lie within one configured feedforward branch;
+ * lookup never extrapolates or interpolates across zero.
+ *
+ * On acceptance, steering is abruptly positioned at the feedforward raw
+ * command and the controller enters MOTIONCONTROLLER_ARC_PREPARING. Motion
+ * profile updates begin after the configured nonblocking settling interval.
  */
 MotionControllerStatus MotionController_MoveArc(
     MotionController *controller,
