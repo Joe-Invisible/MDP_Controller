@@ -329,7 +329,7 @@ static void MotionController_FinishBraking(
     controller->mode = MOTIONCONTROLLER_IDLE;
 }
 
-bool MotionController_Init(
+MotionControllerStatus MotionController_Init(
     MotionController *controller,
     WheelSpeedController *leftWheel,
     WheelSpeedController *rightWheel,
@@ -361,14 +361,34 @@ bool MotionController_Init(
 	    imu == NULL ||
 	    kinematics == NULL)
     {
-        return false;
+        return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
     }
 
     if (kinematics->rearEncoderCountsPerRev == 0U ||
+        !isfinite(kinematics->rearWheelDiameterMm) ||
+        !isfinite(kinematics->wheelbaseMm) ||
+        !isfinite(kinematics->rearTrackWidthMm) ||
         kinematics->rearWheelDiameterMm <= 0.0f ||
         kinematics->wheelbaseMm <= 0.0f ||
         kinematics->rearTrackWidthMm <= 0.0f) {
-        return false;
+        return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
+    }
+
+    if (!isfinite(headingKp) ||
+        !isfinite(headingKi) ||
+        !isfinite(headingKd) ||
+        !isfinite(maxHeadingSteeringAngleRad) ||
+        !isfinite(arcYawRateKp) ||
+        !isfinite(arcYawRateKi) ||
+        !isfinite(arcYawRateKd) ||
+        !isfinite(maxArcSteeringCommandCorrection) ||
+        !isfinite(arcHeadingKpPerSec) ||
+        !isfinite(wheelSyncKpCpsPerMm) ||
+        !isfinite(maxWheelSyncCorrectionCps) ||
+        !isfinite(motionAccelerationMmps2) ||
+        !isfinite(motionDecelerationMmps2))
+    {
+        return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
     }
 
     float minEffectiveAngleRad =
@@ -384,10 +404,12 @@ bool MotionController_Init(
      * in either direction, so use only the range available
      * symmetrically about zero.
      */
-    if (minEffectiveAngleRad >= 0.0f ||
+    if (!isfinite(minEffectiveAngleRad) ||
+        !isfinite(maxEffectiveAngleRad) ||
+        minEffectiveAngleRad >= 0.0f ||
         maxEffectiveAngleRad <= 0.0f)
     {
-        return false;
+        return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
     }
 
     float maxSymmetricSteeringAngleRad =
@@ -399,23 +421,23 @@ bool MotionController_Init(
         maxHeadingSteeringAngleRad >
             maxSymmetricSteeringAngleRad)
     {
-        return false;
+        return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
     }
 
     if (maxArcSteeringCommandCorrection <= 0.0f)
     {
-        return false;
+        return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
     }
 
     if (wheelSyncKpCpsPerMm < 0.0f ||
         maxWheelSyncCorrectionCps < 0.0f)
     {
-        return false;
+        return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
     }
 
     if (arcHeadingKpPerSec < 0.0f)
     {
-        return false;
+        return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
     }
 
     *controller = (MotionController){0};
@@ -440,7 +462,7 @@ bool MotionController_Init(
             motionDecelerationMmps2,
 			MOTION_PROFILE_COMPLETION_TOLERANCE_MM))
     {
-        return false;
+        return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
     }
 
 
@@ -452,7 +474,7 @@ bool MotionController_Init(
         -maxHeadingSteeringAngleRad,
 		maxHeadingSteeringAngleRad))
     {
-        return false;
+        return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
     }
 
     if (!PIDController_Init(
@@ -463,13 +485,15 @@ bool MotionController_Init(
             -maxArcSteeringCommandCorrection,
             +maxArcSteeringCommandCorrection))
     {
-        return false;
+        return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
     }
 
     controller->arcHeadingKpPerSec =
         arcHeadingKpPerSec;
 
-    return true;
+    controller->initialized = true;
+
+    return MOTIONCONTROLLER_STATUS_OK;
 }
 
 /**
@@ -477,21 +501,31 @@ bool MotionController_Init(
  * share majority of initial state configurations,
  * including the motion profile.
  */
-static bool MotionController_BeginMotion(
+static MotionControllerStatus MotionController_BeginMotion(
 	MotionController *controller,
 	float distanceMm,
-	float speedCps) {
-    if (controller == NULL)
-        return false;
+	float speedCps,
+	bool *motionStarted)
+{
+    if (controller == NULL || motionStarted == NULL)
+        return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
+
+    *motionStarted = false;
+
+    if (!controller->initialized)
+        return MOTIONCONTROLLER_STATUS_NOT_INITIALIZED;
 
     if (controller->mode != MOTIONCONTROLLER_IDLE)
-        return false;
+        return MOTIONCONTROLLER_STATUS_BUSY;
 
-    if (speedCps <= 0.0f)
-        return false;
+    if (!isfinite(distanceMm))
+        return MOTIONCONTROLLER_STATUS_INVALID_DISTANCE;
+
+    if (!isfinite(speedCps) || speedCps <= 0.0f)
+        return MOTIONCONTROLLER_STATUS_INVALID_SPEED;
 
     if (distanceMm == 0.0f)
-        return true;
+        return MOTIONCONTROLLER_STATUS_OK;
 
     /*
      * Capture deterministic centering command
@@ -534,7 +568,7 @@ static bool MotionController_BeginMotion(
             controller->targetDistanceMm,
             maxSpeedMmps))
     {
-        return false;
+        return MOTIONCONTROLLER_STATUS_PROFILE_ERROR;
     }
 
     /*
@@ -582,23 +616,32 @@ static bool MotionController_BeginMotion(
         controller->rightWheel,
         controller->targetSpeedCps);
 
-    return true;
+    *motionStarted = true;
+
+    return MOTIONCONTROLLER_STATUS_OK;
 }
 
-bool MotionController_MoveStraight(
+MotionControllerStatus MotionController_MoveStraight(
     MotionController *controller,
     float distanceMm,
     float speedCps)
 {
     if (controller == NULL)
-        return false;
+        return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
 
-    if (!MotionController_BeginMotion(
-    		controller,
-		distanceMm,
-		speedCps))
+    bool motionStarted = false;
+
+    MotionControllerStatus status =
+        MotionController_BeginMotion(
+			controller,
+			distanceMm,
+			speedCps,
+			&motionStarted);
+
+    if (status != MOTIONCONTROLLER_STATUS_OK ||
+        !motionStarted)
     {
-    		return false;
+			return status;
     }
 
 
@@ -606,31 +649,49 @@ bool MotionController_MoveStraight(
 
     controller->mode = MOTIONCONTROLLER_STRAIGHT;
 
-    return true;
+    return MOTIONCONTROLLER_STATUS_OK;
 }
 
-bool MotionController_MoveArc(
+MotionControllerStatus MotionController_MoveArc(
     MotionController *controller,
     float distanceMm,
     float radiusMm,
     float speedCps)
 {
-    if (controller == NULL ||
-        radiusMm == 0.0f)
+    if (controller == NULL)
     {
-        return false;
+        return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
     }
 
-    if (!MotionController_BeginMotion(
+    if (!isfinite(radiusMm) || radiusMm == 0.0f)
+    {
+        return MOTIONCONTROLLER_STATUS_INVALID_RADIUS;
+    }
+
+    float curvaturePerMm = 1.0f / radiusMm;
+
+    if (!isfinite(curvaturePerMm))
+    {
+        return MOTIONCONTROLLER_STATUS_INVALID_RADIUS;
+    }
+
+    bool motionStarted = false;
+
+    MotionControllerStatus status =
+        MotionController_BeginMotion(
             controller,
             distanceMm,
-            speedCps))
+            speedCps,
+            &motionStarted);
+
+    if (status != MOTIONCONTROLLER_STATUS_OK ||
+        !motionStarted)
     {
-        return false;
+        return status;
     }
 
     controller->targetCurvaturePerMm =
-        1.0f / radiusMm;
+        curvaturePerMm;
 
     controller->arcCommandedCurvaturePerMm =
         controller->targetCurvaturePerMm;
@@ -643,22 +704,27 @@ bool MotionController_MoveArc(
     controller->mode =
         MOTIONCONTROLLER_ARC;
 
-    return true;
+    return MOTIONCONTROLLER_STATUS_OK;
 }
 
-bool MotionController_Brake(MotionController *controller) {
+MotionControllerStatus MotionController_Brake(
+    MotionController *controller)
+{
 	if (controller == NULL)
 	{
-        return false;
+        return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
     }
 
+    if (!controller->initialized)
+        return MOTIONCONTROLLER_STATUS_NOT_INITIALIZED;
+
     if (controller->mode == MOTIONCONTROLLER_BRAKING) {
-        return true;		// no-op
+        return MOTIONCONTROLLER_STATUS_OK;
     }
 
     MotionController_BeginBraking(controller);
 
-    return true;
+    return MOTIONCONTROLLER_STATUS_OK;
 }
 
 static bool MotionController_UpdateYawEstimate(
@@ -808,15 +874,21 @@ static void MotionController_UpdateWheelSynchronisation(
         rightBaseTargetCps - correctionCps);
 }
 
-bool MotionController_Update(
+MotionControllerStatus MotionController_Update(
     MotionController *controller,
     float dt)
 {
-    if (controller == NULL || dt <= 0.0f)
-        return false;
+    if (controller == NULL)
+        return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
+
+    if (!controller->initialized)
+        return MOTIONCONTROLLER_STATUS_NOT_INITIALIZED;
+
+    if (!isfinite(dt) || dt <= 0.0f)
+        return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
 
     if (controller->mode == MOTIONCONTROLLER_IDLE)
-        return true;
+        return MOTIONCONTROLLER_STATUS_OK;
 
     /*
      * Keep odometry running during both normal motion and
@@ -873,7 +945,7 @@ bool MotionController_Update(
             controller->stationarySamples = 0U;
         }
 
-        return true;
+        return MOTIONCONTROLLER_STATUS_OK;
     }
 
     /*
@@ -903,7 +975,7 @@ bool MotionController_Update(
             &controller->motionProfile))
     {
         MotionController_BeginBraking(controller);
-        return true;
+        return MOTIONCONTROLLER_STATUS_OK;
     }
 
     /*
@@ -924,7 +996,7 @@ bool MotionController_Update(
          * Stop rather than continuing open-loop.
          */
         MotionController_Stop(controller);
-        return false;
+        return MOTIONCONTROLLER_STATUS_IMU_ERROR;
     }
 
     float targetSteeringAngleRad;
@@ -1135,7 +1207,7 @@ bool MotionController_Update(
     else
     {
         MotionController_Stop(controller);
-        return false;
+        return MOTIONCONTROLLER_STATUS_INVALID_STATE;
     }
 
     /*
@@ -1159,14 +1231,17 @@ bool MotionController_Update(
         controller->rightWheel,
         dt);
 
-    return true;
+    return MOTIONCONTROLLER_STATUS_OK;
 }
 
-void MotionController_Stop(
+MotionControllerStatus MotionController_Stop(
     MotionController *controller)
 {
     if (controller == NULL)
-        return;
+        return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
+
+    if (!controller->initialized)
+        return MOTIONCONTROLLER_STATUS_NOT_INITIALIZED;
 
     WheelSpeedController_Stop(controller->leftWheel);
     WheelSpeedController_Stop(controller->rightWheel);
@@ -1177,6 +1252,8 @@ void MotionController_Stop(
     PIDController_Reset(&controller->arcYawRatePID);
 
     controller->mode = MOTIONCONTROLLER_IDLE;
+
+    return MOTIONCONTROLLER_STATUS_OK;
 }
 
 
@@ -1186,5 +1263,6 @@ bool MotionController_IsBusy(
     if (controller == NULL)
         return false;
 
-    return controller->mode != MOTIONCONTROLLER_IDLE;
+    return controller->initialized &&
+        controller->mode != MOTIONCONTROLLER_IDLE;
 }

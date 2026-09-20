@@ -58,8 +58,33 @@ typedef enum
 	MOTIONCONTROLLER_BRAKING,
 } MotionControllerMode;
 
+/**
+ * Result of a MotionController operation.
+ *
+ * MOTIONCONTROLLER_STATUS_OK is the only success value. In particular,
+ * a zero-distance move is reported as OK and leaves the controller idle.
+ */
+typedef enum
+{
+	MOTIONCONTROLLER_STATUS_OK = 0,
+	MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT,
+	MOTIONCONTROLLER_STATUS_NOT_INITIALIZED,
+	MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION,
+	MOTIONCONTROLLER_STATUS_BUSY,
+	MOTIONCONTROLLER_STATUS_INVALID_DISTANCE,
+	MOTIONCONTROLLER_STATUS_INVALID_SPEED,
+	MOTIONCONTROLLER_STATUS_INVALID_RADIUS,
+	MOTIONCONTROLLER_STATUS_UNSUPPORTED_CURVATURE,
+	MOTIONCONTROLLER_STATUS_PROFILE_ERROR,
+	MOTIONCONTROLLER_STATUS_IMU_ERROR,
+	MOTIONCONTROLLER_STATUS_INVALID_STATE,
+} MotionControllerStatus;
+
 typedef struct
 {
+	/* True only after MotionController_Init() completes successfully. */
+	bool initialized;
+
 	/*
 	 * Controlled hardware / lower-level controllers
 	 */
@@ -212,7 +237,7 @@ typedef struct
 } MotionController;
 
 
-bool MotionController_Init(
+MotionControllerStatus MotionController_Init(
     MotionController *controller,
     WheelSpeedController *leftWheel,
     WheelSpeedController *rightWheel,
@@ -248,8 +273,10 @@ bool MotionController_Init(
  * 		Unsigned cruising speed. Note that this speed may
  * 		not be attained, pertaining to the configured motion profile
  * 		and specified distance.
+ *
+ * A zero distance is a successful no-op. The controller remains idle.
  */
-bool MotionController_MoveStraight(
+MotionControllerStatus MotionController_MoveStraight(
 	MotionController *controller,
 	float distanceMm,
 	float speedCps);
@@ -268,32 +295,36 @@ bool MotionController_MoveStraight(
  *
  * speedCps:
  *     Unsigned centre-speed magnitude.
+ *
+ * A zero distance is a successful no-op. The controller remains idle.
  */
-bool MotionController_MoveArc(
+MotionControllerStatus MotionController_MoveArc(
     MotionController *controller,
     float distanceMm,
     float radiusMm,
     float speedCps);
 
 /**
- * Full brake. Unfinished motion will be
- * aborted.
+ * Full brake. Unfinished motion will be aborted.
+ * Repeated calls while braking are successful no-ops.
  */
-bool MotionController_Brake(
+MotionControllerStatus MotionController_Brake(
 	MotionController *controller);
 
 /**
- * Steps through control laws
+ * Steps through control laws.
+ * Returns MOTIONCONTROLLER_STATUS_IMU_ERROR if yaw feedback fails;
+ * the controller coasts and returns to IDLE in that case.
  */
-bool MotionController_Update(
+MotionControllerStatus MotionController_Update(
 	MotionController *controller,
 	float dt);
 
 /**
- * Stops executing control laws. If called while
- * in motion, this will cause the robot to coast.
+ * Stops executing control laws. If called while in motion, this will
+ * cause the robot to coast and immediately return to IDLE.
  */
-void MotionController_Stop(
+MotionControllerStatus MotionController_Stop(
 	MotionController *controller);
 
 /**
