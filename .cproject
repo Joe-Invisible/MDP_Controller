@@ -98,7 +98,7 @@
 					<fileInfo id="com.st.stm32cube.ide.mcu.gnu.managedbuild.config.exe.debug.1234613617.1377366655" name="SteeringGeometryCalibrationTest.h" rcbsApplicability="disable" resourcePath="Tests/Inc/SteeringGeometryCalibrationTest.h" toolsToInvoke=""/>
 					<sourceEntries>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Controllers"/>
-						<entry excluding="Src/MotionControllerArcTest.c|Inc/SteeringGeometryCalibrationTest.h|Src/SteeringGeometryCalibrationTest.c" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Tests"/>
+						<entry excluding="Src/MotionControllerTest.c|Src/SteeringGeometryCalibrationTest_selfpropelled.c|Src/SteeringPreconditioningArcRepeatTest.c|Src/SteeringGeometryCalibrationIterationTest.c|Src/MotionControllerArcTest.c|Inc/SteeringGeometryCalibrationTest.h|Src/SteeringGeometryCalibrationTest.c" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Tests"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="PeripheralDrivers"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Middlewares"/>
@@ -159,6 +159,11 @@
 								</option>
 								<option IS_BUILTIN_EMPTY="false" IS_VALUE_EMPTY="false" id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.option.includepaths.1161705872" name="Include paths (-I)" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.option.includepaths" useByScannerDiscovery="false" valueType="includePath">
 									<listOptionValue builtIn="false" value="../Core/Inc"/>
+									<listOptionValue builtIn="false" value="../Tests/Common"/>
+									<listOptionValue builtIn="false" value="../Controllers/Inc"/>
+									<listOptionValue builtIn="false" value="../Apps/Inc"/>
+									<listOptionValue builtIn="false" value="../Tests/Inc"/>
+									<listOptionValue builtIn="false" value="../PeripheralDrivers/Inc"/>
 									<listOptionValue builtIn="false" value="../Drivers/STM32F4xx_HAL_Driver/Inc"/>
 									<listOptionValue builtIn="false" value="../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy"/>
 									<listOptionValue builtIn="false" value="../Middlewares/Third_Party/FreeRTOS/Source/include"/>
@@ -194,7 +199,7 @@
 					</folderInfo>
 					<sourceEntries>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Controllers"/>
-						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Tests"/>
+						<entry excluding="Src/MotionControllerTest.c|Src/SteeringGeometryCalibrationTest_selfpropelled.c|Src/SteeringPreconditioningArcRepeatTest.c|Src/SteeringGeometryCalibrationIterationTest.c|Src/MotionControllerArcTest.c|Inc/SteeringGeometryCalibrationTest.h|Src/SteeringGeometryCalibrationTest.c" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Tests"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="PeripheralDrivers"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Middlewares"/>

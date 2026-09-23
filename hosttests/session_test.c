@@ -1,4 +1,4 @@
-/* cc hosttests/session_test.c Apps/Src/Command{Parser,Session}.c -IApps/Inc -o /tmp/session_test */
+/* cc hosttests/session_test.c Apps/Src/Command{Parser,Session,Motion}.c -IApps/Inc -o /tmp/session_test */
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -26,8 +26,9 @@ int main(void) {
     Receive("STATUS", "READY\n", false);
     Receive("S", "STOPPED\n", false);
 
-    /* Entire unsupported/mixed-stop frames are rejected before any move. */
-    Receive("12:F100;L90;F100", "NAK 12 UNSUPPORTED\n", false);
+    /* Entire out-of-range/mixed-stop frames are rejected before any move. */
+    Receive("12:F100;L361;F100", "NAK 12 RANGE\n", false);
+    Receive("12:F100;R360.1", "NAK 12 RANGE\n", false);
     Receive("12:F100;S;F100", "NAK 12 STOP_STANDALONE\n", false);
     Receive("12:S", "NAK 12 STOP_STANDALONE\n", false);
     Receive("12:F1e999", "NAK 12 PARSE\n", false);
@@ -107,9 +108,25 @@ int main(void) {
     for (unsigned n = 0; n < 7; ++n)
         FinishCommand("");
     FinishCommand("DONE 200\n");
-    Receive("201:R90", "NAK 201 UNSUPPORTED\n", false);
-    Receive("201:F10", "", false);
+    Receive("201:R361", "NAK 201 RANGE\n", false);
+    Receive("201:R90;F10;L360", "", false);
+    assert(CommandSession_Current(&session)->type == COMMAND_RIGHT);
+    Receive("201:R90;F10;L360", "BUSY 201\n", false);
+    FinishCommand("");
+    assert(CommandSession_Current(&session)->type == COMMAND_FORWARD);
+    FinishCommand("");
+    assert(CommandSession_Current(&session)->type == COMMAND_LEFT);
     FinishCommand("DONE 201\n");
+    Receive("201:R90;F10;L360", "DONE 201\n", false);
+
+    /* Stop during an arc cancels the subsequent straight/turn commands. */
+    Receive("202:L90;F100;R90", "", false);
+    Receive("S", "", true);
+    assert(CommandSession_Current(&session) == NULL);
+    FinishCommand("");
+    CommandSession_Stopped(&session, reply);
+    assert(strcmp(reply, "STOPPED 202\n") == 0);
+    Receive("202:L90;F100;R90", "STOPPED 202\n", false);
 
     puts("session_test: all checks passed");
     return 0;

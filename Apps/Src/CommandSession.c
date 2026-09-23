@@ -1,4 +1,5 @@
 #include "CommandSession.h"
+#include "CommandMotion.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -64,10 +65,10 @@ bool CommandSession_Receive(CommandSession *session, const char *line,
 
     /* Reject the entire batch before moving, including embedded stops. */
     for (size_t i = 0; i < frame.count; ++i) {
-        if (commands[i].type != COMMAND_FORWARD &&
-            commands[i].type != COMMAND_BACKWARD) {
+        CommandMotion motion;
+        if (!CommandMotion_Resolve(&commands[i], &motion)) {
             Reply(reply, "NAK", frame.hasSeq, frame.seq,
-                  commands[i].type == COMMAND_STOP ? "STOP_STANDALONE" : "UNSUPPORTED");
+                  commands[i].type == COMMAND_STOP ? "STOP_STANDALONE" : "RANGE");
             return false;
         }
     }

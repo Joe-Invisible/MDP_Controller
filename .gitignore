@@ -27,6 +27,7 @@ Build/
 # Generated dependency / build files
 *.su
 *.cyclo
+compile_commands.json
 
 
 # ============================================================

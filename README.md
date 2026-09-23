@@ -190,6 +190,14 @@ or queue of future batches.
 
 The STM32CubeMX peripheral configuration is stored in `MDP_Controller.ioc`.
 
+Debug and Release use the same application include paths and exclude the same
+legacy calibration tests that depend on the old controller API. Both compile
+the ADC and side-IR drivers, including `Core/Src/adc.c`, the HAL ADC sources,
+and `PeripheralDrivers/Src/SideIRSensorConfig.c` and `gp2y0a21yk.c`.
+After adding sources or changing configurations, refresh the project and do
+a clean build so CubeIDE regenerates its makefiles. `compile_commands.json`
+is machine-local tooling output and is not committed.
+
 ## Hardware Documentation
 
 Relevant board, motor-driver, motor/encoder/servo, MCU, and IMU documentation is stored under `zdocs/`.

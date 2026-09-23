@@ -18,8 +18,14 @@
 
 #include "CommandLink.h"
 #include "CommandSession.h"
+#include "CommandMotion.h"
+#include "MotionWatchdog.h"
+#include "MotionDiagnostics.h"
+#include "StartButton.h"
+#include "userbutton.h"
 #include "OLEDManager.h"
 
+#include <stdio.h>
 #include <string.h>
 
 #define MOTORBPWMSRC	htim9
@@ -31,27 +37,6 @@
 
 #define MOTIONTASK_CONTROL_PERIOD_MS	10U
 #define MOTIONTASK_CONTROL_PERIOD_S		0.010f
-
-/*
- * Gains validated on hardware by MotionControllerTest; see the
- * calibration reports in exp/.
- */
-#define MOTIONTASK_HEADING_KP			0.80f
-#define MOTIONTASK_HEADING_KI			0.0f
-#define MOTIONTASK_HEADING_KD			0.0f
-#define MOTIONTASK_HEADING_LIMIT_RAD	0.010f
-
-#define MOTIONTASK_SYNC_KP_CPS_PER_MM	10.0f
-#define MOTIONTASK_SYNC_MAX_CORR_CPS	100.0f
-
-#define MOTIONTASK_ACCELERATION_MMPS2	500.0f
-#define MOTIONTASK_DECELERATION_MMPS2	250.0f
-
-/*
- * Cruise speed applied to every F/B command until the protocol
- * carries an explicit speed.
- */
-#define MOTIONTASK_CRUISE_SPEED_CPS		5000.0f
 
 static const WheelSpeedBrakeConfig wheelSpeedBrakeConfig = {
 	.map = &rearWheelBrakeMap,
@@ -72,62 +57,72 @@ static WheelSpeedController leftWheelController;
 static WheelSpeedController rightWheelController;
 static SteeringController steeringController;
 static MotionController motionController;
+/* MotionController retains this configuration pointer for its lifetime. */
+static MotionControllerConfig runtimeMotionConfig;
 
 static OLED_Handle_t cmdStatus;
 
-static bool MotionTask_InitControllers(void) {
+/* NULL means success; a precise reason remains readable through STATUS. */
+static const char *MotionTask_InitControllers(void) {
 	if (!ICM20948_Init(&imu, &hi2c2))
-		return false;
+		return "INIT_IMU";
 
 	if (!DCMotor_Init(&leftRearWheel, &MOTORBPWMSRC, false, &MOTORBENC) ||
 		!DCMotor_Init(&rightRearWheel, &MOTORCPWMSRC, true, &MOTORCENC))
-		return false;
+		return "INIT_MOTOR";
 
 	if (!DCMotor_Enable(&leftRearWheel) || !DCMotor_Enable(&rightRearWheel))
-		return false;
+		return "INIT_MOTOR_ENABLE";
 
 	if (!Servo_Init(&steeringServo, &SERVOPWMSRC, SERVOPWMCH,
 			CHASSIS_STEER_MIN_PULSE_US,
 			CHASSIS_STEER_CTR_PULSE_US,
 			CHASSIS_STEER_MAX_PULSE_US))
-		return false;
+		return "INIT_SERVO";
 
 	if (!Servo_Enable(&steeringServo))
-		return false;
+		return "INIT_SERVO_ENABLE";
 
 	if (!SteeringController_Init(&steeringController,
 			&steeringServo, &steeringCalibration))
-		return false;
+		return "INIT_STEERING";
 
 	if (!WheelSpeedController_Init(&leftWheelController, &leftRearWheel,
 			WHEELSPEEDCONTROLLER_KP, WHEELSPEEDCONTROLLER_KI,
 			WHEELSPEEDCONTROLLER_MIN_FEEDBACK,
 			WHEELSPEEDCONTROLLER_MAX_FEEDBACK,
 			&leftCalibration))
-		return false;
+		return "INIT_LEFT_SPEED";
 
 	if (!WheelSpeedController_Init(&rightWheelController, &rightRearWheel,
 			WHEELSPEEDCONTROLLER_KP, WHEELSPEEDCONTROLLER_KI,
 			WHEELSPEEDCONTROLLER_MIN_FEEDBACK,
 			WHEELSPEEDCONTROLLER_MAX_FEEDBACK,
 			&rightCalibration))
-		return false;
+		return "INIT_RIGHT_SPEED";
 
-	if (!MotionController_Init(&motionController,
+	/*
+	 * Inherit the shared geometry and arc calibration, but preserve the
+	 * UART runtime's pre-merge straight-driving tuning. The calibration
+	 * tests continue to use motionControllerConfig directly.
+	 */
+	runtimeMotionConfig = motionControllerConfig;
+	runtimeMotionConfig.headingKp = 0.80f;
+	runtimeMotionConfig.headingKi = 0.0f;
+	runtimeMotionConfig.headingKd = 0.0f;
+	runtimeMotionConfig.maxHeadingSteeringAngleRad = 0.010f;
+	if (MotionController_Init(&motionController,
 			&leftWheelController, &rightWheelController,
-			&steeringController, &imu, &kinematics,
-			MOTIONTASK_HEADING_KP, MOTIONTASK_HEADING_KI,
-			MOTIONTASK_HEADING_KD, MOTIONTASK_HEADING_LIMIT_RAD,
-			MOTIONTASK_SYNC_KP_CPS_PER_MM, MOTIONTASK_SYNC_MAX_CORR_CPS,
-			MOTIONTASK_ACCELERATION_MMPS2, MOTIONTASK_DECELERATION_MMPS2))
-		return false;
+			&steeringController, &imu,
+			&runtimeMotionConfig) != MOTIONCONTROLLER_STATUS_OK)
+		return "INIT_MOTION";
 
 	WheelSpeedController_ConfigureBrake(
 			&leftWheelController, &wheelSpeedBrakeConfig);
 	WheelSpeedController_ConfigureBrake(
 			&rightWheelController, &wheelSpeedBrakeConfig);
 
-	return true;
+	return NULL;
 }
 
 /*
@@ -148,6 +143,44 @@ static void MotionTask_CentreSteering(void) {
 /* All protocol and controller state belongs to this task. */
 static CommandSession session;
 static char reply[COMMANDSESSION_REPLY_SIZE];
+static MotionWatchdog watchdog;
+
+static MotionWatchPhase MotionTask_WatchPhase(void) {
+    if (motionController.mode == MOTIONCONTROLLER_ARC_PREPARING)
+        return WATCH_PREPARE;
+    if (motionController.mode == MOTIONCONTROLLER_BRAKING)
+        return WATCH_BRAKE;
+    return WATCH_MOVE;
+}
+
+#if MOTION_DIAGNOSTICS
+static MotionDiagnostics diagnostics;
+static char diagnosticReply[MOTION_DIAGNOSTICS_REPLY_SIZE];
+
+static void MotionTask_Capture(const char *event) {
+    if (session.next >= session.count) return;
+    const Command *cmd = &session.commands[session.next];
+    static const char letters[] = "FBLRS";
+    static const char *const modes[] = { "IDLE", "STRAIGHT", "ARC", "BRAKING", "PREPARE" };
+    diagnostics = (MotionDiagnostics){
+        .valid = true, .numbered = session.hasSeq, .seq = session.seq,
+        .step = (unsigned)session.next + 1U, .command = letters[cmd->type],
+        .parameter = cmd->param, .event = event,
+        .mode = (unsigned)motionController.mode < sizeof(modes)/sizeof(modes[0])
+            ? modes[motionController.mode] : "UNKNOWN",
+        .targetMm = motionController.targetDistanceMm,
+        .travelledMm = motionController.travelledDistanceMm,
+        .leftMm = motionController.leftTravelMm,
+        .rightMm = motionController.rightTravelMm,
+        .leftCps = leftWheelController.measuredSpeedCps,
+        .rightCps = rightWheelController.measuredSpeedCps,
+        .steeringCommand = steeringController.command,
+        .yawDeg = motionController.yawDeg,
+    };
+}
+#else
+#define MotionTask_Capture(event) ((void)0)
+#endif
 
 #define MOTIONTASK_MAX_FRAME_LEN 64U
 #define MOTIONTASK_RX_BYTES_PER_TICK 64U
@@ -198,14 +231,29 @@ static bool MotionTask_ReadLine(char **line) {
 }
 
 static bool MotionTask_Start(const Command *cmd) {
-    float distance = cmd->type == COMMAND_BACKWARD ? -cmd->param : cmd->param;
-    OLED_Post(&cmdStatus, "%c %.0f",
-              cmd->type == COMMAND_BACKWARD ? 'B' : 'F', cmd->param);
+    CommandMotion motion;
+    if (!CommandMotion_Resolve(cmd, &motion))
+        return false;
+    float mmPerCount = 3.14159265358979323846f *
+        runtimeMotionConfig.kinematics->rearWheelDiameterMm /
+        runtimeMotionConfig.kinematics->rearEncoderCountsPerRev;
+    if (!MotionWatchdog_Start(&watchdog, HAL_GetTick(), motion.distanceMm,
+                             motion.speedCps * mmPerCount,
+                             motion.radiusMm != 0.0f ? WATCH_PREPARE : WATCH_MOVE))
+        return false;
+    static const char letters[] = "FBLR";
+    OLED_Post(&cmdStatus, "%c %.0f", letters[cmd->type], cmd->param);
+    if (motion.radiusMm != 0.0f)
+        return MotionController_MoveArc(&motionController, motion.distanceMm,
+                                        motion.radiusMm, motion.speedCps)
+               == MOTIONCONTROLLER_STATUS_OK;
     return MotionController_MoveStraight(&motionController,
-                                        distance, MOTIONTASK_CRUISE_SPEED_CPS);
+                                        motion.distanceMm, motion.speedCps)
+           == MOTIONCONTROLLER_STATUS_OK;
 }
 
 static void MotionTask_Fault(const char *reason) {
+    MotionTask_Capture(reason);
     /* Brake actively; the session stays faulted until standalone S. */
     MotionController_Brake(&motionController);
     CommandSession_Fault(&session, reason, reply);
@@ -218,14 +266,16 @@ void MotionTask(void *argument) {
     OLED_Register(&cmdStatus, "CMD");
     CommandSession_Init(&session);
 
-    if (!MotionTask_InitControllers()) {
-        OLED_Post(&cmdStatus, "INIT FAIL");
-        CommandLink_Send("FAULT - INIT\n");
+    const char *initError = MotionTask_InitControllers();
+    if (initError != NULL) {
+        OLED_Post(&cmdStatus, "%s", initError);
+        snprintf(reply, sizeof(reply), "FAULT - %s\n", initError);
+        CommandLink_Send(reply);
         /* Keep STATUS usable, but never accept motion without hardware. */
         for (;;) {
             char *line;
             if (MotionTask_ReadLine(&line))
-                CommandLink_Send("FAULT - INIT\n");
+                CommandLink_Send(reply);
             osDelay(MOTIONTASK_CONTROL_PERIOD_MS);
         }
     }
@@ -235,12 +285,16 @@ void MotionTask(void *argument) {
     CommandLink_Send("READY\n");
 
     bool commandRunning = false;
+    StartButton startButton = {0};
     uint32_t nextWake = osKernelGetTickCount();
     uint32_t previousUpdate = nextWake;
 
     for (;;) {
+        StartButton_Update(&startButton, SW1_ReadState() == SW1_Enabled,
+                           HAL_GetTick());
         bool busy = MotionController_IsBusy(&motionController);
         if (!busy && commandRunning) {
+            MotionTask_Capture("DONE");
             CommandSession_CommandDone(&session, reply);
             CommandLink_Send(reply);
             commandRunning = false;
@@ -252,9 +306,27 @@ void MotionTask(void *argument) {
 
         char *line;
         if (MotionTask_ReadLine(&line)) {
-            if (CommandSession_Receive(&session, line, reply)) {
-                MotionController_Brake(&motionController);
-                commandRunning = false;
+#if MOTION_DIAGNOSTICS
+            if (strcmp(line, "D") == 0) {
+                if (commandRunning) MotionTask_Capture("LIVE");
+                MotionDiagnostics_Format(&diagnostics, diagnosticReply,
+                                         sizeof(diagnosticReply));
+                CommandLink_Send(diagnosticReply);
+                reply[0] = '\0';
+            } else
+#endif
+            if (strcmp(line, "BUTTON") == 0) {
+                snprintf(reply, sizeof(reply), "BUTTON %lu %u\n",
+                         (unsigned long)startButton.count,
+                         startButton.rawPressed || startButton.stablePressed
+                             ? 1U : 0U);
+            } else {
+                if (strcmp(line, "S") == 0 && commandRunning)
+                    MotionTask_Capture("STOP");
+                if (CommandSession_Receive(&session, line, reply)) {
+                    MotionController_Brake(&motionController);
+                    commandRunning = false;
+                }
             }
             CommandLink_Send(reply);
         }
@@ -263,9 +335,10 @@ void MotionTask(void *argument) {
         if (!commandRunning && !MotionController_IsBusy(&motionController)) {
             const Command *cmd = CommandSession_Current(&session);
             if (cmd != NULL) {
-                if (MotionTask_Start(cmd))
+                if (MotionTask_Start(cmd)) {
                     commandRunning = true;
-                else
+                    MotionTask_Capture("LIVE");
+                } else
                     MotionTask_Fault("REJECTED");
             }
         }
@@ -275,9 +348,19 @@ void MotionTask(void *argument) {
         float dt = elapsedTicks ? (float)elapsedTicks / osKernelGetTickFreq()
                                 : MOTIONTASK_CONTROL_PERIOD_S;
         previousUpdate = now;
-        if (!MotionController_Update(&motionController, dt)) {
+        if (MotionController_Update(&motionController, dt)
+                != MOTIONCONTROLLER_STATUS_OK) {
             MotionTask_Fault("UPDATE");
             commandRunning = false;
+        }
+        if (commandRunning && MotionController_IsBusy(&motionController)) {
+            const char *fault = MotionWatchdog_Check(&watchdog, HAL_GetTick(),
+                MotionTask_WatchPhase(), motionController.motionDirection *
+                motionController.travelledDistanceMm);
+            if (fault != NULL) {
+                MotionTask_Fault(fault);
+                commandRunning = false;
+            }
         }
 
         nextWake += MOTIONTASK_CONTROL_PERIOD_MS;

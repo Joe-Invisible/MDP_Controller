@@ -20,11 +20,8 @@
 #include "MotionProfile.h"
 
 #include "MotionControllerConfig.h"
-#include "RobotKinematics.h"
 
 #include "icm20948.h"
-
-#define MOTIONCONTROLLER_STOP_STABLE_SAMPLES 3U
 
 typedef enum
 {
@@ -47,10 +44,40 @@ typedef enum
 	 * the robot to attain zero-velocity.
 	 */
 	MOTIONCONTROLLER_BRAKING,
+	/**
+	 * Arc command accepted; steering has been abruptly positioned at the
+	 * configured raw feedforward command and is settling before motion.
+	 */
+	MOTIONCONTROLLER_ARC_PREPARING,
 } MotionControllerMode;
+
+/**
+ * Result of a MotionController operation.
+ *
+ * MOTIONCONTROLLER_STATUS_OK is the only success value. In particular,
+ * a zero-distance move is reported as OK and leaves the controller idle.
+ */
+typedef enum
+{
+	MOTIONCONTROLLER_STATUS_OK = 0,
+	MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT,
+	MOTIONCONTROLLER_STATUS_NOT_INITIALIZED,
+	MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION,
+	MOTIONCONTROLLER_STATUS_BUSY,
+	MOTIONCONTROLLER_STATUS_INVALID_DISTANCE,
+	MOTIONCONTROLLER_STATUS_INVALID_SPEED,
+	MOTIONCONTROLLER_STATUS_INVALID_RADIUS,
+	MOTIONCONTROLLER_STATUS_UNSUPPORTED_CURVATURE,
+	MOTIONCONTROLLER_STATUS_PROFILE_ERROR,
+	MOTIONCONTROLLER_STATUS_IMU_ERROR,
+	MOTIONCONTROLLER_STATUS_INVALID_STATE,
+} MotionControllerStatus;
 
 typedef struct
 {
+	/* True only after MotionController_Init() completes successfully. */
+	bool initialized;
+
 	/*
 	 * Controlled hardware / lower-level controllers
 	 */
@@ -61,12 +88,39 @@ typedef struct
 
 	ICM20948 *imu;
 
-	const RobotKinematics *kinematics;
+	const MotionControllerConfig *config;
 
 	/*
 	 * Straight-line heading controller
 	 */
 	PIDController headingPID;
+
+	/*
+	 * ARC yaw-rate controller.
+	 *
+	 * Input:  yaw-rate error [rad/s]
+	 * Output: raw steering-command correction
+	 */
+	PIDController arcYawRatePID;
+
+	/*
+	 * ARC diagnostics
+	 */
+	float yawRateDps;
+	float filteredYawRateDps;
+
+	float arcDesiredYawRad;
+	float arcHeadingErrorRad;
+
+	float arcFeedforwardYawRateRadPerSec;
+	float arcHeadingYawRateCorrectionRadPerSec;
+	float arcTargetYawRateRadPerSec;
+
+	float arcCommandedCurvaturePerMm;
+
+	float arcYawRateErrorRadPerSec;
+	float arcSteeringCorrectionCommand;
+	float arcSteeringTargetCommand;
 
 	/*
 	 * Rear-wheel synchronization controller.
@@ -87,12 +141,28 @@ typedef struct
 	 * this difference should be derived from the robot
 	 * model.
 	 */
-	float wheelSyncKpCpsPerMm;
-	float maxWheelSyncCorrectionCps;
-
 	float desiredWheelTravelDifferenceMm;
 	float wheelSyncErrorMm;
 	float wheelSyncCorrectionCps;
+
+	/*
+	 * Absolute raw steering command supplied by curvature
+	 * feedforward. Feedback correction is applied around this.
+	 */
+	float arcSteeringFeedforwardCommand;
+
+	/* Elapsed mechanical settling time after arc prepositioning. */
+	float arcPreparationElapsedSec;
+
+	/*
+	 * Diagnostics: most recently computed geometric wheel reference.
+	 *
+	 * These fields are observational only and must not be used
+	 * as inputs to the control law.
+	 */
+	float wheelReferenceCurvaturePerMm;
+	float leftBaseTargetCps;
+	float rightBaseTargetCps;
 
 	MotionControllerMode mode;
 
@@ -111,11 +181,12 @@ typedef struct
 	 *
 	 * Straight:
 	 *     curvature = 0
-	 *     steering  = 0
 	 *
 	 * Arc:
 	 *     curvature = 1 / radius
-	 *     steering  = atan(L * curvature)
+	 *
+	 * ARC steering is controlled from measured yaw rate
+	 * and does not require a physical steering-angle model.
 	 */
 	float targetCurvaturePerMm;
 	float targetSteeringAngleRad;
@@ -126,6 +197,7 @@ typedef struct
 	 * Relative heading since motion began.
 	 */
 	float yawDeg;
+
 
 	/*
 	 * Encoder odometry since motion began.
@@ -146,21 +218,13 @@ typedef struct
 } MotionController;
 
 
-bool MotionController_Init(
+MotionControllerStatus MotionController_Init(
     MotionController *controller,
     WheelSpeedController *leftWheel,
     WheelSpeedController *rightWheel,
     SteeringController *steering,
     ICM20948 *imu,
-    const RobotKinematics *kinematics,
-    float headingKp,
-    float headingKi,
-    float headingKd,
-    float maxHeadingSteeringAngleRad,
-    float wheelSyncKpCpsPerMm,
-    float maxWheelSyncCorrectionCps,
-	float motionAccelerationMmps2,
-	float motionDecelerationMmps2);
+    const MotionControllerConfig *config);
 
 /**
  * Straight line motion.
@@ -172,8 +236,10 @@ bool MotionController_Init(
  * 		Unsigned cruising speed. Note that this speed may
  * 		not be attained, pertaining to the configured motion profile
  * 		and specified distance.
+ *
+ * A zero distance is a successful no-op. The controller remains idle.
  */
-bool MotionController_MoveStraight(
+MotionControllerStatus MotionController_MoveStraight(
 	MotionController *controller,
 	float distanceMm,
 	float speedCps);
@@ -192,32 +258,42 @@ bool MotionController_MoveStraight(
  *
  * speedCps:
  *     Unsigned centre-speed magnitude.
+ *
+ * A zero distance is a successful no-op. The controller remains idle.
+ * Non-zero curvature must lie within one configured feedforward branch;
+ * lookup never extrapolates or interpolates across zero.
+ *
+ * On acceptance, steering is abruptly positioned at the feedforward raw
+ * command and the controller enters MOTIONCONTROLLER_ARC_PREPARING. Motion
+ * profile updates begin after the configured nonblocking settling interval.
  */
-bool MotionController_MoveArc(
+MotionControllerStatus MotionController_MoveArc(
     MotionController *controller,
     float distanceMm,
     float radiusMm,
     float speedCps);
 
 /**
- * Full brake. Unfinished motion will be
- * aborted.
+ * Full brake. Unfinished motion will be aborted.
+ * Repeated calls while braking are successful no-ops.
  */
-bool MotionController_Brake(
+MotionControllerStatus MotionController_Brake(
 	MotionController *controller);
 
 /**
- * Steps through control laws
+ * Steps through control laws.
+ * Returns MOTIONCONTROLLER_STATUS_IMU_ERROR if yaw feedback fails;
+ * the controller coasts and returns to IDLE in that case.
  */
-bool MotionController_Update(
+MotionControllerStatus MotionController_Update(
 	MotionController *controller,
 	float dt);
 
 /**
- * Stops executing control laws. If called while
- * in motion, this will cause the robot to coast.
+ * Stops executing control laws. If called while in motion, this will
+ * cause the robot to coast and immediately return to IDLE.
  */
-void MotionController_Stop(
+MotionControllerStatus MotionController_Stop(
 	MotionController *controller);
 
 /**
