@@ -19,9 +19,9 @@
  * command is issued. Therefore this tests command composition and repeatable
  * stop/start transitions; it is NOT trajectory blending.
  *
- * MotionController currently resets yaw and odometry at the start of every
- * command. This harness therefore maintains separate sequence-level yaw and
- * distance bookkeeping while retaining the command-local controller values
+ * MotionController resets yaw and odometry at the active-motion origin for
+ * every command. This harness therefore maintains separate sequence-level yaw
+ * and distance bookkeeping while retaining the command-local controller values
  * in the debugger log.
  *
  * Created on: 2026-09-17
@@ -61,8 +61,6 @@
 
 #define SEQ_TEST_INITIAL_CLEARANCE_MS           (400U)
 #define SEQ_TEST_INITIAL_CENTRE_SETTLE_MS       (100U)
-
-#define SEQ_TEST_STRAIGHT_SETTLE_MS             (100U)
 
 #define SEQ_TEST_BETWEEN_COMMANDS_MS            (200U)
 
@@ -128,21 +126,15 @@
 static const MotionControllerSequenceTestCommand
 motionControllerSequenceTestCommands[] = {
 	SEQ_STRAIGHT(
-		-412.0f,
-		5000.0f),
+		2000.0f,
+		6000.0f),
 	SEQ_ARC(
-		275.0f * SEQ_TEST_PI / 2.0f,
-		275.0f,
+		350.0f * SEQ_TEST_PI / 2.0f,
+		-350.0f,
 		2000.0f),
 	SEQ_STRAIGHT(
-		-137.5f,
-		5000.0f),
-	SEQ_ARC(
-		275.0f * SEQ_TEST_PI,
-		-275.0f,
-		2000.0f),
-	SEQ_STRAIGHT(100.0f,
-		5000.f),
+		800.0f,
+		6000.0f),
 };
 //motionControllerSequenceTestCommands[] =
 //{
@@ -252,7 +244,7 @@ motionControllerSequenceTestFinalTravelledDistanceMm = 0.0f;
 
 volatile const char *motionControllerSequenceTestInfo =
     "Mixed straight/arc sequence; each command completes to IDLE; "
-    "MotionController owns arc raw preposition and settling";
+    "MotionController owns straight/arc steering preparation";
 
 
 /* -------------------------------------------------------------------------- */
@@ -715,16 +707,6 @@ static bool MotionControllerSequenceTest_BeginCommand(
                     command->distanceMm,
                     command->speedCps);
 
-            if (status == MOTIONCONTROLLER_STATUS_OK)
-            {
-                /*
-                 * MoveStraight() centres steering immediately.
-                 * Let the front axle settle before profile updates begin.
-                 */
-                HAL_Delay(
-                    SEQ_TEST_STRAIGHT_SETTLE_MS);
-            }
-
             break;
         }
 
@@ -846,10 +828,9 @@ static bool MotionControllerSequenceTest_RunCommand(
 
 
     /*
-     * Start command timing only after steering preparation/settling.
-     * Thus commandTimeMs = 0 corresponds to immediately before the
-     * first controller update, matching the useful convention from
-     * the original arc test.
+     * Start timing immediately after command acceptance. Controller-owned
+     * steering preparation is intentionally included in command timing and
+     * debugger logging.
      */
     uint32_t commandStartTick =
         HAL_GetTick();
