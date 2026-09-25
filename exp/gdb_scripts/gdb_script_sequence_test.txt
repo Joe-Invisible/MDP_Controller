@@ -1,0 +1,32 @@
+set print elements unlimited
+set print repeats unlimited
+set pagination off
+
+set logging file mctrl_seq_test_run06.txt
+set logging overwrite on
+set logging enabled on
+
+echo === MotionController Sequence Test ===\n
+echo Mixed straight/arc sequence; each command completes to IDLE before the next command.\n
+echo MotionController owns straight and arc steering preparation.\n
+echo Sequence-level yaw/distance are accumulated by the test harness across command-local resets.\n
+echo Controller states: 0=IDLE, 1=STRAIGHT, 2=ARC, 3=BRAKING, 4=ARC_PREPARING, 5=STRAIGHT_PREPARING.\n
+echo Log sampling interval: 40 ms; controller update period: 10 ms.\n
+echo ======================================\n
+
+p motionControllerSequenceTestPassed
+p motionControllerSequenceTestTimedOut
+p motionControllerSequenceTestCommandRejected
+p motionControllerSequenceTestFailureCommandIndex
+
+p motionControllerSequenceTestResultCount
+p motionControllerSequenceTestResults[0] @ motionControllerSequenceTestResultCount
+
+p motionControllerSequenceTestFinalYawDeg
+p motionControllerSequenceTestFinalIdealYawDeg
+p motionControllerSequenceTestFinalTravelledDistanceMm
+
+p motionControllerSequenceTestLogCount
+p motionControllerSequenceTestLog[0] @ motionControllerSequenceTestLogCount
+
+set logging enabled off
