@@ -8,6 +8,7 @@
 #include "MotionProfileTest.h"
 
 #include "MotionProfile.h"
+#include "MotionController.h" // for tolerance definiton
 
 #include <math.h>
 #include <stdbool.h>
@@ -29,6 +30,7 @@
 #define SPEED_EPSILON_MMPS          0.01f
 #define DISTANCE_TOLERANCE_MM       0.5f
 
+#define TEST_COMPLETION_TOLERANCE_MM (0.5)
 
 typedef struct {
     float timeSec;
@@ -94,7 +96,8 @@ static void MotionProfileTest_RunCase(
     result->initPassed = MotionProfile_Init(
         &profile,
         TEST_ACCELERATION_MMPS2,
-        TEST_DECELERATION_MMPS2);
+        TEST_DECELERATION_MMPS2,
+		TEST_COMPLETION_TOLERANCE_MM);
 
     if (!result->initPassed)
         return;

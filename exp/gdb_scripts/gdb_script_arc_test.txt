@@ -1,0 +1,11 @@
+set print elements unlimited
+set print repeats unlimited
+
+set logging file mctrl_seq_test_run05.txt
+set logging overwrite on
+set logging enabled on
+
+p "Weight removed from vehicle front"
+
+p motionControllerSequenceTestLogCount
+p motionControllerSequenceTestLog[0] @ motionControllerSequenceTestLogCount

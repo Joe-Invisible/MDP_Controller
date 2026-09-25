@@ -30,7 +30,8 @@ static float MotionProfile_Min3(
 bool MotionProfile_Init(
     MotionProfile *profile,
     float accelerationMmps2,
-    float decelerationMmps2)
+    float decelerationMmps2,
+	float completionToleranceMm)
 {
     if (profile == NULL ||
         accelerationMmps2 <= 0.0f ||
@@ -39,10 +40,16 @@ bool MotionProfile_Init(
         return false;
     }
 
+    if (completionToleranceMm < 0.0f) {
+    		return false;
+    }
+
     *profile = (MotionProfile){0};
 
     profile->accelerationMmps2 = accelerationMmps2;
     profile->decelerationMmps2 = decelerationMmps2;
+
+    profile->completionToleranceMm = completionToleranceMm;
 
     return true;
 }
@@ -86,7 +93,7 @@ float MotionProfile_Update(
     float remainingDistanceMm =
         profile->targetDistanceMm - travelledDistanceMm;
 
-    if (remainingDistanceMm <= 0.0f)
+    if (remainingDistanceMm <= profile->completionToleranceMm)
     {
         MotionProfile_Stop(profile);
         return 0.0f;
