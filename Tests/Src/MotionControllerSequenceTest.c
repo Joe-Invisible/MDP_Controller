@@ -125,16 +125,20 @@
 
 static const MotionControllerSequenceTestCommand
 motionControllerSequenceTestCommands[] = {
-	SEQ_STRAIGHT(
-		2000.0f,
-		6000.0f),
-	SEQ_ARC(
-		350.0f * SEQ_TEST_PI / 2.0f,
-		-350.0f,
-		2000.0f),
-	SEQ_STRAIGHT(
-		800.0f,
-		6000.0f),
+    SEQ_STRAIGHT(
+        -412.0f,
+        5000.0f),
+    SEQ_ARC(
+        275.0f * SEQ_TEST_PI / 2.0f,
+        275.0f,
+        2000.0f),
+    SEQ_STRAIGHT(
+        -137.5f,
+        5000.0f),
+    SEQ_ARC(
+        275.0f * SEQ_TEST_PI,
+        -275.0f,
+        2000.0f),
 };
 //motionControllerSequenceTestCommands[] =
 //{
