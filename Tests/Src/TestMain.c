@@ -31,7 +31,7 @@ void InvokeTest() {
 
 	LED_On();
 
-	GP2Y0A21YKTestRun();
+	MotionControllerSequenceTestRun();
 
 	while (1) {
 		// Test ended. Loop forever.
