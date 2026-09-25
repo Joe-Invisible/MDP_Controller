@@ -48,6 +48,9 @@ typedef struct
     const RobotKinematics *kinematics;
     const MotionControllerArcConfig *arcConfig;
 
+    /* Hold time after commanding steering centre before straight motion. */
+    float straightSteeringSettlingTimeSec;
+
     float headingKp;
     float headingKi;
     float headingKd;

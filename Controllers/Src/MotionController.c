@@ -385,7 +385,8 @@ MotionControllerStatus MotionController_Init(
         return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
     }
 
-    if (!isfinite(config->headingKp) ||
+    if (!isfinite(config->straightSteeringSettlingTimeSec) ||
+        !isfinite(config->headingKp) ||
         !isfinite(config->headingKi) ||
         !isfinite(config->headingKd) ||
         !isfinite(config->maxHeadingSteeringAngleRad) ||
@@ -448,7 +449,8 @@ MotionControllerStatus MotionController_Init(
         return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
     }
 
-    if (config->arcHeadingKpPerSec < 0.0f ||
+    if (config->straightSteeringSettlingTimeSec < 0.0f ||
+        config->arcHeadingKpPerSec < 0.0f ||
         config->motionCompletionToleranceMm <= 0.0f ||
         config->arcYawRateFilterTauSec < 0.0f ||
         config->stopStableSampleCount == 0U)
@@ -593,7 +595,7 @@ static MotionControllerStatus MotionController_StartMotion(
 
     controller->arcCommandedCurvaturePerMm = 0.0f;
     controller->arcSteeringFeedforwardCommand = 0.0f;
-    controller->arcPreparationElapsedSec = 0.0f;
+    controller->steeringPreparationElapsedSec = 0.0f;
 
     PIDController_Reset(&controller->headingPID);
     PIDController_Reset(&controller->arcYawRatePID);
@@ -644,10 +646,17 @@ MotionControllerStatus MotionController_MoveStraight(
         return status;
     }
 
-
+    /*
+     * Centre is applied immediately, without software slew limiting.
+     * Keep the rear wheels stationary while the physical servo/linkage
+     * settles at centre.
+     */
     SteeringController_Centre(controller->steering);
 
-    controller->mode = MOTIONCONTROLLER_STRAIGHT;
+    controller->mode =
+        controller->config->straightSteeringSettlingTimeSec > 0.0f
+            ? MOTIONCONTROLLER_STRAIGHT_PREPARING
+            : MOTIONCONTROLLER_STRAIGHT;
 
     return MOTIONCONTROLLER_STATUS_OK;
 }
@@ -916,27 +925,30 @@ static void MotionController_UpdateWheelSynchronisation(
         rightBaseTargetCps - correctionCps);
 }
 
-static MotionControllerStatus MotionController_UpdateArcPreparation(
+static MotionControllerStatus MotionController_UpdateSteeringPreparation(
     MotionController *controller,
-    float dt)
+    float dt,
+    float settlingTimeSec,
+    MotionControllerMode activeMode)
 {
     float remainingSettlingTimeSec =
-        controller->config->arcConfig->steeringSettlingTimeSec -
-        controller->arcPreparationElapsedSec;
+        settlingTimeSec -
+        controller->steeringPreparationElapsedSec;
 
     if (dt + MOTIONCONTROLLER_TIME_EPSILON_SEC <
         remainingSettlingTimeSec)
     {
-        controller->arcPreparationElapsedSec += dt;
+        controller->steeringPreparationElapsedSec += dt;
         return MOTIONCONTROLLER_STATUS_OK;
     }
 
-    controller->arcPreparationElapsedSec =
-        controller->config->arcConfig->steeringSettlingTimeSec;
+    controller->steeringPreparationElapsedSec =
+        settlingTimeSec;
 
     /*
      * Establish the motion origin after the mechanical hold so any
-     * incidental encoder movement during preparation is excluded.
+     * incidental encoder movement or yaw during preparation is excluded
+     * from the commanded motion.
      */
     controller->yawDeg = 0.0f;
     controller->yawRateDps = 0.0f;
@@ -944,7 +956,7 @@ static MotionControllerStatus MotionController_UpdateArcPreparation(
 
     MotionController_ResetOdometry(controller);
 
-    controller->mode = MOTIONCONTROLLER_ARC;
+    controller->mode = activeMode;
 
     return MOTIONCONTROLLER_STATUS_OK;
 }
@@ -1304,12 +1316,39 @@ MotionControllerStatus MotionController_Update(
         case MOTIONCONTROLLER_IDLE:
             return MOTIONCONTROLLER_STATUS_OK;
 
+        case MOTIONCONTROLLER_STRAIGHT_PREPARING:
+        {
+            MotionControllerStatus status =
+                MotionController_UpdateSteeringPreparation(
+                    controller,
+                    dt,
+                    controller->config->straightSteeringSettlingTimeSec,
+                    MOTIONCONTROLLER_STRAIGHT);
+
+            if (status != MOTIONCONTROLLER_STATUS_OK ||
+                controller->mode == MOTIONCONTROLLER_STRAIGHT_PREPARING)
+            {
+                return status;
+            }
+
+            /*
+             * Match ARC_PREPARING boundary behaviour: the update that
+             * completes preparation also executes the first active
+             * straight-motion control cycle.
+             */
+            return MotionController_UpdateActiveMotion(
+                controller,
+                dt);
+        }
+
         case MOTIONCONTROLLER_ARC_PREPARING:
         {
             MotionControllerStatus status =
-                MotionController_UpdateArcPreparation(
+                MotionController_UpdateSteeringPreparation(
                     controller,
-                    dt);
+                    dt,
+                    controller->config->arcConfig->steeringSettlingTimeSec,
+                    MOTIONCONTROLLER_ARC);
 
             if (status != MOTIONCONTROLLER_STATUS_OK ||
                 controller->mode == MOTIONCONTROLLER_ARC_PREPARING)
