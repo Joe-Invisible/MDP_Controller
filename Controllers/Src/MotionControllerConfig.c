@@ -26,7 +26,8 @@
  */
 #define WHEEL_DIAMETER_MM           65.5f
 
-#define ARC_STEERING_SETTLING_TIME_SEC  (0.5f)
+#define STRAIGHT_STEERING_SETTLING_TIME_SEC  (0.5f)
+#define ARC_STEERING_SETTLING_TIME_SEC       (0.5f)
 
 const RobotKinematics kinematics =
 {
@@ -89,6 +90,9 @@ const MotionControllerConfig motionControllerConfig =
 {
     .kinematics = &kinematics,
     .arcConfig = &arcMotionConfig,
+
+    .straightSteeringSettlingTimeSec =
+        STRAIGHT_STEERING_SETTLING_TIME_SEC,
 
     .headingKp = 1.2f,
     .headingKi = 0.05f,

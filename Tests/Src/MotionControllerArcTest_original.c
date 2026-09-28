@@ -36,8 +36,8 @@
 /* Test configuration                                                         */
 /* -------------------------------------------------------------------------- */
 
-#define ARC_TEST_DISTANCE_MM              (500.0f)
-#define ARC_TEST_RADIUS_MM                (-300.0f)
+#define ARC_TEST_DISTANCE_MM              (431.97f)
+#define ARC_TEST_RADIUS_MM                (-275.0f)
 #define ARC_TEST_SPEED_CPS                (2000.0f)
 
 #define ARC_TEST_CONTROL_PERIOD_MS        (10U)

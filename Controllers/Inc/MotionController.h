@@ -49,6 +49,11 @@ typedef enum
 	 * configured raw feedforward command and is settling before motion.
 	 */
 	MOTIONCONTROLLER_ARC_PREPARING,
+	/**
+	 * Straight command accepted; steering has been commanded to centre and
+	 * the front axle is settling mechanically before motion.
+	 */
+	MOTIONCONTROLLER_STRAIGHT_PREPARING,
 } MotionControllerMode;
 
 /**
@@ -151,8 +156,8 @@ typedef struct
 	 */
 	float arcSteeringFeedforwardCommand;
 
-	/* Elapsed mechanical settling time after arc prepositioning. */
-	float arcPreparationElapsedSec;
+	/* Elapsed mechanical steering-settling time before active motion. */
+	float steeringPreparationElapsedSec;
 
 	/*
 	 * Diagnostics: most recently computed geometric wheel reference.
@@ -238,6 +243,11 @@ MotionControllerStatus MotionController_Init(
  * 		and specified distance.
  *
  * A zero distance is a successful no-op. The controller remains idle.
+ *
+ * On acceptance, steering is commanded to centre and the controller enters
+ * MOTIONCONTROLLER_STRAIGHT_PREPARING when a non-zero settling time is
+ * configured. Motion profile updates begin after the configured nonblocking
+ * mechanical settling interval.
  */
 MotionControllerStatus MotionController_MoveStraight(
 	MotionController *controller,
