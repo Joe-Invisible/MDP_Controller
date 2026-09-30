@@ -44,15 +44,11 @@ typedef struct
     uint32_t decreasingPointCount;
 
     /*
-     * Overall raw Servo_SetSteering() command envelope.
+     * Raw-command range over which the legacy effective-angle
+     * calibration/model is considered valid.
      *
-     * Individual increasing/decreasing calibration tables may cover
-     * smaller and asymmetric monotonic interpolation ranges.
-     *
-     * Effective-angle inverse control is limited by the endpoints of
-     * the selected branch table; this raw envelope also permits
-     * deterministic hysteresis-preconditioning moves outside those
-     * precision interpolation ranges.
+     * These are NOT the physical servo limits. Full actuator limits
+     * are defined by SERVO_STEER_MIN/MAX in fwdriver.h.
      */
     float minCommand;
     float maxCommand;
@@ -113,6 +109,16 @@ typedef struct
     float targetEffectiveAngleRad;
 
     /*
+     * True when effectiveAngleRad and the hysteresis state correspond
+     * to the raw command currently sent to the servo.
+     *
+     * Calibration-free raw-command control deliberately invalidates
+     * this model because those commands may lie outside the legacy
+     * effective-angle calibration.
+     */
+    bool effectiveAngleModelValid;
+
+    /*
      * Effective-angle range that can be reached on either
      * calibrated hysteresis branch.
      */
@@ -161,6 +167,38 @@ bool SteeringController_Init(
     Servo *servo,
     const SteeringControllerCalibration *calibration);
 
+/**
+ * @brief Command the servo directly in normalized raw command space.
+ *
+ * This bypasses the legacy effective-angle calibration model and uses
+ * the physical Servo_SetSteering() command range instead.
+ *
+ * The command is therefore limited only by SERVO_STEER_MIN/MAX
+ * (-100 ... +100).
+ *
+ * Intended for calibration-free curvature/yaw control.
+ *
+ * NOTE:
+ * The effective-angle estimate is not updated by this function because
+ * the legacy calibration model is not valid outside its calibrated
+ * command range.
+ */
+void SteeringController_SetRawCommand(
+    SteeringController *controller,
+    float command);
+
+
+/**
+ * @brief Rate-limited version of SteeringController_SetRawCommand().
+ *
+ * Uses the existing configured raw-command slew rate, but clamps the
+ * requested command to the physical servo range rather than to the
+ * legacy effective-angle calibration range.
+ */
+void SteeringController_SetRawCommandRateLimited(
+    SteeringController *controller,
+    float command,
+    float dt);
 
 /**
  * @brief Command a steering position.
@@ -174,6 +212,15 @@ bool SteeringController_Init(
 void SteeringController_SetCommand(
     SteeringController *controller,
     float command);
+
+/**
+ * Rate-limited command setting. Configurable command
+ * rate via SteeringControllerConfig.
+ */
+void SteeringController_SetCommandRateLimited(
+    SteeringController *controller,
+    float command,
+    float dt);
 
 /**
  * @brief Request an effective bicycle-model steering angle.
@@ -212,10 +259,19 @@ float SteeringController_GetMaxEffectiveAngleRad(
     const SteeringController *controller);
 
 /**
- * @brief Command the nominal servo centre.
+ * @brief Immediately command the calibrated zero-angle steering position.
  *
- * This does NOT erase hysteresis state. It is equivalent to
- * SteeringController_SetCommand(controller, 0.0f).
+ * If the legacy effective-angle model is valid, normal calibrated
+ * effective-angle centering is used.
+ *
+ * If raw-command control has invalidated that model, the controller
+ * selects the zero-angle calibration branch consistent with the raw
+ * command direction required to return from the current position,
+ * commands that raw centre directly, then re-establishes the legacy
+ * model at zero.
+ *
+ * This operation is intentionally not rate-limited. The caller is
+ * responsible for allowing the physical servo/linkage to settle.
  */
 void SteeringController_Centre(
     SteeringController *controller);

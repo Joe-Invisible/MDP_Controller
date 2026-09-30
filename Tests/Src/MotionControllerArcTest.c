@@ -92,6 +92,35 @@
 #define ARC_TEST_ACCELERATION_MMPS2       (500.0f)
 #define ARC_TEST_DECELERATION_MMPS2       (250.0f)
 
+static const MotionControllerConfig arcTestMotionConfig =
+{
+    .kinematics = &kinematics,
+    .arcConfig = &arcMotionConfig,
+
+    .headingKp = ARC_TEST_HEADING_KP,
+    .headingKi = ARC_TEST_HEADING_KI,
+    .headingKd = ARC_TEST_HEADING_KD,
+    .maxHeadingSteeringAngleRad = ARC_TEST_HEADING_LIMIT_RAD,
+
+    .arcYawRateKp = 10.0f,
+    .arcYawRateKi = 0.0f,
+    .arcYawRateKd = 0.0f,
+    .maxArcSteeringCommandCorrection = 5.0f,
+
+    .arcHeadingKpPerSec = 1.0f,
+
+    .wheelSyncKpCpsPerMm = ARC_TEST_SYNC_KP_CPS_PER_MM,
+    .maxWheelSyncCorrectionCps = ARC_TEST_SYNC_MAX_CORRECTION_CPS,
+
+    .motionAccelerationMmps2 = ARC_TEST_ACCELERATION_MMPS2,
+    .motionDecelerationMmps2 = ARC_TEST_DECELERATION_MMPS2,
+    .motionCompletionToleranceMm = 0.5f,
+
+    .arcYawRateFilterTauSec = 0.10f,
+
+    .stopStableSampleCount = 3U,
+};
+
 
 #define ARC_TEST_PI                       (3.14159265358979323846f)
 
@@ -510,7 +539,7 @@ static void MotionControllerArcTest_PrepositionSteering(
 
     float targetSteeringAngleRad =
         RobotKinematics_GetSteeringAngleRad(
-            fixture->motionController.kinematics,
+            fixture->motionController.config->kinematics,
             curvaturePerMm);
 
     uint32_t updateCount =
@@ -558,17 +587,7 @@ static bool MotionControllerArcTest_Init(
 
     if (!RobotTestFixture_InitMotionController(
         fixture,
-
-        ARC_TEST_HEADING_KP,
-        ARC_TEST_HEADING_KI,
-        ARC_TEST_HEADING_KD,
-        ARC_TEST_HEADING_LIMIT_RAD,
-
-        ARC_TEST_SYNC_KP_CPS_PER_MM,
-        ARC_TEST_SYNC_MAX_CORRECTION_CPS,
-
-        ARC_TEST_ACCELERATION_MMPS2,
-        ARC_TEST_DECELERATION_MMPS2))
+        &arcTestMotionConfig))
     {
         return false;
     }
@@ -708,7 +727,8 @@ void MotionControllerArcTestRun(void)
             &fixture.motionController,
             ARC_TEST_DISTANCE_MM,
             ARC_TEST_RADIUS_MM,
-            ARC_TEST_SPEED_CPS);
+            ARC_TEST_SPEED_CPS) ==
+        MOTIONCONTROLLER_STATUS_OK;
 
 
     if (!motionControllerArcTestCommandAccepted)

@@ -32,8 +32,8 @@
  * precision interpolation table may still be used for deterministic
  * hysteresis preconditioning.
  */
-#define STEERING_CAL_MIN_COMMAND        (-12.0f)
-#define STEERING_CAL_MAX_COMMAND        (+12.0f)
+#define STEERING_CAL_MIN_COMMAND			(-12.0f)
+#define STEERING_CAL_MAX_COMMAND			(+12.0f)
 
 
 /*

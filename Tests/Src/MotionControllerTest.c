@@ -67,6 +67,35 @@
 // configuration.
 #define MOTION_PROFILE_DECELERATION_MMPS2    (250.0f)
 
+static const MotionControllerConfig straightTestMotionConfig =
+{
+    .kinematics = &kinematics,
+    .arcConfig = &arcMotionConfig,
+
+    .headingKp = HEADING_CTRL_KP,
+    .headingKi = HEADING_CTRL_KI,
+    .headingKd = 0.0f,
+    .maxHeadingSteeringAngleRad = HEADING_CTRL_LIMIT_RAD,
+
+    .arcYawRateKp = 10.0f,
+    .arcYawRateKi = 0.0f,
+    .arcYawRateKd = 0.0f,
+    .maxArcSteeringCommandCorrection = 5.0f,
+
+    .arcHeadingKpPerSec = 1.0f,
+
+    .wheelSyncKpCpsPerMm = MOTION_SYNC_KP_CPS_PER_MM,
+    .maxWheelSyncCorrectionCps = MOTION_SYNC_MAX_CORRECTION_CPS,
+
+    .motionAccelerationMmps2 = MOTION_PROFILE_ACCELERATION_MMPS2,
+    .motionDecelerationMmps2 = MOTION_PROFILE_DECELERATION_MMPS2,
+    .motionCompletionToleranceMm = 0.5f,
+
+    .arcYawRateFilterTauSec = 0.10f,
+
+    .stopStableSampleCount = 3U,
+};
+
 #define DEBUGLOG 1
 
 
@@ -253,14 +282,7 @@ bool MotionControllerTest_Init(RobotTestFixture *fixture)
      */
     if (!RobotTestFixture_InitMotionController(
     		fixture,
-		HEADING_CTRL_KP,      /* Kp */
-		HEADING_CTRL_KI,      /* Ki */
-		0.0f,      			  /* Kd */
-		HEADING_CTRL_LIMIT_RAD,	  /* max steering correction (rad) */
-		MOTION_SYNC_KP_CPS_PER_MM,
-		MOTION_SYNC_MAX_CORRECTION_CPS,
-		MOTION_PROFILE_ACCELERATION_MMPS2,
-		MOTION_PROFILE_DECELERATION_MMPS2))
+		&straightTestMotionConfig))
     {
     	return false;
     }
@@ -289,7 +311,11 @@ void MotionControllerTestRun(void)
     OLED_Printf(0, 1, "Start: SW1");
     OLED_Printf(0, 2, "%.1f mm @ %.1fCPS", MOTION_TEST_DISTANCE_MM, MOTION_TEST_SPEED_CPS);
     OLED_Printf(0, 3, "Heading Kp = %.2f", fixture.motionController.headingPID.kp);
-    OLED_Printf(0, 4, "Sync Kp = %.2f", fixture.motionController.wheelSyncKpCpsPerMm);
+    OLED_Printf(
+        0,
+        4,
+        "Sync Kp = %.2f",
+        fixture.motionController.config->wheelSyncKpCpsPerMm);
 
     OLED_Refresh_Gram();
 

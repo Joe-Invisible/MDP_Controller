@@ -8,8 +8,76 @@
 #ifndef INC_MOTIONCONTROLLERCONFIG_H_
 #define INC_MOTIONCONTROLLERCONFIG_H_
 
+#include <stdint.h>
+
 #include "RobotKinematics.h"
 
+typedef struct
+{
+    float curvaturePerMm;
+    float rawSteeringCommand;
+} MotionControllerArcFeedforwardPoint;
+
+/**
+ * Empirical constant-curvature steering configuration.
+ *
+ * Negative and positive curvature are deliberately stored as separate
+ * branches. Each branch must be ordered by strictly increasing curvature;
+ * lookup interpolates only within one branch and never across zero.
+ */
+typedef struct
+{
+    const MotionControllerArcFeedforwardPoint *negativePoints;
+    uint32_t negativePointCount;
+
+    const MotionControllerArcFeedforwardPoint *positivePoints;
+    uint32_t positivePointCount;
+
+    /* Hold time after abrupt raw-command prepositioning. */
+    float steeringSettlingTimeSec;
+} MotionControllerArcConfig;
+
+/**
+ * Immutable tuning and geometry used by one MotionController instance.
+ *
+ * The referenced kinematics and arc calibration must remain valid for the
+ * lifetime of the controller.
+ */
+typedef struct
+{
+    const RobotKinematics *kinematics;
+    const MotionControllerArcConfig *arcConfig;
+
+    /* Hold time after commanding steering centre before straight motion. */
+    float straightSteeringSettlingTimeSec;
+
+    float headingKp;
+    float headingKi;
+    float headingKd;
+    float maxHeadingSteeringAngleRad;
+
+    float arcYawRateKp;
+    float arcYawRateKi;
+    float arcYawRateKd;
+    float maxArcSteeringCommandCorrection;
+
+    float arcHeadingKpPerSec;
+
+    float wheelSyncKpCpsPerMm;
+    float maxWheelSyncCorrectionCps;
+
+    float motionAccelerationMmps2;
+    float motionDecelerationMmps2;
+    float motionCompletionToleranceMm;
+
+    float arcYawRateFilterTauSec;
+
+    /* Consecutive stationary updates required to complete braking. */
+    uint8_t stopStableSampleCount;
+} MotionControllerConfig;
+
 extern const RobotKinematics kinematics;
+extern const MotionControllerArcConfig arcMotionConfig;
+extern const MotionControllerConfig motionControllerConfig;
 
 #endif /* INC_MOTIONCONTROLLERCONFIG_H_ */

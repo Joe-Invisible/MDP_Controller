@@ -12,6 +12,7 @@
 #include "ServoTestBasic.h"
 #include "ICM20948Test.h"
 #include "HCSR04Test.h"
+#include "GP2Y0A21YKTest.h"
 #include "OLEDTest.h"
 #include "WheelSpeedControllerTest.h"
 #include "SteeringControllerTest.h"
@@ -19,10 +20,8 @@
 #include "MotionProfileTest.h"
 #include "RobotKinematicsTest.h"
 #include "MotionControllerArcTest.h"
+#include "MotionControllerSequenceTest.h"
 #include "MotionControllerTest.h"
-#include "SteeringGeometryCalibrationTest_selfpropelled.h"
-#include "SteeringGeometryCalibrationIterationTest.h"
-#include "SteeringPreconditioningArcRepeatTest.h"
 #include "oled.h"
 #include "led3.h"
 
@@ -32,7 +31,7 @@ void InvokeTest() {
 
 	LED_On();
 
-	MotionControllerArcTestRun();
+	MotionControllerSequenceTestRun();
 
 	while (1) {
 		// Test ended. Loop forever.

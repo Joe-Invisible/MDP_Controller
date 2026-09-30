@@ -229,6 +229,25 @@ SteeringController_GetBranch(
 }
 
 
+static float SteeringController_GetZeroAngleCommand(
+    const SteeringController *controller,
+    int8_t direction)
+{
+    uint32_t pointCount = 0U;
+
+    const SteeringCalibrationPoint *branch =
+        SteeringController_GetBranch(
+            controller,
+            direction,
+            &pointCount);
+
+    return SteeringController_InterpolateCommand(
+        branch,
+        pointCount,
+        0.0f);
+}
+
+
 /*
  * Update the effective steering-angle estimate.
  *
@@ -472,6 +491,7 @@ bool SteeringController_Init(
 
     controller->effectiveAngleRad = 0.0f;
     controller->targetEffectiveAngleRad = 0.0f;
+    controller->effectiveAngleModelValid = true;
 
     controller->reversalPending = false;
 
@@ -504,6 +524,107 @@ bool SteeringController_Init(
         0.0f;
 
     return true;
+}
+
+
+static void SteeringController_ApplyRawCommand(
+    SteeringController *controller,
+    float command)
+{
+    if (controller == NULL ||
+        controller->servo == NULL)
+    {
+        return;
+    }
+
+    /*
+     * Physical normalized servo-command range.
+     *
+     * Do NOT use calibration->minCommand/maxCommand here:
+     * those bounds belong to the legacy effective-angle model.
+     */
+    float clampedCommand =
+        SteeringController_Clamp(
+            command,
+            SERVO_STEER_MIN,
+            SERVO_STEER_MAX);
+
+    /*
+     * Keep the controller's raw command state synchronized with
+     * the command actually sent to the servo.
+     *
+     * Deliberately do NOT call SteeringController_UpdateModel().
+     * The effective-angle calibration is not defined over the
+     * full physical raw-command range.
+     */
+    controller->command = clampedCommand;
+
+    Servo_SetSteering(
+        controller->servo,
+        clampedCommand);
+
+    /*
+     * Raw-command steering intentionally bypasses the calibrated
+     * effective-angle/hysteresis model. From this point onward the
+     * model must not be assumed to describe the physical steering
+     * state until centering explicitly re-establishes it.
+     */
+    controller->effectiveAngleModelValid = false;
+}
+
+
+void SteeringController_SetRawCommand(
+    SteeringController *controller,
+    float command)
+{
+    SteeringController_ApplyRawCommand(
+        controller,
+        command);
+}
+
+
+void SteeringController_SetRawCommandRateLimited(
+    SteeringController *controller,
+    float desiredCommand,
+    float dt)
+{
+    if (controller == NULL ||
+        controller->servo == NULL ||
+        controller->calibration == NULL ||
+        dt <= 0.0f)
+    {
+        return;
+    }
+
+    desiredCommand =
+        SteeringController_Clamp(
+            desiredCommand,
+            SERVO_STEER_MIN,
+            SERVO_STEER_MAX);
+
+    /*
+     * Reuse the experimentally validated steering-command slew
+     * rate for now. This can later be moved out of the legacy
+     * calibration configuration.
+     */
+    float maxDeltaCommand =
+        controller->calibration->maxCommandRatePerSec * dt;
+
+    float deltaCommand =
+        desiredCommand - controller->command;
+
+    if (deltaCommand > maxDeltaCommand)
+    {
+        deltaCommand = maxDeltaCommand;
+    }
+    else if (deltaCommand < -maxDeltaCommand)
+    {
+        deltaCommand = -maxDeltaCommand;
+    }
+
+    SteeringController_ApplyRawCommand(
+        controller,
+        controller->command + deltaCommand);
 }
 
 
@@ -575,7 +696,6 @@ static void SteeringController_ApplyCommandRateLimited(
         controller->command + deltaCommand);
 }
 
-
 void SteeringController_SetCommand(
     SteeringController *controller,
     float command)
@@ -591,6 +711,40 @@ void SteeringController_SetCommand(
         controller,
         command);
 
+    controller->targetEffectiveAngleRad =
+        controller->effectiveAngleRad;
+
+    controller->reversalPending = false;
+}
+
+void SteeringController_SetCommandRateLimited(
+    SteeringController *controller,
+    float command,
+    float dt)
+{
+    if (controller == NULL ||
+        controller->servo == NULL ||
+        controller->calibration == NULL ||
+        dt <= 0.0f)
+    {
+        return;
+    }
+
+    if (controller->centreState != STEERING_CENTRE_IDLE)
+    {
+        return;
+    }
+
+    SteeringController_ApplyCommandRateLimited(
+        controller,
+        command,
+        dt);
+
+    /*
+     * Raw-command operation deliberately does not use
+     * the effective-angle estimate for actuation.
+     * Keep it updated only as a diagnostic/model state.
+     */
     controller->targetEffectiveAngleRad =
         controller->effectiveAngleRad;
 
@@ -820,37 +974,178 @@ void SteeringController_SetEffectiveAngleRad(
 void SteeringController_Centre(
     SteeringController *controller)
 {
-    if (controller == NULL)
+    if (controller == NULL ||
+        controller->servo == NULL ||
+        controller->calibration == NULL)
     {
         return;
     }
 
     /*
-     * Do not reset the hysteresis model here.
+     * Calibration-free ARC control commands the servo directly in raw
+     * command space and therefore deliberately leaves the legacy
+     * effective-angle model stale.
      *
-     * Moving to command zero does not physically erase
-     * backlash in the linkage.
+     * In that state we must NOT ask the stale model to move to 0 rad:
+     * it may already believe effectiveAngleRad == 0 and return without
+     * issuing any actuator command.
      *
-     * Forces centering even if it is within reversal
-     * deadband
+     * Instead, select the calibrated zero-angle crossing corresponding
+     * to the raw-command direction by which the servo will return to
+     * centre.
+     */
+    if (!controller->effectiveAngleModelValid)
+    {
+        float increasingCentreCommand =
+            SteeringController_GetZeroAngleCommand(
+                controller,
+                +1);
+
+        float decreasingCentreCommand =
+            SteeringController_GetZeroAngleCommand(
+                controller,
+                -1);
+
+        float increasingDelta =
+            increasingCentreCommand -
+            controller->command;
+
+        float decreasingDelta =
+            decreasingCentreCommand -
+            controller->command;
+
+        bool increasingReachable =
+            increasingDelta >= 0.0f;
+
+        bool decreasingReachable =
+            decreasingDelta <= 0.0f;
+
+        int8_t centreDirection;
+        float centreCommand;
+
+        if (increasingReachable &&
+            decreasingReachable)
+        {
+            /*
+             * Current raw command lies between the two hysteresis zero
+             * crossings. Either direction can establish a valid branch,
+             * so choose the shorter movement.
+             */
+            if (fabsf(increasingDelta) <=
+                fabsf(decreasingDelta))
+            {
+                centreDirection = +1;
+                centreCommand =
+                    increasingCentreCommand;
+            }
+            else
+            {
+                centreDirection = -1;
+                centreCommand =
+                    decreasingCentreCommand;
+            }
+        }
+        else if (increasingReachable)
+        {
+            centreDirection = +1;
+            centreCommand =
+                increasingCentreCommand;
+        }
+        else if (decreasingReachable)
+        {
+            centreDirection = -1;
+            centreCommand =
+                decreasingCentreCommand;
+        }
+        else
+        {
+            /*
+             * Defensive fallback for an unexpected calibration ordering:
+             * choose the nearer zero crossing and record the actual raw
+             * command direction used to reach it.
+             */
+            if (fabsf(increasingDelta) <=
+                fabsf(decreasingDelta))
+            {
+                centreCommand =
+                    increasingCentreCommand;
+            }
+            else
+            {
+                centreCommand =
+                    decreasingCentreCommand;
+            }
+
+            centreDirection =
+                centreCommand >= controller->command
+                    ? +1
+                    : -1;
+        }
+
+        /*
+         * This guarantees that an actuator command is sent regardless
+         * of the stale effective-angle estimate.
+         */
+        SteeringController_ApplyRawCommand(
+            controller,
+            centreCommand);
+
+        /*
+         * MotionController supplies the mechanical settling interval.
+         * Re-establish the legacy model on the branch used to reach the
+         * calibrated zero-angle position.
+         */
+        controller->centreCommand =
+            centreCommand;
+
+        controller->targetEffectiveAngleRad =
+            0.0f;
+
+        controller->effectiveAngleRad =
+            0.0f;
+
+        controller->movementDirection =
+            centreDirection;
+
+        controller->backlashActive =
+            false;
+
+        controller->backlashHoldAngleRad =
+            0.0f;
+
+        controller->reversalPending =
+            false;
+
+        controller->centreState =
+            STEERING_CENTRE_IDLE;
+
+        controller->effectiveAngleModelValid =
+            true;
+
+        return;
+    }
+
+    /*
+     * Legacy effective-angle model is valid, so retain the existing
+     * instantaneous calibrated centering behavior.
      */
     SteeringController_SetEffectiveAngleRadInternal(
         controller,
-		0.0f,
+        0.0f,
         0.0f,
         true,
-		false);
+        false);
 
     /*
-     * Leave the model in an established, non-backlash
-     * state after the immediate centering operation
+     * Leave the model in an established, non-backlash state after the
+     * immediate centering operation.
      */
     controller->targetEffectiveAngleRad = 0.0f;
     controller->effectiveAngleRad = 0.0f;
-    controller->movementDirection = -1;
     controller->backlashActive = false;
     controller->backlashHoldAngleRad = 0.0f;
     controller->reversalPending = false;
+    controller->effectiveAngleModelValid = true;
 }
 
 
@@ -970,6 +1265,7 @@ void SteeringController_StartCentre(SteeringController *controller)
 
     controller->targetEffectiveAngleRad = 0.0f;
     controller->reversalPending = false;
+    controller->effectiveAngleModelValid = false;
 
     controller->centreState = STEERING_CENTRE_PRECONDITION;
 }
@@ -1043,6 +1339,7 @@ bool SteeringController_UpdateCentre(SteeringController *controller,
             controller->reversalPending = false;
 
             controller->centreState = STEERING_CENTRE_IDLE;
+            controller->effectiveAngleModelValid = true;
 
             return true;
         }

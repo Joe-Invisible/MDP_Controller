@@ -13,6 +13,7 @@
 
 #include <stdbool.h>
 
+
 typedef struct MotionProfile {
     /*
      * Profile limits
@@ -33,6 +34,8 @@ typedef struct MotionProfile {
 
     bool active;
 
+    float completionToleranceMm;
+
 } MotionProfile;
 
 /**
@@ -43,7 +46,8 @@ typedef struct MotionProfile {
 bool MotionProfile_Init(
     MotionProfile *profile,
     float accelerationMmps2,
-    float decelerationMmps2);
+    float decelerationMmps2,
+	float completionToleranceMm);
 
 /**
  * @brief Starts a rest-to-rest motion profile.
