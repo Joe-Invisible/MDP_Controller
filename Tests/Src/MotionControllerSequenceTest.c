@@ -513,10 +513,14 @@ static void MotionControllerSequenceTest_LogSample(
     sample->steeringCommand =
         SteeringController_GetCommand(
             motionController->steering);
+    sample->steeringFeedforwardCommand =
+        motionController->arcSteeringFeedforwardCommand;
+    sample->effectiveAngleModelValid =
+        motionController->steering->effectiveAngleModelValid;
 
 
     /*
-     * ARC outer heading loop.
+     * Shared path outer heading loop (historical arc field names retained).
      */
     sample->arcDesiredYawRad =
         motionController->arcDesiredYawRad;
@@ -532,7 +536,7 @@ static void MotionControllerSequenceTest_LogSample(
 
 
     /*
-     * ARC inner yaw-rate loop.
+     * Shared path inner yaw-rate loop.
      */
     sample->yawRateDps =
         motionController->yawRateDps;

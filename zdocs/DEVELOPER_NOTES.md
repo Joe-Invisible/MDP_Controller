@@ -71,7 +71,7 @@ The relationship between raw servo command and effective steering angle is exper
 
 * Do not replace the effective-angle conversion with a simple linear scale without recalibrating the steering mechanism.
 * A raw command of zero and an effective steering angle of zero are conceptually different quantities, even when they happen to correspond under the current calibration.
-* Motion-control and kinematic code should operate in terms of effective steering angle rather than depending directly on servo calibration values.
+* Legacy effective-angle clients use this conversion. Unified motion control instead commands raw steering and coordinates the rear wheels from its IMU-based curvature request; it must not consume the stale effective-angle estimate during raw control.
 
 The currently calibrated raw steering-command range is:
 
@@ -275,3 +275,81 @@ Add an entry here when:
 Routine implementation details that are already obvious from the module interface or source code generally do not need to be duplicated here.
 
 Proposed architecture that has not yet settled should normally remain in design discussions or planning notes rather than being documented here as established behaviour.
+
+---
+
+## Unified calibration-free motion (30 September 2026)
+
+Straight motion is now the zero-curvature case of the same path controller used
+for arcs. The public `MoveStraight` and `MoveArc` APIs, signed-distance/radius
+conventions, motion profiles, braking, and mechanical preparation states remain.
+
+For signed rear-axle speed `v`, signed displacement `s`, and requested curvature
+`kappa_ref` (zero for straight motion):
+
+* desired yaw is `kappa_ref * s`;
+* nominal yaw rate is `kappa_ref * v`;
+* heading feedback adds `arcHeadingKpPerSec * headingError`, limited to
+  `abs(v) * maxPathCorrectionCurvaturePerMm`;
+* the yaw-rate PID adds a direction-corrected raw steering correction around the
+  prepared feedforward command;
+* both rear-wheel base speeds and accumulated wheel-travel difference use the
+  corrected requested curvature, `targetYawRate / v`. At zero speed the nominal
+  curvature is retained without division.
+
+The shared correction bound replaces `2 * abs(nominalYawRate)`, which would
+otherwise disable heading recovery when nominal curvature is zero. The former
+1 mm/s curvature fallback is removed: the speed-scaled correction remains
+bounded at every nonzero speed, including slow profile starts and finishes.
+
+Initial shared tuning is yaw-rate `Kp=10`, `Ki=Kd=0`, raw correction limit ±5,
+outer heading gain 1/s, filter time constant 0.10 s, and correction-curvature
+limit `0.001/mm`. The curvature limit is a starting value requiring hardware
+validation, not a measured calibration result. It also changes the outer-loop
+saturation envelope for existing arcs; recheck arc behavior with these limits.
+
+Straight feedforward captures the actual raw command immediately after
+`SteeringController_Centre`. It does not assume raw zero is physically straight
+and does not interpolate across the unsupported gap between arc-table branches.
+The validated immediate centering/prepositioning and 0.5 s mechanical holds are
+preserved. Active feedback remains rate limited. The motion origin is still
+established at the preparation boundary.
+
+Set `MotionControllerConfig.useLegacyStraightSteering=true` to compare the
+previous straight heading PID and effective-angle wheel coordination. The
+legacy `headingKp/Ki/Kd` and `maxHeadingSteeringAngleRad` apply only to that
+baseline. The retained `arcYawRate*`, `arcHeadingKpPerSec`, and
+`maxArcSteeringCommandCorrection` now tune both unified straight motion and arcs.
+Their historical names and the `arc*` diagnostics are intentionally retained
+until hardware comparison supports removing the legacy implementation.
+
+`MotionControllerTest` has a `MOTION_TEST_USE_LEGACY_STEERING` switch and records
+raw feedforward/target/actual commands, yaw-rate feedback, commanded curvature,
+and effective-angle model validity. Sequence logs retain the existing arc
+fields for straight commands too and now record raw feedforward and model
+validity. Ignore effective-angle diagnostics whenever the model-valid flag is
+false. Every custom motion configuration must set the new curvature bound;
+zero explicitly disables outer heading correction while retaining rate feedback.
+
+Run the host control checks with:
+
+```sh
+python3 Tests/Host/test_unified_motion.py
+```
+
+They compile the production motion, profile, PID, kinematics, steering and
+configuration sources with warnings treated as errors and undefined-behavior
+checks. Only peripheral access and the unchanged wheel-speed loops are mocked.
+The checks cover both straight travel directions and yaw-error signs, both arc
+curvature signs and travel directions, preparation timing/origin reset, wheel
+geometry and odometry, low-speed bounds, gyro filtering, legacy selection,
+configuration validation, braking and IMU failure. They establish control-law
+and state-machine behavior, not physical trajectory accuracy.
+
+Hardware validation should begin with isolated forward and reverse straights
+at 2000 CPS, followed by the existing mixed sequence and square test. Compare
+endpoint distance/yaw and the new rate/raw-curvature traces against the legacy
+baseline under the same speed, preparation and battery conditions. Recheck arcs
+before changing gains or deleting the baseline. Re-establish the questionable
+R=-275 mm feedforward point separately; this implementation leaves the table
+unchanged.

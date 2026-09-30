@@ -71,6 +71,7 @@ typedef struct
     float travelledDistanceMm;
 
     float targetCurvaturePerMm;
+    /* Historical arc names below also describe unified straight motion. */
     float arcCommandedCurvaturePerMm;
 
     float feedforwardSteeringAngleRad;
@@ -94,6 +95,8 @@ typedef struct
 
     float measuredYawRateRadPerSec;
     float steeringCommand;
+    float steeringFeedforwardCommand;
+    bool effectiveAngleModelValid;
 
     float leftTargetCps;
     float rightTargetCps;

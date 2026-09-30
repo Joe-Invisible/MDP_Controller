@@ -94,6 +94,8 @@ const MotionControllerConfig motionControllerConfig =
     .straightSteeringSettlingTimeSec =
         STRAIGHT_STEERING_SETTLING_TIME_SEC,
 
+    .useLegacyStraightSteering = false,
+
     .headingKp = 1.2f,
     .headingKi = 0.05f,
     .headingKd = 0.0f,
@@ -105,6 +107,9 @@ const MotionControllerConfig motionControllerConfig =
     .maxArcSteeringCommandCorrection = 5.0f,
 
     .arcHeadingKpPerSec = 1.0f,
+
+    /* Initial shared bound; validate on hardware before increasing it. */
+    .maxPathCorrectionCurvaturePerMm = 1.0f / 1000.0f,
 
     .wheelSyncKpCpsPerMm = 10.0f,
     .maxWheelSyncCorrectionCps = 100.0f,

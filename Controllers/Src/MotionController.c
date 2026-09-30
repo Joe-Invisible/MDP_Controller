@@ -30,30 +30,27 @@ static float MotionController_GetMmPerCount(
 static float MotionController_GetWheelReferenceCurvaturePerMm(
     const MotionController *controller)
 {
-    /*
-     * ARC:
-     * Rear-wheel coordination follows the requested path
-     * curvature directly. It must not depend on the estimated
-     * steering angle or wheelbase-based steering model.
-     *
-     * STRAIGHT:
-     * Preserve the existing behaviour. Small heading
-     * corrections have already been experimentally validated
-     * with the existing steering calibration, so rear-wheel
-     * coordination continues to accommodate those corrections.
-     */
-	if (controller->mode == MOTIONCONTROLLER_ARC)
-	{
-	    return controller->arcCommandedCurvaturePerMm;
-	}
+    /* Braking centres steering and no longer requests path curvature. */
+    if (controller->mode == MOTIONCONTROLLER_BRAKING ||
+        controller->mode == MOTIONCONTROLLER_IDLE)
+    {
+        return 0.0f;
+    }
 
-    float steeringAngleRad =
-        SteeringController_GetEffectiveAngleRad(
-            controller->steering);
+    /* The angle model is used only by the temporary straight A/B baseline. */
+    if (controller->mode == MOTIONCONTROLLER_STRAIGHT &&
+        controller->config->useLegacyStraightSteering)
+    {
+        float steeringAngleRad =
+            SteeringController_GetEffectiveAngleRad(controller->steering);
 
-    return RobotKinematics_GetCurvaturePerMm(
-        controller->config->kinematics,
-        steeringAngleRad);
+        return RobotKinematics_GetCurvaturePerMm(
+            controller->config->kinematics,
+            steeringAngleRad);
+    }
+
+    /* Both unified paths coordinate wheels from the same IMU motion request. */
+    return controller->arcCommandedCurvaturePerMm;
 }
 
 static bool MotionController_ValidateArcFeedforwardBranch(
@@ -169,7 +166,7 @@ static bool MotionController_InterpolateArcFeedforwardBranch(
     return false;
 }
 
-static bool MotionController_GetArcSteeringFeedforwardCommand(
+static bool MotionController_GetPathSteeringFeedforwardCommand(
     const MotionController *controller,
     float curvaturePerMm,
     float *rawSteeringCommand)
@@ -177,10 +174,18 @@ static bool MotionController_GetArcSteeringFeedforwardCommand(
     if (controller == NULL ||
         controller->config == NULL ||
         controller->config->arcConfig == NULL ||
-        rawSteeringCommand == NULL ||
-        curvaturePerMm == 0.0f)
+        rawSteeringCommand == NULL)
     {
         return false;
+    }
+
+    if (curvaturePerMm == 0.0f)
+    {
+        /* Caller has just centred the axle using the validated return logic.
+         * Capture that raw centre; never interpolate across the table gap. */
+        *rawSteeringCommand =
+            SteeringController_GetCommand(controller->steering);
+        return true;
     }
 
     if (curvaturePerMm < 0.0f)
@@ -258,10 +263,9 @@ static void MotionController_UpdateOdometry(
     /*
      * The encoder increments measured here correspond
      * approximately to motion performed under the steering
-     * command from the previous controller update.
-     *
-     * SteeringController retains the effective-angle estimate
-     * associated with that command.
+     * request from the previous controller update. Unified control retains
+     * that commanded curvature directly; only the legacy straight baseline
+     * uses the effective-angle estimate.
      */
     float curvaturePerMm =
         MotionController_GetWheelReferenceCurvaturePerMm(
@@ -386,15 +390,12 @@ MotionControllerStatus MotionController_Init(
     }
 
     if (!isfinite(config->straightSteeringSettlingTimeSec) ||
-        !isfinite(config->headingKp) ||
-        !isfinite(config->headingKi) ||
-        !isfinite(config->headingKd) ||
-        !isfinite(config->maxHeadingSteeringAngleRad) ||
         !isfinite(config->arcYawRateKp) ||
         !isfinite(config->arcYawRateKi) ||
         !isfinite(config->arcYawRateKd) ||
         !isfinite(config->maxArcSteeringCommandCorrection) ||
         !isfinite(config->arcHeadingKpPerSec) ||
+        !isfinite(config->maxPathCorrectionCurvaturePerMm) ||
         !isfinite(config->wheelSyncKpCpsPerMm) ||
         !isfinite(config->maxWheelSyncCorrectionCps) ||
         !isfinite(config->motionAccelerationMmps2) ||
@@ -405,37 +406,48 @@ MotionControllerStatus MotionController_Init(
         return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
     }
 
-    float minEffectiveAngleRad =
-        SteeringController_GetMinEffectiveAngleRad(
-            steering);
-
-    float maxEffectiveAngleRad =
-        SteeringController_GetMaxEffectiveAngleRad(
-            steering);
-
-    /*
-     * Straight-line heading control must be able to correct
-     * in either direction, so use only the range available
-     * symmetrically about zero.
-     */
-    if (!isfinite(minEffectiveAngleRad) ||
-        !isfinite(maxEffectiveAngleRad) ||
-        minEffectiveAngleRad >= 0.0f ||
-        maxEffectiveAngleRad <= 0.0f)
+    if (config->useLegacyStraightSteering)
     {
-        return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
-    }
+        if (!isfinite(config->headingKp) ||
+            !isfinite(config->headingKi) ||
+            !isfinite(config->headingKd) ||
+            !isfinite(config->maxHeadingSteeringAngleRad))
+        {
+            return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
+        }
 
-    float maxSymmetricSteeringAngleRad =
-        fminf(
-            -minEffectiveAngleRad,
-            maxEffectiveAngleRad);
+        float minEffectiveAngleRad =
+            SteeringController_GetMinEffectiveAngleRad(
+                steering);
 
-    if (config->maxHeadingSteeringAngleRad <= 0.0f ||
-        config->maxHeadingSteeringAngleRad >
-            maxSymmetricSteeringAngleRad)
-    {
-        return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
+        float maxEffectiveAngleRad =
+            SteeringController_GetMaxEffectiveAngleRad(
+                steering);
+
+        /*
+         * Straight-line heading control must be able to correct
+         * in either direction, so use only the range available
+         * symmetrically about zero.
+         */
+        if (!isfinite(minEffectiveAngleRad) ||
+            !isfinite(maxEffectiveAngleRad) ||
+            minEffectiveAngleRad >= 0.0f ||
+            maxEffectiveAngleRad <= 0.0f)
+        {
+            return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
+        }
+
+        float maxSymmetricSteeringAngleRad =
+            fminf(
+                -minEffectiveAngleRad,
+                maxEffectiveAngleRad);
+
+        if (config->maxHeadingSteeringAngleRad <= 0.0f ||
+            config->maxHeadingSteeringAngleRad >
+                maxSymmetricSteeringAngleRad)
+        {
+            return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
+        }
     }
 
     if (config->maxArcSteeringCommandCorrection <= 0.0f)
@@ -451,6 +463,7 @@ MotionControllerStatus MotionController_Init(
 
     if (config->straightSteeringSettlingTimeSec < 0.0f ||
         config->arcHeadingKpPerSec < 0.0f ||
+        config->maxPathCorrectionCurvaturePerMm < 0.0f ||
         config->motionCompletionToleranceMm <= 0.0f ||
         config->arcYawRateFilterTauSec < 0.0f ||
         config->stopStableSampleCount == 0U)
@@ -483,13 +496,14 @@ MotionControllerStatus MotionController_Init(
     }
 
 
-    if (!PIDController_Init(
-        &controller->headingPID,
-        config->headingKp,
-        config->headingKi,
-        config->headingKd,
-        -config->maxHeadingSteeringAngleRad,
-		config->maxHeadingSteeringAngleRad))
+    if (config->useLegacyStraightSteering &&
+        !PIDController_Init(
+            &controller->headingPID,
+            config->headingKp,
+            config->headingKi,
+            config->headingKd,
+            -config->maxHeadingSteeringAngleRad,
+            +config->maxHeadingSteeringAngleRad))
     {
         return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
     }
@@ -595,6 +609,9 @@ static MotionControllerStatus MotionController_StartMotion(
 
     controller->arcCommandedCurvaturePerMm = 0.0f;
     controller->arcSteeringFeedforwardCommand = 0.0f;
+    controller->arcYawRateErrorRadPerSec = 0.0f;
+    controller->arcSteeringCorrectionCommand = 0.0f;
+    controller->arcSteeringTargetCommand = 0.0f;
     controller->steeringPreparationElapsedSec = 0.0f;
 
     PIDController_Reset(&controller->headingPID);
@@ -653,6 +670,14 @@ MotionControllerStatus MotionController_MoveStraight(
      */
     SteeringController_Centre(controller->steering);
 
+    /* Zero curvature uses the actual prepared centre, not raw zero. */
+    MotionController_GetPathSteeringFeedforwardCommand(
+        controller,
+        0.0f,
+        &controller->arcSteeringFeedforwardCommand);
+    controller->arcSteeringTargetCommand =
+        controller->arcSteeringFeedforwardCommand;
+
     controller->mode =
         controller->config->straightSteeringSettlingTimeSec > 0.0f
             ? MOTIONCONTROLLER_STRAIGHT_PREPARING
@@ -701,7 +726,7 @@ MotionControllerStatus MotionController_MoveArc(
 
     float feedforwardCommand;
 
-    if (!MotionController_GetArcSteeringFeedforwardCommand(
+    if (!MotionController_GetPathSteeringFeedforwardCommand(
             controller,
             curvaturePerMm,
             &feedforwardCommand))
@@ -739,6 +764,8 @@ MotionControllerStatus MotionController_MoveArc(
         controller->targetCurvaturePerMm;
 
     controller->arcSteeringFeedforwardCommand =
+        feedforwardCommand;
+    controller->arcSteeringTargetCommand =
         feedforwardCommand;
 
     /*
@@ -804,7 +831,7 @@ static bool MotionController_UpdateYawEstimate(
 
     /*
      * First-order low-pass filter used only by
-     * ARC yaw-rate feedback.
+     * shared straight/arc yaw-rate feedback.
      *
      * alpha = dt / (tau + dt)
      */
@@ -1010,7 +1037,7 @@ static MotionControllerStatus MotionController_UpdateBraking(
 }
 
 
-static void MotionController_UpdateStraightSteering(
+static void MotionController_UpdateLegacyStraightSteering(
     MotionController *controller,
     float dt)
 {
@@ -1040,7 +1067,7 @@ static void MotionController_UpdateStraightSteering(
 }
 
 
-static void MotionController_UpdateArcSteering(
+static void MotionController_UpdatePathSteering(
     MotionController *controller,
     float dt,
     float mmPerCount)
@@ -1096,12 +1123,12 @@ static void MotionController_UpdateArcSteering(
      * Keep the feedback-generated curvature bounded as the profile
      * approaches zero speed.
      *
-     * Allow heading feedback to add up to 2x the nominal yaw-rate
-     * magnitude, i.e. total demand can reach 3x nominal curvature.
+     * The correction-curvature bound is independent of nominal curvature,
+     * so straight motion (kappa_path = 0) retains heading feedback.
      */
     float headingCorrectionLimitRadPerSec =
-        2.0f *
-        fabsf(feedforwardYawRateRadPerSec);
+        fabsf(signedSpeedMmps) *
+        controller->config->maxPathCorrectionCurvaturePerMm;
 
     headingYawRateCorrectionRadPerSec =
         MotionController_Clamp(
@@ -1116,14 +1143,13 @@ static void MotionController_UpdateArcSteering(
 
     /*
      * Rear-wheel geometry follows the same corrected motion request as
-     * the steering controller. Since heading correction is limited
-     * relative to feedforward yaw rate, commanded curvature remains
-     * bounded even near the ends of the speed profile.
+     * the steering controller. The speed-scaled heading correction bounds
+     * commanded curvature even near the ends of the speed profile.
      */
     float commandedCurvaturePerMm =
         controller->targetCurvaturePerMm;
 
-    if (fabsf(signedSpeedMmps) > 1.0f)
+    if (signedSpeedMmps != 0.0f)
     {
         commandedCurvaturePerMm =
             targetYawRateRadPerSec /
@@ -1253,24 +1279,20 @@ static MotionControllerStatus MotionController_UpdateActiveMotion(
         return MOTIONCONTROLLER_STATUS_IMU_ERROR;
     }
 
-    switch (controller->mode)
+    if (controller->mode == MOTIONCONTROLLER_STRAIGHT &&
+        controller->config->useLegacyStraightSteering)
     {
-        case MOTIONCONTROLLER_STRAIGHT:
-            MotionController_UpdateStraightSteering(
-                controller,
-                dt);
-            break;
-
-        case MOTIONCONTROLLER_ARC:
-            MotionController_UpdateArcSteering(
-                controller,
-                dt,
-                mmPerCount);
-            break;
-
-        default:
-            MotionController_Stop(controller);
-            return MOTIONCONTROLLER_STATUS_INVALID_STATE;
+        MotionController_UpdateLegacyStraightSteering(controller, dt);
+    }
+    else if (controller->mode == MOTIONCONTROLLER_STRAIGHT ||
+             controller->mode == MOTIONCONTROLLER_ARC)
+    {
+        MotionController_UpdatePathSteering(controller, dt, mmPerCount);
+    }
+    else
+    {
+        MotionController_Stop(controller);
+        return MOTIONCONTROLLER_STATUS_INVALID_STATE;
     }
 
     /*

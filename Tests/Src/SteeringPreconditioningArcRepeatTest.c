@@ -101,6 +101,10 @@ static const MotionControllerConfig testMotionConfig =
     .kinematics = &kinematics,
     .arcConfig = &arcMotionConfig,
 
+    .straightSteeringSettlingTimeSec = 0.5f,
+    .useLegacyStraightSteering = false,
+    .maxPathCorrectionCurvaturePerMm = 1.0f / 1000.0f,
+
     .headingKp = TEST_HEADING_KP,
     .headingKi = TEST_HEADING_KI,
     .headingKd = TEST_HEADING_KD,

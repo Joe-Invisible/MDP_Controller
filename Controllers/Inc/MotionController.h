@@ -96,12 +96,12 @@ typedef struct
 	const MotionControllerConfig *config;
 
 	/*
-	 * Straight-line heading controller
+	 * Legacy straight-line heading controller (temporary A/B baseline).
 	 */
 	PIDController headingPID;
 
 	/*
-	 * ARC yaw-rate controller.
+	 * Shared straight/arc yaw-rate controller (historical name retained).
 	 *
 	 * Input:  yaw-rate error [rad/s]
 	 * Output: raw steering-command correction
@@ -109,7 +109,8 @@ typedef struct
 	PIDController arcYawRatePID;
 
 	/*
-	 * ARC diagnostics
+	 * Shared path diagnostics. Historical arc-prefixed names are retained
+	 * for existing GDB scripts; populated for unified straight motion too.
 	 */
 	float yawRateDps;
 	float filteredYawRateDps;
@@ -152,7 +153,8 @@ typedef struct
 
 	/*
 	 * Absolute raw steering command supplied by curvature
-	 * feedforward. Feedback correction is applied around this.
+	 * feedforward, or the prepared raw centre for straight motion.
+	 * Feedback correction is applied around this fixed command.
 	 */
 	float arcSteeringFeedforwardCommand;
 
@@ -190,7 +192,7 @@ typedef struct
 	 * Arc:
 	 *     curvature = 1 / radius
 	 *
-	 * ARC steering is controlled from measured yaw rate
+	 * Unified straight/arc steering is controlled from measured yaw rate
 	 * and does not require a physical steering-angle model.
 	 */
 	float targetCurvaturePerMm;
@@ -248,6 +250,10 @@ MotionControllerStatus MotionController_Init(
  * MOTIONCONTROLLER_STRAIGHT_PREPARING when a non-zero settling time is
  * configured. Motion profile updates begin after the configured nonblocking
  * mechanical settling interval.
+ *
+ * By default this is the zero-curvature case of the shared heading/yaw-rate
+ * path controller. Set config.useLegacyStraightSteering for the temporary
+ * effective-angle A/B baseline. Both modes retain the preparation interval.
  */
 MotionControllerStatus MotionController_MoveStraight(
 	MotionController *controller,

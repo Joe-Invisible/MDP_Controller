@@ -9,6 +9,7 @@
 #define INC_MOTIONCONTROLLERCONFIG_H_
 
 #include <stdint.h>
+#include <stdbool.h>
 
 #include "RobotKinematics.h"
 
@@ -51,17 +52,30 @@ typedef struct
     /* Hold time after commanding steering centre before straight motion. */
     float straightSteeringSettlingTimeSec;
 
+    /* Temporary A/B baseline: only straight motion uses the angle model. */
+    bool useLegacyStraightSteering;
+
+    /* Legacy straight-only PID; ignored by the unified path controller. */
     float headingKp;
     float headingKi;
     float headingKd;
     float maxHeadingSteeringAngleRad;
 
+    /* Shared straight/arc yaw-rate loop; historical arc names retained. */
     float arcYawRateKp;
     float arcYawRateKi;
     float arcYawRateKd;
     float maxArcSteeringCommandCorrection;
 
     float arcHeadingKpPerSec;
+
+    /*
+     * Shared outer-loop bound [1/mm]:
+     * |heading yaw-rate correction| <= |signed speed| * this value.
+     * Unlike a multiple of nominal curvature, this also permits correction
+     * on a straight path. Zero disables outer heading correction.
+     */
+    float maxPathCorrectionCurvaturePerMm;
 
     float wheelSyncKpCpsPerMm;
     float maxWheelSyncCorrectionCps;

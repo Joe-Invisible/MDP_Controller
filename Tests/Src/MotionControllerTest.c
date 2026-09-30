@@ -19,6 +19,7 @@
 
 #define MOTION_TEST_DISTANCE_MM          (1000.0f)
 #define MOTION_TEST_SPEED_CPS            (5000.0f)
+#define MOTION_TEST_USE_LEGACY_STEERING   (0)
 
 #define MOTION_TEST_CONTROL_PERIOD_MS    (10U)
 #define MOTION_TEST_CONTROL_PERIOD_S     (0.010f)
@@ -71,6 +72,10 @@ static const MotionControllerConfig straightTestMotionConfig =
 {
     .kinematics = &kinematics,
     .arcConfig = &arcMotionConfig,
+
+    .straightSteeringSettlingTimeSec = 0.5f,
+    .useLegacyStraightSteering = MOTION_TEST_USE_LEGACY_STEERING,
+    .maxPathCorrectionCurvaturePerMm = 1.0f / 1000.0f,
 
     .headingKp = HEADING_CTRL_KP,
     .headingKi = HEADING_CTRL_KI,
@@ -134,7 +139,11 @@ motionControllerTestLog[MOTION_TEST_LOG_CAPACITY];
 volatile uint32_t motionControllerTestLogCount = 0U;
 volatile uint32_t lastLogTick = 0U;
 
-volatile const char* experimentInfo = "With deterministic centering; heading Kp=0.8, maxCmdRate=60, Ksync=10";
+#if MOTION_TEST_USE_LEGACY_STEERING
+volatile const char* experimentInfo = "Legacy straight; heading Kp=0.8, maxCmdRate=60, Ksync=10, settle=0.5s";
+#else
+volatile const char* experimentInfo = "Unified straight; yaw-rate Kp=10, raw limit=5, heading Kp=1, curvature correction limit=0.001/mm, settle=0.5s";
+#endif
 
 /* -------------------------------------------------------------------------- */
 /* Logging helpers                                                            */
@@ -240,6 +249,26 @@ static void MotionControllerTest_LogSample(
     motionControllerTestLog[i].targetSteeringAngleRad =
         SteeringController_GetTargetEffectiveAngleRad(
             motionController->steering);
+
+    motionControllerTestLog[i].effectiveAngleModelValid =
+        motionController->steering->effectiveAngleModelValid;
+    motionControllerTestLog[i].steeringCommand =
+        SteeringController_GetCommand(motionController->steering);
+    motionControllerTestLog[i].steeringFeedforwardCommand =
+        motionController->arcSteeringFeedforwardCommand;
+    motionControllerTestLog[i].steeringTargetCommand =
+        motionController->arcSteeringTargetCommand;
+    motionControllerTestLog[i].steeringCorrectionCommand =
+        motionController->arcSteeringCorrectionCommand;
+    motionControllerTestLog[i].yawRateDps = motionController->yawRateDps;
+    motionControllerTestLog[i].filteredYawRateDps =
+        motionController->filteredYawRateDps;
+    motionControllerTestLog[i].headingErrorRad =
+        motionController->arcHeadingErrorRad;
+    motionControllerTestLog[i].targetYawRateRadPerSec =
+        motionController->arcTargetYawRateRadPerSec;
+    motionControllerTestLog[i].commandedCurvaturePerMm =
+        motionController->arcCommandedCurvaturePerMm;
 
     motionControllerTestLog[i].leftActuatorMode =
     		leftWheel->actuatorMode;
