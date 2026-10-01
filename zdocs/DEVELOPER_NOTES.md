@@ -284,7 +284,9 @@ Straight motion is now the zero-curvature case of the same path controller used
 for arcs. The public `MoveStraight` and `MoveArc` APIs, signed-distance/radius
 conventions, motion profiles, braking, and mechanical preparation states remain.
 
-For signed rear-axle speed `v`, signed displacement `s`, and requested curvature
+For the internally signed rear-axle-centre reference speed v—whose direction is 
+derived solely from the signed distance—and signed displacement `s`, and requested 
+curvature
 `kappa_ref` (zero for straight motion):
 
 * desired yaw is `kappa_ref * s`;
