@@ -170,6 +170,42 @@ static void testStraightSignsAndGeometry(void)
     }
 }
 
+static void testFixedStraightFeedforward(void)
+{
+    for (int direction = -1; direction <= 1; direction += 2) {
+        Fixture f;
+        setup(&f, false);
+        f.config.arcYawRateKp = 0.0f;
+        f.config.arcYawRateKi = 0.0f;
+        f.config.arcYawRateKd = 0.0f;
+        f.config.arcHeadingKpPerSec = 0.0f;
+        assert(initMotion(&f) == MOTIONCONTROLLER_STATUS_OK);
+        assert(MotionController_MoveStraight(&f.motion, direction * 1000.0f,
+                                            2000.0f) == 0);
+        const float candidate = -8.5f;
+        f.motion.arcSteeringFeedforwardCommand = candidate;
+        f.motion.arcSteeringTargetCommand = candidate;
+        SteeringController_SetRawCommand(&f.steering, candidate);
+        prepare(&f, MOTIONCONTROLLER_STRAIGHT_PREPARING,
+                MOTIONCONTROLLER_STRAIGHT);
+        gyroDps = direction * 2.0f;
+        for (unsigned i = 0; i < 100; ++i) {
+            f.leftMotor.state.encCount += direction * 10;
+            f.rightMotor.state.encCount += direction * 10;
+            update(&f, DT);
+            near(f.steering.command, candidate, 0.0f);
+            near(f.motion.arcSteeringCorrectionCommand, 0.0f, 0.0f);
+            near(f.motion.arcCommandedCurvaturePerMm, 0.0f, 0.0f);
+            near(f.motion.wheelReferenceCurvaturePerMm, 0.0f, 0.0f);
+            near(f.motion.desiredWheelTravelDifferenceMm, 0.0f, 0.0f);
+            near(f.left.targetSpeedCps, f.right.targetSpeedCps, 0.0f);
+        }
+        assert(f.motion.yawDeg * direction > 1.9f);
+        assert(MotionController_Brake(&f.motion) == 0);
+        assert(f.steering.effectiveAngleModelValid);
+    }
+}
+
 static void testArcAndReverse(void)
 {
     for (int direction = -1; direction <= 1; direction += 2) {
@@ -296,6 +332,7 @@ static void testCompletionAndFaults(void)
 int main(void)
 {
     testStraightSignsAndGeometry();
+    testFixedStraightFeedforward();
     testArcAndReverse();
     testLowSpeedAndFilter();
     testLegacyAndValidation();
