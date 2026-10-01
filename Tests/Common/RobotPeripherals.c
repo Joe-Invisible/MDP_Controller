@@ -7,4 +7,4 @@
 
 #include "RobotPeripherals.h"
 
-HCSR04_HandleTypeDef hcsr04;
+/* Instance owned by PeripheralDrivers/Src/UltrasonicSensorConfig.c. */

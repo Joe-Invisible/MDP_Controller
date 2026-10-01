@@ -10,8 +10,8 @@
 #ifndef INC_ROBOTPERIPHERALS_H_
 #define INC_ROBOTPERIPHERALS_H_
 
-#include "hcsr04.h"
+/* Runtime owns the instance; standalone tests retain this compatibility include. */
+#include "UltrasonicSensorConfig.h"
 
-extern HCSR04_HandleTypeDef hcsr04;
 
 #endif /* INC_ROBOTPERIPHERALS_H_ */

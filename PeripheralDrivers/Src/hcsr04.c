@@ -41,6 +41,7 @@ void HCSR04_Init(HCSR04_HandleTypeDef *sensor,
     sensor->risingCapture = 0U;
     sensor->pulseWidthUs = 0U;
     sensor->triggerTickMs = 0U;
+    sensor->measurementTickMs = 0U;
 
     /* Ensure TRIG is inactive. */
     HAL_GPIO_WritePin(sensor->trigPort,
@@ -124,13 +125,16 @@ void HCSR04_Update(HCSR04_HandleTypeDef *sensor)
 
     if (elapsedMs >= HCSR04_TIMEOUT_MS)
     {
-        HAL_TIM_IC_Stop_IT(sensor->htim, sensor->channel);
-
-        __HAL_TIM_SET_CAPTUREPOLARITY(sensor->htim,
-                                      sensor->channel,
-                                      TIM_INPUTCHANNELPOLARITY_RISING);
-
-        sensor->state = HCSR04_STATE_TIMEOUT;
+        const uint32_t primask = __get_PRIMASK();
+        __disable_irq();
+        if (HCSR04_IsBusy(sensor))
+        {
+            HAL_TIM_IC_Stop_IT(sensor->htim, sensor->channel);
+            __HAL_TIM_SET_CAPTUREPOLARITY(sensor->htim, sensor->channel,
+                                          TIM_INPUTCHANNELPOLARITY_RISING);
+            sensor->state = HCSR04_STATE_TIMEOUT;
+        }
+        __set_PRIMASK(primask);
     }
 }
 
@@ -189,6 +193,7 @@ void HCSR04_HandleInputCapture(HCSR04_HandleTypeDef *sensor,
 
             HAL_TIM_IC_Stop_IT(sensor->htim, sensor->channel);
 
+            sensor->measurementTickMs = HAL_GetTick();
             sensor->state = HCSR04_STATE_READY;
             break;
 
@@ -230,11 +235,15 @@ uint32_t HCSR04_GetPulseWidthUs(const HCSR04_HandleTypeDef *sensor)
 
 
 /**
- * @brief Return measured distance in millimetres.
+ * @brief Return corrected distance in millimetres, clamped to zero.
  */
 float HCSR04_GetDistanceMm(const HCSR04_HandleTypeDef *sensor)
 {
-    return (float)sensor->pulseWidthUs * HCSR04_MM_PER_US;
+    const float distanceMm =
+        (float)sensor->pulseWidthUs * HCSR04_MM_PER_US +
+        HCSR04_DISTANCE_OFFSET_MM;
+
+    return (distanceMm > 0.0f) ? distanceMm : 0.0f;
 }
 
 

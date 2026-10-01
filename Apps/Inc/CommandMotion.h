@@ -12,10 +12,18 @@
 #define COMMANDMOTION_STRAIGHT_SPEED_CPS 5000.0f
 #define COMMANDMOTION_MAX_TURN_DEG 360.0f
 
+/* UART straight moves use a 1 mm endpoint tolerance: observed stalls were
+ * 0.54–0.94 mm short with drive still active. This is an acceptance policy,
+ * not a motor recalibration. Turns retain the shared controller tolerance.
+ * Straight requests <= this tolerance can complete without wheel movement.
+ */
+#define COMMANDMOTION_STRAIGHT_COMPLETION_TOLERANCE_MM 1.0f
+
 typedef struct {
     float distanceMm;
     float radiusMm; /* Zero means straight. Positive means left. */
     float speedCps;
+    float speedMmps; /* Nonzero for U; converted using runtime geometry. */
 } CommandMotion;
 
 /* Pure conversion, also used to validate a whole batch before acceptance. */

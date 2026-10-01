@@ -22,8 +22,20 @@ static void FinishCommand(const char *expected) {
 }
 
 int main(void) {
+    /* A just-accepted batch is BUSY even before the controller starts.
+     * A FAULT can still be braking. Neither may be reset yet.
+     */
+    for (unsigned state = COMMANDSESSION_READY; state <= COMMANDSESSION_STOPPED; ++state) {
+        session.state = (CommandSessionState)state;
+        assert(!CommandSession_CanReset(&session, true));
+        assert(CommandSession_CanReset(&session, false) ==
+               (state != COMMANDSESSION_BUSY && state != COMMANDSESSION_STOPPING));
+    }
     CommandSession_Init(&session);
+    Receive("12:G", "NAK 12 PARSE\n", false);
+    Receive("12:F10;G", "NAK 12 PARSE\n", false);
     Receive("STATUS", "READY\n", false);
+    Receive("Q", "READY\n", false);
     Receive("S", "STOPPED\n", false);
 
     /* Entire out-of-range/mixed-stop frames are rejected before any move. */
@@ -38,6 +50,7 @@ int main(void) {
     /* Silent acceptance, bounded batch, completion only after the last move. */
     Receive("12:F100;B50", "", false);
     Receive("STATUS", "BUSY 12\n", false);
+    Receive("Q", "BUSY 12\n", false);
     Receive("13:F200", "NAK 13 BUSY\n", false);
     Receive("12:F100;B50", "BUSY 12\n", false);
     Receive("12:F200", "NAK 12 ID_REUSE\n", false);

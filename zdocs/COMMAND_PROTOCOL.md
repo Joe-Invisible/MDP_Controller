@@ -1,7 +1,7 @@
 # STM command protocol
 
 USART3 runs at 115200 baud, 8N1. Each request/reply ends in `\n`; `\r\n`
-requests are also accepted. Commands are case-sensitive with no spaces.
+requests are also accepted. Movement batches are case-sensitive with no spaces; Q subqueries use one space.
 Wait for `READY` after power-up before sending movement batches.
 
 ## One batch at a time
@@ -42,7 +42,7 @@ rejected. Limits and conversion live in `Apps/Inc/CommandMotion.h` and
 
 ## Status and stopping
 
-`STATUS` does not execute or change anything. It reports the current/latest
+`Q` (legacy alias `STATUS`) does not execute or change anything. It reports the current/latest
 batch, or `READY` if no batch has been accepted since boot:
 
 | Reply | Meaning |
@@ -63,8 +63,121 @@ the Pi must decide the next route from the robot's actual position.
 
 On a controller failure STM sends `FAULT <id> <reason>` and never starts the
 remaining movements. `FAULT` is **not** confirmation that braking has finished.
-Initialization failure sends `FAULT - INIT`; subsequent requests receive the
-same response and no movement is accepted. Restart after correcting hardware.
+Initialization failure sends `FAULT - INIT_*`; ordinary requests receive the
+same response and no movement is accepted. Sensor queries and standalone G
+remain available. Fix the hardware issue before retrying initialization.
+
+## Explicit reboot (`G`)
+
+Standalone, unnumbered `G` uses the same letter as Team 37's Checklist reset.
+It is not a movement and cannot appear inside a batch. MotionTask accepts it
+only when neither the session nor the controller is busy/stopping; otherwise
+it replies `NAK - BUSY`. Pi must first send S and confirm STOPPED when necessary.
+The initialization-failure loop also accepts G without calling uninitialized
+controller objects. G disables rear PWM outputs, sends `RESETTING`, and invokes
+CMSIS `NVIC_SystemReset`. Ordinary startup then centres the steering, initializes
+sensors/controllers and emits READY (or a new INIT fault). No route resumes.
+No new task, periodic UART traffic or motor calibration is introduced.
+
+A real CPU HardFault or stuck UART task may never process G. This command does
+not install a hardware watchdog or a Pi-to-NRST connection. Use hardware reset
+or ST-LINK for an unresponsive CPU. S clears runtime fault latches, not failed
+controller initialization or an unrecoverable CPU exception.
+
+Reboot clears volatile STM batch/progress state; the next batch ID is zero.
+Before G, the Pi reset helper saves available Q P and its in-memory last batch/
+reply to a JSON checkpoint. Saving is only during an explicit reset, not every
+movement or control tick. The current Pi process remembers its own last batch;
+a new process cannot reconstruct a full old batch from Q P. If UART is dead,
+last observed progress may be stale or absent and must remain labelled so.
+Only RESETTING followed by READY confirms success; no blind retries or replay.
+Run `mdp_checklist/checks/reset_stm.py` on Pi with other serial clients closed.
+
+## Ultrasonic approach (`U200`)
+
+A numbered batch such as `60:U200` approaches forward to a **200 mm remaining
+ultrasonic gap**, measured from the transducer front faces. It does not mean
+travel 200 mm. `Q U` remains a read-only sensor query. U targets must be
+100..1000 mm; out-of-range targets reject the whole batch with `NAK ... RANGE`.
+U can share a batch with F/B/L/R. Each U has its own time/travel bound; choose
+an appropriate whole-batch Pi timeout (up to 15 seconds per U, plus other moves).
+
+`UltrasonicApproach.c` is application policy with no hardware access. MotionTask
+consumes SensorTask snapshots and uses the existing straight controller and
+braking APIs. There are no repeated short F commands, new threads, heap
+allocations or Pi round trips in the stop decision. The only live profile
+adjustment is U's encoder endpoint, not motor/steering calibration. The same
+MotionProfile used for F controls acceleration and gradual deceleration.
+`UltrasonicApproachConfig.h` owns the initial limits:
+
+- Forward only: no automatic reverse or retry if the robot starts too close.
+- Default cruise cap 100 mm/s; an identified test build may override
+  `ULTRASONIC_APPROACH_CRUISE_MMPS` at compile time (300 mm/s is software-tested).
+- Range must be valid and at most 150 ms old, including before movement starts.
+- Each new echo updates the profile endpoint to encoder travel + measured gap
+  minus desired gap, compensating capture age using current encoder speed.
+  Between echoes, keep that endpoint fixed and let encoder travel consume it.
+  Acceleration/deceleration come from the unchanged MotionProfile. No profile
+  restart or separate predicted-distance full-brake trigger is used.
+- The U profile stops within a 10 mm estimated endpoint band, then enters
+  normal controller braking. New echoes during braking cannot restart it.
+- Maximum travel is initial range minus target plus 50 mm, capped at 1000 mm.
+  Initial gaps needing more than 950 mm travel are rejected before movement.
+  Reaching the encoder bound never counts as successful sensor completion.
+- Overall limit 15 seconds, plus the existing progress/brake watchdogs.
+- After stationary confirmation, require **two distinct post-stop readings**
+  within target +/-20 mm before advancing the batch or returning DONE.
+  A cached pre-brake sample cannot confirm success. Verification is bounded
+  to 1 second; no autonomous corrective retry is performed.
+
+Failure tokens: `US_NOT_READY`, `US_STALE`, `US_ECHO` (echo timeout),
+`US_SENSOR` (invalid reading), `US_TARGET`, `US_TOO_CLOSE`, `US_TRAVEL`,
+`US_TIMEOUT`, `US_ODOMETRY`, `US_STATE`, `US_VERIFY` (verification timeout),
+`US_RANGE` (stopped outside the accepted upper range). They use the existing
+`FAULT <id> <reason>` and S recovery. FAULT requests braking; only STOPPED or
+successful DONE confirms stationary wheels. The limits are initial software
+policy; actual approach accuracy and stopping distances need floor tests.
+F/B retain the tested 1 mm straight tolerance; arcs retain shared 0.5 mm.
+U uses a separate 10 mm control endpoint band and 20 mm final sensor band.
+Capture-age compensation is an approximation; real stopping accuracy requires
+floor measurements. A short/spurious echo can still cause an early stop/fault.
+
+## Partial batch progress (`Q P`)
+
+Query the current/latest batch without consuming an ID or altering execution:
+
+```text
+Pi:  Q P
+STM: P 60 STOPPED 1 3 2 B 100 -48 -2.2 IDLE
+```
+
+Fields: `P id state completed total step command parameter travel_mm yaw_deg phase`.
+Here batch 60 contained three commands, one completed, and command 2 (B100)
+was interrupted after -48 mm of measured travel and -2.2 degrees of relative
+heading change. Command 3 never started. `completed` counts whole commands
+only; `step` is the 1-based most recently attempted command, or 0 before any.
+If stopped between commands, `step == completed` refers to the completed one.
+Parameter has the original command's units: F/B travel mm, L/R degrees,
+U desired remaining sensor gap mm. Float fields can use decimal or exponent
+notation. Travel is signed vehicle-centre encoder odometry and yaw is relative
+to that command's start; neither is a global position or an accuracy guarantee.
+
+Phases: `NOT_STARTED`, `ACTIVE` (includes steering preparation), `BRAKING`,
+`IDLE`. A start precondition failure reports the attempted command but uses
+`-` for unavailable travel/yaw. Invalid odometry also uses `-`, never a fake
+zero. Startup: `P - READY 0 0 0 - - - - NOT_STARTED`. A fault reason remains
+available through Q/STATUS. Read progress **after confirmed STOPPED** to obtain
+the final post-braking snapshot; ACTIVE/BRAKING measurements may still change.
+Do not automatically replay a partial command or a route after a reset.
+
+`CommandProgress` is a fixed current/latest snapshot, not history. MotionTask
+owns it; sampling occurs at command start, on a Q P request, and when the
+controller becomes idle. Formatting/transmission happens only on an explicit
+query. No telemetry stream, extra queue or normal-driving UART traffic was
+added. UART transmission remains bounded but blocking, so an explicit Q P
+query still costs formatting and wire time; prefer querying after stop rather
+than polling it during motion. This is protocol functionality independent of
+`MOTION_DIAGNOSTICS`; D/D W/D H remain optional debug snapshots.
 
 ## Movement watchdog and optional diagnostics
 
@@ -186,8 +299,8 @@ cc -Wall -Wextra -Werror hosttests/motion_test.c Apps/Src/CommandMotion.c -IApps
 
 Hardware review should check stop distance, completion timing, IMU-fault
 braking, UART bursts/line recovery, and the 10 ms loop budget. Refresh/rebuild
-in CubeIDE so its generated makefiles discover `CommandSession.c` and
-`CommandMotion.c`, and remove
+in CubeIDE so its generated makefiles discover all Apps/Src modules, including `UltrasonicApproach.c` and
+`CommandProgress.c`, and remove
 the deleted `CommandTask.c`.
 # User button query (A.5 start)
 

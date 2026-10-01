@@ -34,6 +34,23 @@ size_t CommandLink_ReadBytes(uint8_t *buf, size_t maxLen, uint32_t timeoutTicks)
  */
 bool CommandLink_Send(const char *text);
 
+/* Optional GDB-visible TX timing. No diagnostic bytes are added to the protocol.
+ * Enable for measurement builds with -DCOMMANDLINK_DIAGNOSTICS=1; halt the
+ * target to inspect a consistent snapshot of CommandLink_Diagnostics.
+ */
+#ifndef COMMANDLINK_DIAGNOSTICS
+#define COMMANDLINK_DIAGNOSTICS 0
+#endif
+#if COMMANDLINK_DIAGNOSTICS
+typedef struct {
+    uint32_t sends;
+    uint32_t failures;
+    uint32_t lastDurationMs;
+    uint32_t maxDurationMs;
+} CommandLinkDiagnostics;
+extern volatile CommandLinkDiagnostics CommandLink_Diagnostics;
+#endif
+
 /**
  * Forwarders for the HAL callbacks in Core/Src/hal_callback.c.
  * Each ignores handles other than the one given to CommandLink_Init.

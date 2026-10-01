@@ -6,7 +6,7 @@
  */
 
 
-#include "RobotPeripherals.h"
+#include "UltrasonicSensorConfig.h"
 #include "CommandLink.h"
 
 void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) {

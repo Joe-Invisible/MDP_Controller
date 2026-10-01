@@ -30,6 +30,11 @@ typedef struct {
 
 void CommandSession_Init(CommandSession *session);
 
+/* G is handled by MotionTask, never parsed as a movement. Both the session
+ * and the controller must be idle before a system reset can be accepted.
+ */
+bool CommandSession_CanReset(const CommandSession *session, bool controllerBusy);
+
 /*
  * Handles a line without its newline. Empty reply means accepted silently.
  * Returns true only when the caller must initiate braking (standalone S).

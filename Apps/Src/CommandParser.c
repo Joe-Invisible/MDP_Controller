@@ -19,6 +19,7 @@ static CommandParserStatus ParseOneCommand(const char **cursor, Command *out) {
 	case 'B': type = COMMAND_BACKWARD; break;
 	case 'L': type = COMMAND_LEFT;     break;
 	case 'R': type = COMMAND_RIGHT;    break;
+	case 'U': type = COMMAND_ULTRASONIC; break;
 	case 'S': type = COMMAND_STOP; needsParam = false; break;
 	default:
 		return COMMANDPARSER_ERROR_BAD_COMMAND;

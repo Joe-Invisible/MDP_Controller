@@ -1,4 +1,5 @@
 #include "CommandMotion.h"
+#include "UltrasonicApproachConfig.h"
 
 #include <math.h>
 
@@ -16,6 +17,15 @@ bool CommandMotion_Resolve(const Command *command, CommandMotion *motion) {
         break;
     case COMMAND_BACKWARD:
         result.distanceMm = -command->param;
+        break;
+    case COMMAND_ULTRASONIC:
+        if (command->param < ULTRASONIC_APPROACH_MIN_TARGET_MM ||
+            command->param > ULTRASONIC_APPROACH_MAX_TARGET_MM)
+            return false;
+        /* Runtime derives a tighter travel bound from the initial reading. */
+        result.distanceMm = ULTRASONIC_APPROACH_MAX_TRAVEL_MM;
+        result.speedCps = 0.0f;
+        result.speedMmps = ULTRASONIC_APPROACH_CRUISE_MMPS;
         break;
     case COMMAND_LEFT:
     case COMMAND_RIGHT:

@@ -31,10 +31,15 @@ void CommandSession_Init(CommandSession *session) {
     memset(session, 0, sizeof(*session));
 }
 
+bool CommandSession_CanReset(const CommandSession *session, bool controllerBusy) {
+    return !controllerBusy && session->state != COMMANDSESSION_BUSY &&
+           session->state != COMMANDSESSION_STOPPING;
+}
+
 bool CommandSession_Receive(CommandSession *session, const char *line,
                             char reply[COMMANDSESSION_REPLY_SIZE]) {
     reply[0] = '\0';
-    if (strcmp(line, "STATUS") == 0) {
+    if (strcmp(line, "STATUS") == 0 || strcmp(line, "Q") == 0) {
         Status(session, reply);
         return false;
     }

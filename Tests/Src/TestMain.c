@@ -31,7 +31,8 @@ void InvokeTest() {
 
 	LED_On();
 
-	MotionControllerSequenceTestRun();
+	/* Stationary ultrasonic bring-up: starts immediately, no button required. */
+	HCSR04TestRun();
 
 	while (1) {
 		// Test ended. Loop forever.

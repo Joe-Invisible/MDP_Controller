@@ -25,6 +25,9 @@
  */
 #define HCSR04_MM_PER_US           (0.343f / 2.0f)
 
+/* Provisional correction for the fitted sensor; raw echo timing is unchanged. */
+#define HCSR04_DISTANCE_OFFSET_MM  (-5.0f)
+
 typedef enum
 {
     HCSR04_STATE_IDLE = 0,
@@ -46,6 +49,7 @@ typedef struct
 
     volatile uint32_t risingCapture;
     volatile uint32_t pulseWidthUs;
+    volatile uint32_t measurementTickMs;
 
     uint32_t triggerTickMs;
 } HCSR04_HandleTypeDef;
@@ -101,7 +105,10 @@ bool HCSR04_HasMeasurement(const HCSR04_HandleTypeDef *sensor);
 uint32_t HCSR04_GetPulseWidthUs(const HCSR04_HandleTypeDef *sensor);
 
 /**
- * @brief Return the measured distance in millimetres.
+ * @brief Return corrected distance in millimetres, clamped to zero.
+ *
+ * Check HCSR04_HasMeasurement() before using this value; zero is not a
+ * measurement-validity indicator. Raw timing is available via GetPulseWidthUs.
  */
 float HCSR04_GetDistanceMm(const HCSR04_HandleTypeDef *sensor);
 

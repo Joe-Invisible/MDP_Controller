@@ -14,7 +14,7 @@
  * Frame grammar (terminator '\n' already stripped by the caller):
  *
  *   frame    :=  [seq ':'] command (';' command)*
- *   command  :=  'F' number | 'B' number | 'L' number | 'R' number | 'S'
+ *   command  :=  'F' number | 'B' number | 'L' number | 'R' number | 'U' number | 'S'
  *   number   :=  positive decimal, fraction allowed (e.g. 100, 90.5)
  *   seq      :=  0..255, wrapping
  *
@@ -32,6 +32,7 @@ typedef enum {
 	COMMAND_LEFT,		/* L<deg> */
 	COMMAND_RIGHT,		/* R<deg> */
 	COMMAND_STOP,		/* S      */
+	COMMAND_ULTRASONIC, /* U<remaining sensor gap mm> */
 } CommandType;
 
 typedef struct {

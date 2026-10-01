@@ -13,6 +13,7 @@
 #include "OLEDTask.h"
 #include "CommandLink.h"
 #include "MotionTask.h"
+#include "SensorTask.h"
 
 const osThreadAttr_t OLEDTask_attributes = {
   .name = "OLEDTask",
@@ -30,6 +31,12 @@ const osThreadAttr_t MotionTask_attributes = {
   .priority = (osPriority_t) osPriorityAboveNormal,
 };
 
+const osThreadAttr_t SensorTask_attributes = {
+  .name = "SensorTask",
+  .stack_size = 384 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-variable"
 void AppTasks_Init() {
@@ -39,6 +46,9 @@ void AppTasks_Init() {
 	osThreadId_t OLEDTaskHandle = osThreadNew(OLEDTask, NULL, &OLEDTask_attributes);
 
 	if (!CommandLink_Init(&huart3))
+		return;
+
+	if (osThreadNew(SensorTask, NULL, &SensorTask_attributes) == NULL)
 		return;
 
 	if (osThreadNew(MotionTask, NULL, &MotionTask_attributes) == NULL)

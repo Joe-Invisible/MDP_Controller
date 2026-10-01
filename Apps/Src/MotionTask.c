@@ -19,12 +19,16 @@
 #include "CommandLink.h"
 #include "CommandSession.h"
 #include "CommandMotion.h"
+#include "CommandProgress.h"
 #include "MotionWatchdog.h"
 #include "MotionDiagnostics.h"
 #include "StartButton.h"
+#include "SensorTask.h"
+#include "UltrasonicApproach.h"
 #include "userbutton.h"
 #include "OLEDManager.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -144,9 +148,29 @@ static void MotionTask_CentreSteering(void) {
 static CommandSession session;
 static char reply[COMMANDSESSION_REPLY_SIZE];
 static MotionWatchdog watchdog;
+static UltrasonicApproach ultrasonicApproach;
+static bool ultrasonicCommand;
+static CommandProgress commandProgress;
+static bool progressTracking;
+static char progressReply[COMMANDPROGRESS_REPLY_SIZE];
+
+/* Copy only for a Q P request and once at the final stationary position.
+ * No formatting, UART traffic or history maintenance in the control loop.
+ */
+static void MotionTask_SampleProgress(void) {
+    if (!progressTracking) return;
+    CommandProgressPhase phase = MotionController_IsBusy(&motionController)
+        ? (motionController.mode == MOTIONCONTROLLER_BRAKING
+            ? COMMANDPROGRESS_BRAKING : COMMANDPROGRESS_ACTIVE)
+        : COMMANDPROGRESS_IDLE;
+    CommandProgress_Sample(&commandProgress, motionController.travelledDistanceMm,
+                           motionController.yawDeg, phase);
+    if (phase == COMMANDPROGRESS_IDLE) progressTracking = false;
+}
 
 static MotionWatchPhase MotionTask_WatchPhase(void) {
-    if (motionController.mode == MOTIONCONTROLLER_ARC_PREPARING)
+    if (motionController.mode == MOTIONCONTROLLER_ARC_PREPARING ||
+        motionController.mode == MOTIONCONTROLLER_STRAIGHT_PREPARING)
         return WATCH_PREPARE;
     if (motionController.mode == MOTIONCONTROLLER_BRAKING)
         return WATCH_BRAKE;
@@ -155,13 +179,14 @@ static MotionWatchPhase MotionTask_WatchPhase(void) {
 
 #if MOTION_DIAGNOSTICS
 static MotionDiagnostics diagnostics;
+static float diagnosticLastDtMs, diagnosticMaxDtMs;
 static char diagnosticReply[MOTION_DIAGNOSTICS_REPLY_SIZE];
 
 static void MotionTask_Capture(const char *event) {
     if (session.next >= session.count) return;
     const Command *cmd = &session.commands[session.next];
-    static const char letters[] = "FBLRS";
-    static const char *const modes[] = { "IDLE", "STRAIGHT", "ARC", "BRAKING", "PREPARE" };
+    static const char letters[] = "FBLRSU";
+    static const char *const modes[] = { "IDLE", "STRAIGHT", "ARC", "BRAKING", "PREPARE", "STRAIGHT_PREPARE" };
     diagnostics = (MotionDiagnostics){
         .valid = true, .numbered = session.hasSeq, .seq = session.seq,
         .step = (unsigned)session.next + 1U, .command = letters[cmd->type],
@@ -176,6 +201,32 @@ static void MotionTask_Capture(const char *event) {
         .rightCps = rightWheelController.measuredSpeedCps,
         .steeringCommand = steeringController.command,
         .yawDeg = motionController.yawDeg,
+        .profileSpeedMmps = motionController.motionProfile.targetSpeedMmps,
+        .leftTargetCps = leftWheelController.targetSpeedCps,
+        .rightTargetCps = rightWheelController.targetSpeedCps,
+        .leftPWM = leftWheelController.outputPWM,
+        .rightPWM = rightWheelController.outputPWM,
+        .leftBrakePWM = leftWheelController.brakePWM,
+        .rightBrakePWM = rightWheelController.brakePWM,
+        .leftActuator = (unsigned)leftWheelController.actuatorMode,
+        .rightActuator = (unsigned)rightWheelController.actuatorMode,
+        .leftMotorMode = (unsigned)leftRearWheel.state.mode,
+        .rightMotorMode = (unsigned)rightRearWheel.state.mode,
+        .leftMotorDuty = leftRearWheel.state.activeDutyCycle,
+        .rightMotorDuty = rightRearWheel.state.activeDutyCycle,
+        .lastDtMs = diagnosticLastDtMs,
+        .maxDtMs = diagnosticMaxDtMs,
+        .leftArr = MOTORBPWMSRC.Instance->ARR,
+        .leftCcr1 = MOTORBPWMSRC.Instance->CCR1,
+        .leftCcr2 = MOTORBPWMSRC.Instance->CCR2,
+        .leftCr1 = MOTORBPWMSRC.Instance->CR1,
+        .leftCcer = MOTORBPWMSRC.Instance->CCER,
+        .rightArr = MOTORCPWMSRC.Instance->ARR,
+        .rightCcr1 = MOTORCPWMSRC.Instance->CCR1,
+        .rightCcr2 = MOTORCPWMSRC.Instance->CCR2,
+        .rightCr1 = MOTORCPWMSRC.Instance->CR1,
+        .rightCcer = MOTORCPWMSRC.Instance->CCER,
+        .rightBdtr = MOTORCPWMSRC.Instance->BDTR,
     };
 }
 #else
@@ -230,35 +281,137 @@ static bool MotionTask_ReadLine(char **line) {
     return false;
 }
 
-static bool MotionTask_Start(const Command *cmd) {
+static const char *MotionTask_Start(const Command *cmd) {
+    ultrasonicCommand = false;
+    progressTracking = false;
+    CommandProgress_Attempt(&commandProgress, (unsigned)session.next + 1U, cmd);
     CommandMotion motion;
     if (!CommandMotion_Resolve(cmd, &motion))
-        return false;
+        return "REJECTED";
+    /* Called only while idle. Configure the existing profile through its API;
+     * the shared controller/calibration files remain unchanged. Reapply on
+     * every command so an arc following a straight restores shared tolerance.
+     * Profile completion still enters the controller's normal braking state.
+     */
+    float completionToleranceMm = motion.radiusMm == 0.0f
+        ? COMMANDMOTION_STRAIGHT_COMPLETION_TOLERANCE_MM
+        : runtimeMotionConfig.motionCompletionToleranceMm;
+    if (cmd->type == COMMAND_ULTRASONIC)
+        completionToleranceMm = ULTRASONIC_APPROACH_STOP_MARGIN_MM;
+    if (!MotionProfile_Init(&motionController.motionProfile,
+                            runtimeMotionConfig.motionAccelerationMmps2,
+                            runtimeMotionConfig.motionDecelerationMmps2,
+                            completionToleranceMm))
+        return "REJECTED";
     float mmPerCount = 3.14159265358979323846f *
         runtimeMotionConfig.kinematics->rearWheelDiameterMm /
         runtimeMotionConfig.kinematics->rearEncoderCountsPerRev;
+    if (cmd->type == COMMAND_ULTRASONIC) {
+        UltrasonicReading reading = SensorTask_GetUltrasonic();
+        const char *fault = UltrasonicApproach_Start(&ultrasonicApproach,
+            cmd->param, &reading, HAL_GetTick());
+        if (fault != NULL) return fault;
+        motion.distanceMm = ultrasonicApproach.travelLimitMm;
+        motion.speedCps = motion.speedMmps / mmPerCount;
+        ultrasonicCommand = true;
+    }
     if (!MotionWatchdog_Start(&watchdog, HAL_GetTick(), motion.distanceMm,
                              motion.speedCps * mmPerCount,
                              motion.radiusMm != 0.0f ? WATCH_PREPARE : WATCH_MOVE))
-        return false;
-    static const char letters[] = "FBLR";
+        return "REJECTED";
+    static const char letters[] = "FBLRSU";
     OLED_Post(&cmdStatus, "%c %.0f", letters[cmd->type], cmd->param);
     if (motion.radiusMm != 0.0f)
         return MotionController_MoveArc(&motionController, motion.distanceMm,
                                         motion.radiusMm, motion.speedCps)
-               == MOTIONCONTROLLER_STATUS_OK;
+               == MOTIONCONTROLLER_STATUS_OK ? NULL : "REJECTED";
     return MotionController_MoveStraight(&motionController,
                                         motion.distanceMm, motion.speedCps)
-           == MOTIONCONTROLLER_STATUS_OK;
+           == MOTIONCONTROLLER_STATUS_OK ? NULL : "REJECTED";
 }
 
 static void MotionTask_Fault(const char *reason) {
     MotionTask_Capture(reason);
-    /* Brake actively; the session stays faulted until standalone S. */
+    ultrasonicCommand = false;
+    /* Brake actively; the session stays faulted until standalone S.
+     * A U range-verification fault can occur after an earlier stop: track
+     * this braking phase too, without fabricating pre-start measurements.
+     */
+    if (commandProgress.measured) progressTracking = true;
     MotionController_Brake(&motionController);
     CommandSession_Fault(&session, reason, reply);
     CommandLink_Send(reply);
     OLED_Post(&cmdStatus, "FAULT %s", reason);
+}
+
+/* Returns false once this U command has completed or faulted. */
+static bool MotionTask_UpdateUltrasonic(void) {
+    UltrasonicReading reading = SensorTask_GetUltrasonic();
+    float mmPerCount = 3.14159265358979323846f *
+        runtimeMotionConfig.kinematics->rearWheelDiameterMm /
+        runtimeMotionConfig.kinematics->rearEncoderCountsPerRev;
+    float speedMmps = 0.5f * (fabsf(leftWheelController.measuredSpeedCps) +
+        fabsf(rightWheelController.measuredSpeedCps)) * mmPerCount;
+    UltrasonicApproachAction action = UltrasonicApproach_Update(
+        &ultrasonicApproach, &reading, HAL_GetTick(),
+        motionController.travelledDistanceMm, speedMmps,
+        MotionController_IsBusy(&motionController),
+        motionController.mode == MOTIONCONTROLLER_BRAKING);
+    if (action == ULTRASONIC_APPROACH_FAULT) {
+        MotionTask_Fault(ultrasonicApproach.fault);
+        return false;
+    } else if (action == ULTRASONIC_APPROACH_BRAKE) {
+        MotionController_Brake(&motionController);
+    } else if (action == ULTRASONIC_APPROACH_DRIVE) {
+        /* Adapt only the endpoint, in the same encoder coordinate system as F.
+         * MotionProfile already provides acceleration and distance-based
+         * deceleration; do not restart it or replace the wheel controller.
+         * This sole owner writes before MotionController_Update below.
+         */
+        motionController.motionProfile.targetDistanceMm =
+            ultrasonicApproach.profileTargetMm;
+    } else if (action == ULTRASONIC_APPROACH_DONE) {
+        MotionTask_Capture("DONE");
+        CommandSession_CommandDone(&session, reply);
+        CommandLink_Send(reply);
+        ultrasonicCommand = false;
+        return false;
+    }
+    return true;
+}
+
+/* Querying never changes the motion session or consumes a batch ID. */
+static bool MotionTask_SensorQuery(const char *line) {
+    char sensorReply[SENSOR_REPLY_SIZE];
+    if (strcmp(line, "Q U") == 0) {
+        UltrasonicReading reading = SensorTask_GetUltrasonic();
+        SensorReading_Format(&reading, HAL_GetTick(), sensorReply, sizeof(sensorReply));
+    } else if (strcmp(line, "Q I") == 0) {
+        IRPairReading reading = SensorTask_GetIR();
+        SensorReading_FormatIR(&reading, HAL_GetTick(), sensorReply, sizeof(sensorReply));
+    } else {
+        return false;
+    }
+    CommandLink_Send(sensorReply);
+    return true;
+}
+
+/* G is an explicit idle-only reboot, not a movement or a CPU-lockup recovery.
+ * Use timer handles directly: the INIT fault loop may have only partially
+ * initialized motor objects. Timers are initialized before tasks are started.
+ * The blocking transport completes RESETTING before the CMSIS system reset.
+ */
+static void MotionTask_Reset(void) {
+    __HAL_TIM_SET_COMPARE(&MOTORBPWMSRC, TIM_CHANNEL_1, 0U);
+    __HAL_TIM_SET_COMPARE(&MOTORBPWMSRC, TIM_CHANNEL_2, 0U);
+    __HAL_TIM_SET_COMPARE(&MOTORCPWMSRC, TIM_CHANNEL_1, 0U);
+    __HAL_TIM_SET_COMPARE(&MOTORCPWMSRC, TIM_CHANNEL_2, 0U);
+    (void)HAL_TIM_PWM_Stop(&MOTORBPWMSRC, TIM_CHANNEL_1);
+    (void)HAL_TIM_PWM_Stop(&MOTORBPWMSRC, TIM_CHANNEL_2);
+    (void)HAL_TIM_PWM_Stop(&MOTORCPWMSRC, TIM_CHANNEL_1);
+    (void)HAL_TIM_PWM_Stop(&MOTORCPWMSRC, TIM_CHANNEL_2);
+    (void)CommandLink_Send("RESETTING\n");
+    NVIC_SystemReset();
 }
 
 void MotionTask(void *argument) {
@@ -274,8 +427,12 @@ void MotionTask(void *argument) {
         /* Keep STATUS usable, but never accept motion without hardware. */
         for (;;) {
             char *line;
-            if (MotionTask_ReadLine(&line))
-                CommandLink_Send(reply);
+            if (MotionTask_ReadLine(&line)) {
+                if (strcmp(line, "G") == 0)
+                    MotionTask_Reset();
+                else if (!MotionTask_SensorQuery(line))
+                    CommandLink_Send(reply);
+            }
             osDelay(MOTIONTASK_CONTROL_PERIOD_MS);
         }
     }
@@ -293,7 +450,8 @@ void MotionTask(void *argument) {
         StartButton_Update(&startButton, SW1_ReadState() == SW1_Enabled,
                            HAL_GetTick());
         bool busy = MotionController_IsBusy(&motionController);
-        if (!busy && commandRunning) {
+        if (!busy) MotionTask_SampleProgress();
+        if (!busy && commandRunning && !ultrasonicCommand) {
             MotionTask_Capture("DONE");
             CommandSession_CommandDone(&session, reply);
             CommandLink_Send(reply);
@@ -307,15 +465,37 @@ void MotionTask(void *argument) {
         char *line;
         if (MotionTask_ReadLine(&line)) {
 #if MOTION_DIAGNOSTICS
-            if (strcmp(line, "D") == 0) {
+            if (strcmp(line, "D") == 0 || strcmp(line, "D W") == 0 ||
+                strcmp(line, "D H") == 0) {
                 if (commandRunning) MotionTask_Capture("LIVE");
-                MotionDiagnostics_Format(&diagnostics, diagnosticReply,
-                                         sizeof(diagnosticReply));
+                if (strcmp(line, "D H") == 0)
+                    MotionDiagnostics_FormatHardware(&diagnostics, diagnosticReply,
+                                                      sizeof(diagnosticReply));
+                else if (strcmp(line, "D W") == 0)
+                    MotionDiagnostics_FormatWheels(&diagnostics, diagnosticReply,
+                                                   sizeof(diagnosticReply));
+                else
+                    MotionDiagnostics_Format(&diagnostics, diagnosticReply,
+                                             sizeof(diagnosticReply));
                 CommandLink_Send(diagnosticReply);
                 reply[0] = '\0';
             } else
 #endif
-            if (strcmp(line, "BUTTON") == 0) {
+            if (strcmp(line, "G") == 0) {
+                if (CommandSession_CanReset(&session,
+                        MotionController_IsBusy(&motionController)))
+                    MotionTask_Reset();
+                else
+                    (void)snprintf(reply, sizeof(reply), "NAK - BUSY\n");
+            } else if (strcmp(line, "Q P") == 0) {
+                MotionTask_SampleProgress();
+                CommandProgress_Format(&session, &commandProgress,
+                                       progressReply, sizeof(progressReply));
+                CommandLink_Send(progressReply);
+                reply[0] = '\0';
+            } else if (MotionTask_SensorQuery(line)) {
+                reply[0] = '\0';
+            } else if (strcmp(line, "BUTTON") == 0) {
                 snprintf(reply, sizeof(reply), "BUTTON %lu %u\n",
                          (unsigned long)startButton.count,
                          startButton.rawPressed || startButton.stablePressed
@@ -324,8 +504,10 @@ void MotionTask(void *argument) {
                 if (strcmp(line, "S") == 0 && commandRunning)
                     MotionTask_Capture("STOP");
                 if (CommandSession_Receive(&session, line, reply)) {
+                    if (commandProgress.measured) progressTracking = true;
                     MotionController_Brake(&motionController);
                     commandRunning = false;
+                    ultrasonicCommand = false;
                 }
             }
             CommandLink_Send(reply);
@@ -335,19 +517,33 @@ void MotionTask(void *argument) {
         if (!commandRunning && !MotionController_IsBusy(&motionController)) {
             const Command *cmd = CommandSession_Current(&session);
             if (cmd != NULL) {
-                if (MotionTask_Start(cmd)) {
+                const char *startFault = MotionTask_Start(cmd);
+                if (startFault == NULL) {
                     commandRunning = true;
+                    progressTracking = true;
+                    MotionTask_SampleProgress();
+#if MOTION_DIAGNOSTICS
+                    diagnosticLastDtMs = diagnosticMaxDtMs = 0.0f;
+#endif
                     MotionTask_Capture("LIVE");
                 } else
-                    MotionTask_Fault("REJECTED");
+                    MotionTask_Fault(startFault);
             }
         }
+
+        if (commandRunning && ultrasonicCommand)
+            commandRunning = MotionTask_UpdateUltrasonic();
 
         uint32_t now = osKernelGetTickCount();
         uint32_t elapsedTicks = now - previousUpdate;
         float dt = elapsedTicks ? (float)elapsedTicks / osKernelGetTickFreq()
                                 : MOTIONTASK_CONTROL_PERIOD_S;
         previousUpdate = now;
+#if MOTION_DIAGNOSTICS
+        diagnosticLastDtMs = dt * 1000.0f;
+        if (commandRunning && diagnosticLastDtMs > diagnosticMaxDtMs)
+            diagnosticMaxDtMs = diagnosticLastDtMs;
+#endif
         if (MotionController_Update(&motionController, dt)
                 != MOTIONCONTROLLER_STATUS_OK) {
             MotionTask_Fault("UPDATE");

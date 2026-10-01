@@ -20,6 +20,10 @@ static StreamBufferHandle_t link_stream;
 static uint8_t link_rxByte;
 static volatile uint32_t link_dropCount;
 
+#if COMMANDLINK_DIAGNOSTICS
+volatile CommandLinkDiagnostics CommandLink_Diagnostics;
+#endif
+
 bool CommandLink_Init(UART_HandleTypeDef *huart) {
 	if (huart == NULL)
 		return false;
@@ -56,9 +60,24 @@ bool CommandLink_Send(const char *text) {
 	if (len == 0)
 		return true;
 
-    /* MotionTask is the only transmitter. Replies are short and bounded. */
-    return HAL_UART_Transmit(link_uart, (const uint8_t *)text,
-            (uint16_t)len, COMMANDLINK_TX_TIMEOUT_MS) == HAL_OK;
+    /* MotionTask is the only transmitter. This remains a bounded blocking send.
+     * Measure query traffic during motion before considering asynchronous TX.
+     */
+#if COMMANDLINK_DIAGNOSTICS
+    uint32_t startedMs = HAL_GetTick();
+#endif
+    HAL_StatusTypeDef result = HAL_UART_Transmit(link_uart, (const uint8_t *)text,
+            (uint16_t)len, COMMANDLINK_TX_TIMEOUT_MS);
+#if COMMANDLINK_DIAGNOSTICS
+    uint32_t elapsedMs = HAL_GetTick() - startedMs;
+    CommandLink_Diagnostics.sends++;
+    CommandLink_Diagnostics.lastDurationMs = elapsedMs;
+    if (elapsedMs > CommandLink_Diagnostics.maxDurationMs)
+        CommandLink_Diagnostics.maxDurationMs = elapsedMs;
+    if (result != HAL_OK)
+        CommandLink_Diagnostics.failures++;
+#endif
+    return result == HAL_OK;
 }
 
 void CommandLink_IsrRxComplete(UART_HandleTypeDef *huart) {
