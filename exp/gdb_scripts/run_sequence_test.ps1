@@ -13,9 +13,32 @@ $projectRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $serverProcess = $null
 
 function Find-CubeTool([string] $name) {
-    $matches = @(Get-ChildItem -LiteralPath $CubeIdeRoot -Filter $name -File -Recurse)
+    # Enumerate only the plugin directory itself, then probe known bin paths.
+    # Recursing through GNU C++ multilib headers can hit Windows path limits
+    # even when all required executables are installed and working.
+    $binDirectories = @(
+        $CubeIdeRoot
+        (Join-Path $CubeIdeRoot 'bin')
+        (Join-Path $CubeIdeRoot 'tools/bin')
+    )
+    $pluginDirectory = Join-Path $CubeIdeRoot 'plugins'
+    if (Test-Path -LiteralPath $pluginDirectory -PathType Container) {
+        foreach ($plugin in Get-ChildItem -LiteralPath $pluginDirectory -Directory) {
+            $binDirectories += Join-Path $plugin.FullName 'tools/bin'
+            $binDirectories += Join-Path $plugin.FullName 'bin'
+        }
+    }
+    $matches = @(
+        foreach ($directory in $binDirectories) {
+            $candidate = Join-Path $directory $name
+            if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+                Get-Item -LiteralPath $candidate
+            }
+        }
+    )
     if ($matches.Count -ne 1) {
-        throw "Expected one $name under $CubeIdeRoot; found $($matches.Count). Select a single CubeIDE installation."
+        $foundPaths = ($matches | ForEach-Object { $_.FullName }) -join '; '
+        throw "Expected one $name in CubeIDE/plugin bin directories under $CubeIdeRoot; found $($matches.Count). Found paths: $foundPaths"
     }
     return $matches[0].FullName
 }
@@ -37,6 +60,9 @@ try {
     $gdb = Find-CubeTool 'arm-none-eabi-gdb.exe'
     $server = Find-CubeTool 'ST-LINK_gdbserver.exe'
     $programmerDirectory = Split-Path (Find-CubeTool 'STM32_Programmer_CLI.exe') -Parent
+    Write-Host "GDB: $gdb"
+    Write-Host "ST-LINK server: $server"
+    Write-Host "CubeProgrammer bin: $programmerDirectory"
 
     # Binding checks ownership without connecting to/disrupting another server.
     $portCheck = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Loopback, $Port)

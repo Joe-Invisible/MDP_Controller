@@ -90,6 +90,17 @@ is elsewhere, or several versions are installed, pass the folder containing
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File exp/gdb_scripts/run_sequence_test.ps1 -CubeIdeRoot 'C:/ST/STM32CubeIDE_1.x.x/STM32CubeIDE' -BatteryVoltage 11.95
 ```
 
+Tool discovery probes the installation's bin folders and each plugin's
+`tools/bin` or `bin` folder. It does not recursively scan GNU C++ headers or
+multilib directories, whose deep paths can fail on Windows before a build
+even starts. The runner prints the selected executable paths before building.
+
+Check discovery without CubeIDE or a probe with:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File Tests/Host/test_sequence_tool_discovery.ps1
+```
+
 It builds the current `MDP_Controller/Debug` configuration in a separate
 headless workspace, refuses to flash if the build fails, starts ST-LINK/GDB,
 flashes and resets, waits for your SW1 start, and exports at sequence completion.
