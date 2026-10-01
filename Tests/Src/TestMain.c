@@ -21,6 +21,7 @@
 #include "RobotKinematicsTest.h"
 #include "MotionControllerArcTest.h"
 #include "MotionControllerSequenceTest.h"
+#include "MotionControllerStraightFeedforwardTest.h"
 #include "MotionControllerTest.h"
 #include "oled.h"
 #include "led3.h"
@@ -31,6 +32,9 @@ void InvokeTest() {
 
 	LED_On();
 
+	/* Select this separate harness for straight feedforward calibration:
+	 * MotionControllerStraightFeedforwardTestRun();
+	 * The original arc harness retains the pending raw +95 setup. */
 	MotionControllerSequenceTestRun();
 
 	while (1) {
