@@ -1,11 +1,16 @@
 # Compatible with Windows PowerShell 5.1. No Python-enabled GDB is required.
 # Called by auto_export_sequence.gdb while the target is suspended.
 [CmdletBinding()]
-param()
+param(
+    [string] $OutputDirectory
+)
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
-$outputDirectory = Join-Path $projectRoot 'exp/logs/sequence'
+if (-not $OutputDirectory) {
+    $OutputDirectory = Join-Path $projectRoot 'exp/logs/sequence'
+}
+$outputDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)
 $commandFile = Join-Path $outputDirectory 'export-current.gdb'
 
 function ConvertTo-GdbEcho([string] $value) {
@@ -56,8 +61,10 @@ try {
         'echo === Loaded ELF ===\n'
         'info files'
         'echo === Commands and controller configuration ===\n'
-        'p motionControllerSequenceTestCommandCount'
-        'p motionControllerSequenceTestCommands'
+        # GCC may omit the standalone static const count even in Debug builds.
+        # Derive it from the emitted array type, with explicit file scope.
+        "p sizeof('MotionControllerSequenceTest.c'::motionControllerSequenceTestCommands) / sizeof('MotionControllerSequenceTest.c'::motionControllerSequenceTestCommands[0])"
+        "p 'MotionControllerSequenceTest.c'::motionControllerSequenceTestCommands"
         'p motionControllerConfig'
         'p *motionControllerConfig.kinematics'
         'p *motionControllerConfig.arcConfig'

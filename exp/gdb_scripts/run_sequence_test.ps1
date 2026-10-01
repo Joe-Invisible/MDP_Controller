@@ -5,12 +5,32 @@ param(
     [string] $CubeIdeRoot,
     [ValidateRange(1, 65535)] [int] $Port = 61234,
     [string] $StLinkSerial,
-    [ValidateRange(0, 30)] [double] $BatteryVoltage = 0
+    [ValidateRange(0, 30)] [double] $BatteryVoltage = 0,
+    [switch] $BuildOnly
 )
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $serverProcess = $null
+
+function Get-CubeBuildWorkspace([string] $projectDirectory) {
+    # Eclipse rejects an imported project that contains its own workspace.
+    # Keep a stable, checkout-specific workspace outside the source tree.
+    $projectPath = [System.IO.Path]::GetFullPath($projectDirectory).TrimEnd('\', '/')
+    $hasher = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($projectPath.ToLowerInvariant())
+        $key = ([System.BitConverter]::ToString($hasher.ComputeHash($bytes))).Replace('-', '').Substring(0, 16)
+    } finally { $hasher.Dispose() }
+    $workspace = Join-Path ([System.IO.Path]::GetTempPath()) ('MDP_Controller-headless-' + $key)
+    $workspace = [System.IO.Path]::GetFullPath($workspace).TrimEnd('\', '/')
+    if ($workspace.Equals($projectPath, [System.StringComparison]::OrdinalIgnoreCase) -or
+        $workspace.StartsWith($projectPath + '\', [System.StringComparison]::OrdinalIgnoreCase) -or
+        $projectPath.StartsWith($workspace + '\', [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw 'The headless workspace must be outside the project tree. Set TEMP to an external directory.'
+    }
+    return $workspace
+}
 
 function Find-CubeTool([string] $name) {
     # Enumerate only the plugin directory itself, then probe known bin paths.
@@ -65,18 +85,21 @@ try {
     Write-Host "CubeProgrammer bin: $programmerDirectory"
 
     # Binding checks ownership without connecting to/disrupting another server.
-    $portCheck = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Loopback, $Port)
-    try { $portCheck.Start() } catch {
-        throw "Port $Port is in use. Close the CubeIDE debug session before running this command, or choose -Port."
-    } finally { $portCheck.Stop() }
+    if (-not $BuildOnly) {
+        $portCheck = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Loopback, $Port)
+        try { $portCheck.Start() } catch {
+            throw "Port $Port is in use. Close the CubeIDE debug session before running this command, or choose -Port."
+        } finally { $portCheck.Stop() }
+    }
 
     $runId = '{0}_{1}' -f (Get-Date -Format 'yyyyMMdd_HHmmss_fff'), [Guid]::NewGuid().ToString('N').Substring(0, 8)
     $sessionDirectory = Join-Path $projectRoot "exp/logs/sequence/session_$runId"
     New-Item -ItemType Directory -Path $sessionDirectory -Force | Out-Null
-    $buildWorkspace = Join-Path $projectRoot 'exp/logs/cubeide-workspace'
+    $buildWorkspace = Get-CubeBuildWorkspace $projectRoot
     $buildLog = Join-Path $sessionDirectory 'build.txt'
     $elf = Join-Path $projectRoot 'Debug/MDP_Controller.elf'
 
+    Write-Host "Headless workspace: $buildWorkspace"
     Write-Host 'Building MDP_Controller/Debug...'
     # Remove the previous ELF so a failed build can never flash a stale image.
     Remove-Item -LiteralPath $elf -Force -ErrorAction SilentlyContinue
@@ -101,6 +124,11 @@ try {
         cubeIdeRoot = $CubeIdeRoot
     }
     $imageRecord | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $sessionDirectory 'firmware.json') -Encoding UTF8
+
+    if ($BuildOnly) {
+        Write-Host "Build-only validation complete; nothing flashed. Build records: $sessionDirectory"
+        return
+    }
 
     $serverArguments = '-d -e -k -p {0} -cp "{1}"' -f $Port, $programmerDirectory
     if ($StLinkSerial) {

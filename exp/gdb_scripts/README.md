@@ -73,6 +73,22 @@ An interrupted dump may leave a partial text file without the completion
 marker. The convenience variable `$mctrl_seq_export_ok` is 1 only after a full
 successful dump. Generated logs/scripts are excluded from Git.
 
+The exported command count is calculated from the debugger-visible command
+array's type. GCC can omit the separate static constant
+`motionControllerSequenceTestCommandCount` from the ELF, even in a Debug build;
+the exporter does not require that symbol.
+
+An offline regression check can run the real exporter with GDB, an archived ELF,
+and synthetic RAM, without connecting to ST-LINK or starting motion:
+
+```powershell
+python Tests/Host/test_sequence_export.py --gdb 'C:/path/to/arm-none-eabi-gdb.exe' --elf 'exp/logs/sequence/session_example/firmware.elf'
+```
+
+The test puts its synthetic export in a temporary directory, using the export
+preparation script's optional `-OutputDirectory` parameter. Normal automatic
+exports continue to use `exp/logs/sequence/`.
+
 ## Build, flash and repeat after code changes
 
 With CubeIDE's debug session closed, run this from a Windows PowerShell console
@@ -101,8 +117,11 @@ Check discovery without CubeIDE or a probe with:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File Tests/Host/test_sequence_tool_discovery.ps1
 ```
 
-It builds the current `MDP_Controller/Debug` configuration in a separate
-headless workspace, refuses to flash if the build fails, starts ST-LINK/GDB,
+It builds the current `MDP_Controller/Debug` configuration in a stable,
+checkout-specific headless workspace under Windows Temp. The workspace must be
+outside the project tree; Eclipse rejects importing a project that contains its
+workspace. The old `exp/logs/cubeide-workspace` is no longer used.
+The runner refuses to flash if the build fails, starts ST-LINK/GDB,
 flashes and resets, waits for your SW1 start, and exports at sequence completion.
 It saves the exact flashed ELF, its SHA-256/build timestamp, and build and
 debugger/server records in a new `session_*` subdirectory.
@@ -110,6 +129,16 @@ The exported experiment remains in `exp/logs/sequence/` with its unique name.
 It closes its own debugger/server after export; it never closes CubeIDE's
 session. `-StLinkSerial` selects a particular probe if more than one is attached.
 `-Port` selects a port other than 61234.
+
+Validate the build and archive the ELF without connecting to the probe or
+flashing with:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File exp/gdb_scripts/run_sequence_test.ps1 -BuildOnly
+```
+
+This is a build check, not an acquired run; it creates build records but no
+debugger session or experiment export.
 
 The runner's zero exit status means a full export succeeded; inspect the test
 flags to determine whether the sequence itself passed. Timeout and rejection
