@@ -53,7 +53,7 @@
  *
  * Change back to 20 ms when analysing a short sequence in more detail.
  */
-#define SEQ_TEST_LOG_INTERVAL_MS               (40U)
+#define SEQ_TEST_LOG_INTERVAL_MS               (20U)
 #define SEQ_TEST_LOG_CAPACITY                  (500U)
 
 #define SEQ_TEST_COMMAND_TIMEOUT_MS            (20000U)
@@ -125,21 +125,24 @@
 
 static const MotionControllerSequenceTestCommand
 motionControllerSequenceTestCommands[] = {
-    SEQ_STRAIGHT(
-        -412.0f,
-        5000.0f),
-    SEQ_ARC(
-        275.0f * SEQ_TEST_PI / 2.0f,
-        275.0f,
-        2000.0f),
-    SEQ_STRAIGHT(
-        -137.5f,
-        5000.0f),
-    SEQ_ARC(
-        275.0f * SEQ_TEST_PI,
-        -275.0f,
-        2000.0f),
+	SEQ_STRAIGHT(-1000.0f, 2000.0f),
 };
+//motionControllerSequenceTestCommands[] = {
+//    SEQ_STRAIGHT(
+//        -412.0f,
+//        5000.0f),
+//    SEQ_ARC(
+//        275.0f * SEQ_TEST_PI / 2.0f,
+//        275.0f,
+//        2000.0f),
+//    SEQ_STRAIGHT(
+//        -137.5f,
+//        5000.0f),
+//    SEQ_ARC(
+//        275.0f * SEQ_TEST_PI,
+//        -275.0f,
+//        2000.0f),
+//};
 //motionControllerSequenceTestCommands[] =
 //{
 //	// BL
