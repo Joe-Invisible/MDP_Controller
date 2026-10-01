@@ -353,3 +353,20 @@ baseline under the same speed, preparation and battery conditions. Recheck arcs
 before changing gains or deleting the baseline. Re-establish the questionable
 R=-275 mm feedforward point separately; this implementation leaves the table
 unchanged.
+
+## Sequence-test export automation (1 October 2026)
+
+The shared Debug launch now loads a GDB command file that exports sequence
+results and samples automatically at `MotionControllerSequenceTest_ShowFinal`,
+after motion/braking and final bookkeeping. Filenames are unique and include
+the host export timestamp; this timestamp must not be mistaken for acquisition
+start time. The target stays suspended, and `EXPORTED:` confirms a complete
+dump. No firmware or controller tuning changes are involved.
+
+Windows setup and the optional build/flash/run command for local Codex are in
+[`exp/gdb_scripts/README.md`](../exp/gdb_scripts/README.md). The standalone
+runner archives the exact flashed ELF and its hash, and retains the SW1 start
+for each physical experiment. Export commands were checked with host GDB and
+PowerShell, and runner orchestration with mock build/debug tools. CubeIDE,
+Windows PowerShell 5.1, and ST-LINK hardware integration still require local
+verification.
