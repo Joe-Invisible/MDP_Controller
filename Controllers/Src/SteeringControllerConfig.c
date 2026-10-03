@@ -48,7 +48,7 @@
  *
  * Units: raw command units / second.
  */
-#define MAX_COMMAND_RATE                (60.0f)
+#define MAX_COMMAND_RATE                (120.0f)
 
 
 

@@ -25,8 +25,8 @@
 /* Test configuration                                                         */
 /* -------------------------------------------------------------------------- */
 
-#define STRAIGHT_FF_TEST_DISTANCE_MM              (1000.0f)
-#define STRAIGHT_FF_TEST_RAW_COMMAND              (-9.52502251f)
+#define STRAIGHT_FF_TEST_DISTANCE_MM              (-500.0f)
+// #define STRAIGHT_FF_TEST_RAW_COMMAND              (-9.525f)
 #define STRAIGHT_FF_TEST_SPEED_CPS                (2000.0f)
 
 #define STRAIGHT_FF_TEST_CONTROL_PERIOD_MS        (10U)
@@ -51,16 +51,25 @@
 #define STRAIGHT_FF_TEST_SYNC_KP_CPS_PER_MM       (10.0f)
 #define STRAIGHT_FF_TEST_SYNC_MAX_CORRECTION_CPS  (100.0f)
 
+#define FF_EXP	(0)
 /* Shared steering feedback is disabled for fixed-command calibration. */
 #define STRAIGHT_FF_TEST_HEADING_KP               (0.0f)
 #define STRAIGHT_FF_TEST_HEADING_KI               (0.0f)
 #define STRAIGHT_FF_TEST_HEADING_KD               (0.0f)
 #define STRAIGHT_FF_TEST_HEADING_LIMIT_RAD        (0.015f)
+#if FF_EXP == 1
 #define STRAIGHT_FF_TEST_YAWRATE_KP               (0.0f)
 #define STRAIGHT_FF_TEST_YAWRATE_KI               (0.0f)
 #define STRAIGHT_FF_TEST_YAWRATE_KD               (0.0f)
 #define STRAIGHT_FF_TEST_YAWRATE_LIMIT_UNIT       (5.0f)
 #define STRAIGHT_FF_TEST_HEADING_OUTER_KP_PER_SEC (0.0f)
+#elif FF_EXP == 0
+#define STRAIGHT_FF_TEST_YAWRATE_KP              (370.0f)
+#define STRAIGHT_FF_TEST_YAWRATE_KI              (450.0f)
+#define STRAIGHT_FF_TEST_YAWRATE_KD              (0.0f)
+#define STRAIGHT_FF_TEST_YAWRATE_LIMIT_UNIT      (30.0f)
+#define STRAIGHT_FF_TEST_HEADING_OUTER_KP_PER_SEC (2.0f)
+#endif
 
 /*
  * Current motion-profile parameters.
@@ -131,7 +140,7 @@ volatile const float motionControllerStraightFeedforwardTestRequestedDistanceMm 
 volatile const float motionControllerStraightFeedforwardTestRequestedSpeedCps =
     STRAIGHT_FF_TEST_SPEED_CPS;
 volatile const float motionControllerStraightFeedforwardTestRawCommand =
-    STRAIGHT_FF_TEST_RAW_COMMAND;
+    -9.525;
 volatile MotionControllerStatus motionControllerStraightFeedforwardTestUpdateStatus =
     MOTIONCONTROLLER_STATUS_OK;
 
@@ -823,13 +832,13 @@ void MotionControllerStraightFeedforwardTestRun(void)
 
     /* MoveStraight centres and captures neutral. Override AFTER that call,
      * before any update, so the 500 ms preparation holds our candidate. */
-    fixture.motionController.arcSteeringFeedforwardCommand =
-        rawCommand;
-    fixture.motionController.arcSteeringTargetCommand =
-        rawCommand;
-    SteeringController_SetRawCommand(
-        &fixture.steeringController,
-        rawCommand);
+//    fixture.motionController.arcSteeringFeedforwardCommand =
+//        rawCommand;
+//    fixture.motionController.arcSteeringTargetCommand =
+//        rawCommand;
+//    SteeringController_SetRawCommand(
+//        &fixture.steeringController,
+//        rawCommand);
 
     /*
      * Capture state before the first control update.
@@ -1000,7 +1009,7 @@ void MotionControllerStraightFeedforwardTestRun(void)
         }
     }
 
-    Buzzer_BlockingBuzz(100);
+    // Buzzer_BlockingBuzz(100);
 
     /*
      * Guaranteed final sample.

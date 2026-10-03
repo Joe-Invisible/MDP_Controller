@@ -101,12 +101,12 @@ const MotionControllerConfig motionControllerConfig =
     .headingKd = 0.0f,
     .maxHeadingSteeringAngleRad = 0.015f,
 
-    .arcYawRateKp = 10.0f,
-    .arcYawRateKi = 0.0f,
+    .arcYawRateKp = 370.0f,
+    .arcYawRateKi = 450.0f,
     .arcYawRateKd = 0.0f,
-    .maxArcSteeringCommandCorrection = 5.0f,
+    .maxArcSteeringCommandCorrection = 30.0f,
 
-    .arcHeadingKpPerSec = 1.0f,
+    .arcHeadingKpPerSec = 2.0f,
 
     /* Initial shared bound; validate on hardware before increasing it. */
     .maxPathCorrectionCurvaturePerMm = 1.0f / 1000.0f,
