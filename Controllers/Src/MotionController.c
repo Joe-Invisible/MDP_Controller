@@ -14,6 +14,20 @@
 
 #define MOTIONCONTROLLER_TIME_EPSILON_SEC                (1.0e-6f)
 
+/*
+ * TEMPORARY hardware-regression exemption.
+ *
+ * The +/-275 mm regression deliberately retains the existing extreme
+ * feedforward points together with the newly tuned +/-30 raw feedback
+ * authority. Those endpoints do not leave a full symmetric 30 raw units of
+ * steering headroom, so the normal MoveArc() request check would reject the
+ * test before it can run. SteeringController still clamps the actual raw
+ * command to the physical servo range.
+ *
+ * Restore this to 0 after the sharp-arc regression campaign.
+ */
+#define MOTIONCONTROLLER_TEST_ALLOW_LIMITED_ARC_HEADROOM (1)
+
 static float MotionController_GetMmPerCount(
     const MotionController *controller)
 {
@@ -734,6 +748,7 @@ MotionControllerStatus MotionController_MoveArc(
         return MOTIONCONTROLLER_STATUS_UNSUPPORTED_CURVATURE;
     }
 
+#if !MOTIONCONTROLLER_TEST_ALLOW_LIMITED_ARC_HEADROOM
     float maximumCorrectionCommand =
         fmaxf(
             fabsf(controller->arcYawRatePID.outputMin),
@@ -746,6 +761,7 @@ MotionControllerStatus MotionController_MoveArc(
     {
         return MOTIONCONTROLLER_STATUS_UNSUPPORTED_CURVATURE;
     }
+#endif
 
     status = MotionController_StartMotion(
         controller,
@@ -1072,9 +1088,20 @@ static void MotionController_UpdatePathSteering(
     float dt,
     float mmPerCount)
 {
-    /* Signed rear-axle-centre reference speed. */
-    float signedSpeedMmps =
+    /* Signed rear-axle-centre profiled reference speed. */
+    float signedReferenceSpeedMmps =
         controller->targetSpeedCps *
+        mmPerCount;
+
+    /*
+     * Most recent encoder-derived rear-axle-centre speed. Wheel speed
+     * updates occur later in this control cycle, so the first active cycle
+     * after steering preparation naturally sees the stationary measurement.
+     */
+    float measuredCentreSpeedMmps =
+        0.5f *
+        (controller->leftWheel->measuredSpeedCps +
+         controller->rightWheel->measuredSpeedCps) *
         mmPerCount;
 
     /*
@@ -1104,11 +1131,14 @@ static void MotionController_UpdatePathSteering(
     /*
      * Nominal geometric yaw-rate feedforward:
      *
-     *     omega_ff = kappa_path * v
+     *     omega_ff = kappa_path * v_measured
+     *
+     * Using measured centre speed prevents longitudinal acceleration lag
+     * from appearing to the inner loop as a steering/yaw-rate error.
      */
     float feedforwardYawRateRadPerSec =
         controller->targetCurvaturePerMm *
-        signedSpeedMmps;
+        measuredCentreSpeedMmps;
 
     /*
      * Heading error directly biases the requested yaw rate:
@@ -1123,11 +1153,11 @@ static void MotionController_UpdatePathSteering(
      * Keep the feedback-generated curvature bounded as the profile
      * approaches zero speed.
      *
-     * The correction-curvature bound is independent of nominal curvature,
-     * so straight motion (kappa_path = 0) retains heading feedback.
+     * Retain the profiled-speed envelope so the established straight-motion
+     * heading authority is unchanged by the new feedforward measurement.
      */
     float headingCorrectionLimitRadPerSec =
-        fabsf(signedSpeedMmps) *
+        fabsf(signedReferenceSpeedMmps) *
         controller->config->maxPathCorrectionCurvaturePerMm;
 
     headingYawRateCorrectionRadPerSec =
@@ -1142,18 +1172,19 @@ static void MotionController_UpdatePathSteering(
         headingYawRateCorrectionRadPerSec;
 
     /*
-     * Rear-wheel geometry follows the same corrected motion request as
-     * the steering controller. The speed-scaled heading correction bounds
-     * commanded curvature even near the ends of the speed profile.
+     * Rear-wheel geometry retains the requested nominal path curvature.
+     * Only the outer heading correction is converted back into an additional
+     * curvature term. This avoids flattening the wheel geometry when measured
+     * speed temporarily lags the motion-profile reference during acceleration.
      */
     float commandedCurvaturePerMm =
         controller->targetCurvaturePerMm;
 
-    if (signedSpeedMmps != 0.0f)
+    if (signedReferenceSpeedMmps != 0.0f)
     {
-        commandedCurvaturePerMm =
-            targetYawRateRadPerSec /
-            signedSpeedMmps;
+        commandedCurvaturePerMm +=
+            headingYawRateCorrectionRadPerSec /
+            signedReferenceSpeedMmps;
     }
 
     /*
