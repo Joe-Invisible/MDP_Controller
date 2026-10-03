@@ -1,0 +1,69 @@
+=cmd-param-changed,param="logging enabled",value="on"
+64^done
+(gdb) 
+65^error,msg="-interpreter-exec: Usage: -interpreter-exec interp command"
+(gdb) 
+~"=== MotionController Sequence Test ===\n"
+66^done
+(gdb) 
+~"Mixed straight/arc sequence; each command completes to IDLE before the next command.\n"
+67^done
+(gdb) 
+~"MotionController owns straight and arc steering preparation.\n"
+68^done
+(gdb) 
+~"Sequence-level yaw/distance are accumulated by the test harness across command-local resets.\n"
+69^done
+(gdb) 
+~"Controller states: 0=IDLE, 1=STRAIGHT, 2=ARC, 3=BRAKING, 4=ARC_PREPARING, 5=STRAIGHT_PREPARING.\n"
+70^done
+(gdb) 
+~"Log sampling interval: 40 ms; controller update period: 10 ms.\n"
+71^done
+(gdb) 
+~"======================================\n"
+72^done
+(gdb) 
+73^error,msg="-interpreter-exec: Usage: -interpreter-exec interp command"
+(gdb) 
+&"No symbol \"motionControllerSequenceTestPassed\" in current context.\n"
+74^error,msg="No symbol \"motionControllerSequenceTestPassed\" in current context."
+(gdb) 
+&"No symbol \"motionControllerSequenceTestTimedOut\" in current context.\n"
+75^error,msg="No symbol \"motionControllerSequenceTestTimedOut\" in current context."
+(gdb) 
+&"No symbol \"motionControllerSequenceTestCommandRejected\" in current context.\n"
+76^error,msg="No symbol \"motionControllerSequenceTestCommandRejected\" in current context."
+(gdb) 
+&"No symbol \"motionControllerSequenceTestFailureCommandIndex\" in current context.\n"
+77^error,msg="No symbol \"motionControllerSequenceTestFailureCommandIndex\" in current context."
+(gdb) 
+78^error,msg="-interpreter-exec: Usage: -interpreter-exec interp command"
+(gdb) 
+&"No symbol \"motionControllerSequenceTestResultCount\" in current context.\n"
+79^error,msg="No symbol \"motionControllerSequenceTestResultCount\" in current context."
+(gdb) 
+&"No symbol \"motionControllerSequenceTestResults\" in current context.\n"
+80^error,msg="No symbol \"motionControllerSequenceTestResults\" in current context."
+(gdb) 
+81^error,msg="-interpreter-exec: Usage: -interpreter-exec interp command"
+(gdb) 
+&"No symbol \"motionControllerSequenceTestFinalYawDeg\" in current context.\n"
+82^error,msg="No symbol \"motionControllerSequenceTestFinalYawDeg\" in current context."
+(gdb) 
+&"No symbol \"motionControllerSequenceTestFinalIdealYawDeg\" in current context.\n"
+83^error,msg="No symbol \"motionControllerSequenceTestFinalIdealYawDeg\" in current context."
+(gdb) 
+&"No symbol \"motionControllerSequenceTestFinalTravelledDistanceMm\" in current context.\n"
+84^error,msg="No symbol \"motionControllerSequenceTestFinalTravelledDistanceMm\" in current context."
+(gdb) 
+85^error,msg="-interpreter-exec: Usage: -interpreter-exec interp command"
+(gdb) 
+&"No symbol \"motionControllerSequenceTestLogCount\" in current context.\n"
+86^error,msg="No symbol \"motionControllerSequenceTestLogCount\" in current context."
+(gdb) 
+&"No symbol \"motionControllerSequenceTestLog\" in current context.\n"
+87^error,msg="No symbol \"motionControllerSequenceTestLog\" in current context."
+(gdb) 
+88^error,msg="-interpreter-exec: Usage: -interpreter-exec interp command"
+(gdb) 

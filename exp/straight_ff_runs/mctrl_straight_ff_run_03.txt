@@ -1,0 +1,171 @@
+=cmd-param-changed,param="logging enabled",value="on"
+61^done
+(gdb) 
+~"=== MotionController Straight Feedforward Test ===\n"
+62^done
+(gdb) 
+~"Battery voltage (0 = unknown): 11.890 V\n"
+63^done
+(gdb) 
+~"States: 0=IDLE, 1=STRAIGHT, 2=ARC, 3=BRAKING, 4=ARC_PREPARING, 5=STRAIGHT_PREPARING.\n"
+64^done
+(gdb) 
+65^error,msg="-interpreter-exec: Usage: -interpreter-exec interp command"
+(gdb) 
+~"=== Loaded ELF ===\n"
+66^done
+(gdb) 
+~"Symbols from \"C:\\Users\\user\\Desktop\\MDP\\code\\MDP_Controller\\Debug\\MDP_Controller.elf\".\n"
+~"Remote target using gdb-specific protocol:\n"
+~"\t`C:\\Users\\user\\Desktop\\MDP\\code\\MDP_Controller\\Debug\\MDP_Controller.elf', file type elf32-littlearm.\n"
+~"\tEntry point: 0x800602c\n"
+~"\t0x08000000 - 0x08000188 is .isr_vector\n"
+~"\t0x08000190 - 0x08013484 is .text\n"
+~"\t0x08013488 - 0x08014214 is .rodata\n"
+~"\t0x08014214 - 0x0801421c is .ARM\n"
+~"\t0x0801421c - 0x0801421c is .preinit_array\n"
+~"\t0x0801421c - 0x08014220 is .init_array\n"
+~"\t0x08014220 - 0x08014224 is .fini_array\n"
+~"\t0x20000000 - 0x200001d8 is .data\n"
+~"\t0x200001d8 - 0x2001b370 is .bss\n"
+~"\t0x2001b370 - 0x2001b970 is ._user_heap_stack\n"
+~"\tWhile running this, GDB does not access memory from...\n"
+~"Local exec file:\n"
+~"\t`C:\\Users\\user\\Desktop\\MDP\\code\\MDP_Controller\\Debug\\MDP_Controller.elf', file type elf32-littlearm.\n"
+~"\tEntry point: 0x800602c\n"
+~"\t0x08000000 - 0x08000188 is .isr_vector\n"
+~"\t0x08000190 - 0x08013484 is .text\n"
+~"\t0x08013488 - 0x08014214 is .rodata\n"
+~"\t0x08014214 - 0x0801421c is .ARM\n"
+~"\t0x0801421c - 0x0801421c is .preinit_array\n"
+~"\t0x0801421c - 0x08014220 is .init_array\n"
+~"\t0x08014220 - 0x08014224 is .fini_array\n"
+~"\t0x20000000 - 0x200001d8 is .data\n"
+~"\t0x200001d8 - 0x2001b370 is .bss\n"
+~"\t0x2001b370 - 0x2001b970 is ._user_heap_stack\n"
+67^done
+(gdb) 
+68^error,msg="-interpreter-exec: Usage: -interpreter-exec interp command"
+(gdb) 
+~"=== Test settings and controller configuration ===\n"
+69^done
+(gdb) 
+~"$3 = 1000\n"
+70^done
+(gdb) 
+~"$4 = 2000\n"
+71^done
+(gdb) 
+~"$5 = -0\n"
+72^done
+(gdb) 
+~"$6 = {kinematics = 0x8013608 <kinematics>, arcConfig = 0x8013678 <arcMotionConfig>, straightSteeringSettlingTimeSec = 0.5, useLegacyStraightSteering = false, headingKp = 0, headingKi = 0, headingKd = 0, maxHeadingSteeringAngleRad = 0.0149999997, arcYawRateKp = 10, arcYawRateKi = 0, arcYawRateKd = 0, maxArcSteeringCommandCorrection = 5, arcHeadingKpPerSec = 1, maxPathCorrectionCurvaturePerMm = 0.00100000005, wheelSyncKpCpsPerMm = 10, maxWheelSyncCorrectionCps = 100, motionAccelerationMmps2 = 500, motionDecelerationMmps2 = 250, motionCompletionToleranceMm = 0.5, arcYawRateFilterTauSec = 0.100000001, stopStableSampleCount = 3 '\\003'}\n"
+73^done
+(gdb) 
+~"$7 = {rearEncoderCountsPerRev = 1560, rearWheelDiameterMm = 65.5, wheelbaseMm = 145, rearTrackWidthMm = 165}\n"
+74^done
+(gdb) 
+75^error,msg="-interpreter-exec: Usage: -interpreter-exec interp command"
+(gdb) 
+~"=== Completion status ===\n"
+76^done
+(gdb) 
+~"$8 = true\n"
+77^done
+(gdb) 
+~"$9 = false\n"
+78^done
+(gdb) 
+~"$10 = MOTIONCONTROLLER_STATUS_OK\n"
+79^done
+(gdb) 
+80^error,msg="-interpreter-exec: Usage: -interpreter-exec interp command"
+(gdb) 
+~"=== Active-motion exit ===\n"
+81^done
+(gdb) 
+~"$11 = true\n"
+82^done
+(gdb) 
+~"$12 = 5030\n"
+83^done
+(gdb) 
+~"$13 = 999.653503\n"
+84^done
+(gdb) 
+~"$14 = -0.122279458\n"
+85^done
+(gdb) 
+~"$15 = 0\n"
+86^done
+(gdb) 
+~"$16 = 1000.24707\n"
+87^done
+(gdb) 
+~"$17 = 999.191772\n"
+88^done
+(gdb) 
+89^error,msg="-interpreter-exec: Usage: -interpreter-exec interp command"
+(gdb) 
+~"=== Final stopped results ===\n"
+90^done
+(gdb) 
+~"$18 = 1000.77466\n"
+91^done
+(gdb) 
+~"$19 = -0.140309975\n"
+92^done
+(gdb) 
+~"$20 = 1001.698\n"
+93^done
+(gdb) 
+~"$21 = 1000.5108\n"
+94^done
+(gdb) 
+95^error,msg="-interpreter-exec: Usage: -interpreter-exec interp command"
+(gdb) 
+~"=== Timeout diagnostics ===\n"
+96^done
+(gdb) 
+~"$22 = MOTIONCONTROLLER_IDLE\n"
+97^done
+(gdb) 
+~"$23 = 0\n"
+98^done
+(gdb) 
+~"$24 = 0\n"
+99^done
+(gdb) 
+~"$25 = false\n"
+100^done
+(gdb) 
+~"$26 = 0\n"
+101^done
+(gdb) 
+~"$27 = 0\n"
+102^done
+(gdb) 
+~"$28 = 0\n"
+103^done
+(gdb) 
+~"$29 = 0\n"
+104^done
+(gdb) 
+~"$30 = false\n"
+105^done
+(gdb) 
+106^error,msg="-interpreter-exec: Usage: -interpreter-exec interp command"
+(gdb) 
+~"=== Full sample log ===\n"
+107^done
+(gdb) 
+~"$31 = 258\n"
+108^done
+(gdb) 
+~" >"
+~" >"
+~" >"
+~" >"
+~" >"
+109^error,msg="Quit"
+(gdb) 

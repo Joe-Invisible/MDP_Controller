@@ -2,7 +2,7 @@ set print elements unlimited
 set print repeats unlimited
 set pagination off
 
-set logging file mctrl_seq_test_run06.txt
+set logging file mctrl_seq_test_retuned_run01.txt
 set logging overwrite on
 set logging enabled on
 
