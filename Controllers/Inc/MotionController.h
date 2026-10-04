@@ -115,6 +115,14 @@ typedef struct
 	float yawRateDps;
 	float filteredYawRateDps;
 
+	/*
+	 * Rear-axle-centre speed used by yaw-rate feedforward. The filtered
+	 * value intentionally uses the yaw-rate feedback LPF time constant so
+	 * the two signals have comparable bandwidth.
+	 */
+	float measuredCentreSpeedMmps;
+	float filteredMeasuredCentreSpeedMmps;
+
 	float arcDesiredYawRad;
 	float arcHeadingErrorRad;
 
