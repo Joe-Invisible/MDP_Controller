@@ -74,6 +74,7 @@ static const MotionControllerConfig straightTestMotionConfig =
     .arcConfig = &arcMotionConfig,
 
     .straightSteeringSettlingTimeSec = 0.5f,
+    .straightSteeringFeedforwardCommand = 0.0f,
     .useLegacyStraightSteering = MOTION_TEST_USE_LEGACY_STEERING,
     .maxPathCorrectionCurvaturePerMm = 1.0f / 1000.0f,
 
@@ -81,6 +82,12 @@ static const MotionControllerConfig straightTestMotionConfig =
     .headingKi = HEADING_CTRL_KI,
     .headingKd = 0.0f,
     .maxHeadingSteeringAngleRad = HEADING_CTRL_LIMIT_RAD,
+
+    /* Preserve this harness's historical unified-straight tuning. */
+    .straightYawRateKp = 10.0f,
+    .straightYawRateKi = 0.0f,
+    .straightYawRateKd = 0.0f,
+    .straightHeadingKpPerSec = 1.0f,
 
     .arcYawRateKp = 10.0f,
     .arcYawRateKi = 0.0f,
@@ -142,7 +149,7 @@ volatile uint32_t lastLogTick = 0U;
 #if MOTION_TEST_USE_LEGACY_STEERING
 volatile const char* experimentInfo = "Legacy straight; heading Kp=0.8, maxCmdRate=60, Ksync=10, settle=0.5s";
 #else
-volatile const char* experimentInfo = "Unified straight; yaw-rate Kp=10, raw limit=5, heading Kp=1, curvature correction limit=0.001/mm, settle=0.5s";
+volatile const char* experimentInfo = "Unified straight; FF=0, yaw-rate Kp=10, raw limit=5, heading Kp=1, curvature correction limit=0.001/mm, settle=0.5s";
 #endif
 
 /* -------------------------------------------------------------------------- */
