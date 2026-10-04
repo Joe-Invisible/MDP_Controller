@@ -10,7 +10,9 @@
 
 #include "icm20948.h"
 
-#define ICM20948_CALIBRATION_SAMPLE_COUNT 100
+#define ICM20948_CALIBRATION_SAMPLE_COUNT          100
+#define ICM20948_CALIBRATION_GYRO_RANGE_LIMIT_DPS  1.0f
+#define ICM20948_CALIBRATION_GYRO_BIAS_LIMIT_DPS   8.0f
 
 #if ICM20948_CALIBRATION_SAMPLE_COUNT <= 0
 #error "Calibration sample count must be positive!"
@@ -76,13 +78,28 @@ static bool ICM20948_SelectBank(ICM20948* imu, uint8_t bank) {
 
 static bool ICM20948_EstimateGyroBias(ICM20948* imu) {
 	ICM20948RawMeasurement meas = { 0 };
+	ICM20948RawMeasurement minMeas = { 0 };
+	ICM20948RawMeasurement maxMeas = { 0 };
 	ICM20948i32Vector3 bias = { 0 };
-	imu->gyroBias.x = 0;
-	imu->gyroBias.y = 0;
-	imu->gyroBias.z = 0;
+
 	for (int i = 0; i < ICM20948_CALIBRATION_SAMPLE_COUNT; i++) {
 		if (!ICM20948_ReadRaw(imu, &meas))
-				return false;
+			return false;
+
+		if (i == 0) {
+			minMeas = meas;
+			maxMeas = meas;
+		}
+		else {
+			if (meas.gyroX < minMeas.gyroX) minMeas.gyroX = meas.gyroX;
+			if (meas.gyroY < minMeas.gyroY) minMeas.gyroY = meas.gyroY;
+			if (meas.gyroZ < minMeas.gyroZ) minMeas.gyroZ = meas.gyroZ;
+
+			if (meas.gyroX > maxMeas.gyroX) maxMeas.gyroX = meas.gyroX;
+			if (meas.gyroY > maxMeas.gyroY) maxMeas.gyroY = meas.gyroY;
+			if (meas.gyroZ > maxMeas.gyroZ) maxMeas.gyroZ = meas.gyroZ;
+		}
+
 		bias.x += meas.gyroX;
 		bias.y += meas.gyroY;
 		bias.z += meas.gyroZ;
@@ -91,9 +108,59 @@ static bool ICM20948_EstimateGyroBias(ICM20948* imu) {
 		HAL_Delay(GYRO_SMPLRT_DIV);
 	}
 
-	imu->gyroBias.x = (float)bias.x / (float)ICM20948_CALIBRATION_SAMPLE_COUNT / ICM20948_GYRO_LSB_PER_DPS;
-	imu->gyroBias.y = (float)bias.y / (float)ICM20948_CALIBRATION_SAMPLE_COUNT / ICM20948_GYRO_LSB_PER_DPS;
-	imu->gyroBias.z = (float)bias.z / (float)ICM20948_CALIBRATION_SAMPLE_COUNT / ICM20948_GYRO_LSB_PER_DPS;
+	const float rangeX =
+		(float)((int32_t)maxMeas.gyroX - (int32_t)minMeas.gyroX)
+		/ ICM20948_GYRO_LSB_PER_DPS;
+	const float rangeY =
+		(float)((int32_t)maxMeas.gyroY - (int32_t)minMeas.gyroY)
+		/ ICM20948_GYRO_LSB_PER_DPS;
+	const float rangeZ =
+		(float)((int32_t)maxMeas.gyroZ - (int32_t)minMeas.gyroZ)
+		/ ICM20948_GYRO_LSB_PER_DPS;
+
+	const float candidateBiasX =
+		(float)bias.x / (float)ICM20948_CALIBRATION_SAMPLE_COUNT
+		/ ICM20948_GYRO_LSB_PER_DPS;
+	const float candidateBiasY =
+		(float)bias.y / (float)ICM20948_CALIBRATION_SAMPLE_COUNT
+		/ ICM20948_GYRO_LSB_PER_DPS;
+	const float candidateBiasZ =
+		(float)bias.z / (float)ICM20948_CALIBRATION_SAMPLE_COUNT
+		/ ICM20948_GYRO_LSB_PER_DPS;
+
+	/*
+	 * A stationary calibration window should have little sample-to-sample
+	 * spread. Reject the entire window if any gyro axis varies too much.
+	 *
+	 * 1.0 dps is intentionally an initial test threshold. It should be tuned
+	 * from measurements taken on the actual robot before this is treated as
+	 * the final production value.
+	 */
+	if (rangeX > ICM20948_CALIBRATION_GYRO_RANGE_LIMIT_DPS ||
+		rangeY > ICM20948_CALIBRATION_GYRO_RANGE_LIMIT_DPS ||
+		rangeZ > ICM20948_CALIBRATION_GYRO_RANGE_LIMIT_DPS)
+		return false;
+
+	/*
+	 * Range alone cannot detect nearly constant-rate rotation. Reject an
+	 * implausibly large candidate bias as a second coarse safeguard.
+	 *
+	 * The ICM-20948 datasheet characterises initial zero-rate output at
+	 * about +/-5 dps at 25 C. The wider 8 dps test limit leaves margin for
+	 * this first implementation while still catching obvious rotation.
+	 */
+	if (candidateBiasX > ICM20948_CALIBRATION_GYRO_BIAS_LIMIT_DPS ||
+		candidateBiasX < -ICM20948_CALIBRATION_GYRO_BIAS_LIMIT_DPS ||
+		candidateBiasY > ICM20948_CALIBRATION_GYRO_BIAS_LIMIT_DPS ||
+		candidateBiasY < -ICM20948_CALIBRATION_GYRO_BIAS_LIMIT_DPS ||
+		candidateBiasZ > ICM20948_CALIBRATION_GYRO_BIAS_LIMIT_DPS ||
+		candidateBiasZ < -ICM20948_CALIBRATION_GYRO_BIAS_LIMIT_DPS)
+		return false;
+
+	/* Commit the bias only after the complete window has been validated. */
+	imu->gyroBias.x = candidateBiasX;
+	imu->gyroBias.y = candidateBiasY;
+	imu->gyroBias.z = candidateBiasZ;
 
 	return true;
 }

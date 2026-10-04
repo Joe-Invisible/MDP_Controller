@@ -26,23 +26,31 @@ void ICM20948TestRun()
     float m2 = 0.0f;
 
     OLED_Clear();
-    OLED_Printf(0, 0, "Keep IMU still");
+    OLED_Printf(0, 0, "IMU init guard");
+    OLED_Printf(0, 1, "Still: success");
+    OLED_Printf(0, 2, "Move: reject");
+    OLED_Printf(0, 3, "Starts in 1 s");
     OLED_Refresh_Gram();
 
-    /* Give the user time to leave the robot stationary. */
     HAL_Delay(1000U);
+
+    OLED_Clear();
+    OLED_Printf(0, 0, "Calibrating...");
+    OLED_Printf(0, 1, "Move until result");
+    OLED_Refresh_Gram();
 
     if (!ICM20948_Init(&imu, &hi2c2)) {
         OLED_Clear();
-        OLED_Printf(0, 0, "IMU Init Failed.");
+        OLED_Printf(0, 0, "Init rejected");
+        OLED_Printf(0, 1, "Expected if moved");
         OLED_Refresh_Gram();
         return;
     }
 
     OLED_Clear();
-    OLED_Printf(0, 0, "Testing gyro Z");
+    OLED_Printf(0, 0, "Init accepted");
     OLED_Printf(0, 1, "Bias: %.4f", imu.gyroBias.z);
-    OLED_Printf(0, 2, "Collecting...");
+    OLED_Printf(0, 2, "Hold still...");
     OLED_Refresh_Gram();
 
     /*
