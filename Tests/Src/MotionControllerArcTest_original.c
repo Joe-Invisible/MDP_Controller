@@ -37,7 +37,7 @@
 /* -------------------------------------------------------------------------- */
 
 #define ARC_TEST_DISTANCE_MM              (431.97f)
-#define ARC_TEST_RADIUS_MM                (-275.0f)
+#define ARC_TEST_RADIUS_MM                (275.0f)
 #define ARC_TEST_SPEED_CPS                (2000.0f)
 
 #define ARC_TEST_CONTROL_PERIOD_MS        (10U)
@@ -62,7 +62,7 @@
 #define ARC_TEST_SYNC_KP_CPS_PER_MM       (10.0f)
 #define ARC_TEST_SYNC_MAX_CORRECTION_CPS  (100.0f)
 
-#define ARC_TEST_FF_EXP	(0)
+#define ARC_TEST_FF_EXP	(1)
 
 /*
  * Heading PID is deliberately not used during ARC mode.

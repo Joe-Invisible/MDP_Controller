@@ -124,28 +124,42 @@
 
 
 static const MotionControllerSequenceTestCommand
-motionControllerSequenceTestCommands[] = {
-	SEQ_ARC(
-		275.0f * SEQ_TEST_PI / 2.0f,
-		275.0f,
-		2000.0f),
-};
 //motionControllerSequenceTestCommands[] = {
 //    SEQ_STRAIGHT(
 //        -412.0f,
 //        5000.0f),
 //    SEQ_ARC(
-//        275.0f * SEQ_TEST_PI / 2.0f,
+//        -275.0f * SEQ_TEST_PI / 2.0f,
 //        275.0f,
-//        2000.0f),
+//        4000.0f),
 //    SEQ_STRAIGHT(
 //        -137.5f,
 //        5000.0f),
 //    SEQ_ARC(
-//        275.0f * SEQ_TEST_PI,
+//        -275.0f * SEQ_TEST_PI,
 //        -275.0f,
-//        2000.0f),
+//        4000.0f),
 //};
+motionControllerSequenceTestCommands[] = {
+	SEQ_STRAIGHT(
+		-100.0f,
+		5000.0f),
+	SEQ_STRAIGHT(
+		-100.0f,
+		5000.0f),
+	SEQ_STRAIGHT(
+		-100.0f,
+		5000.0f),
+	SEQ_STRAIGHT(
+		-100.0f,
+		5000.0f),
+	SEQ_STRAIGHT(
+		-100.0f,
+		5000.0f),
+	SEQ_STRAIGHT(
+		-100.0f,
+		5000.0f),
+};
 //motionControllerSequenceTestCommands[] =
 //{
 //	// BL
@@ -1347,8 +1361,7 @@ void MotionControllerSequenceTestRun(void)
         state.completedTravelledDistanceMm;
 
 
-    Buzzer_BlockingBuzz(
-        500);
+//    Buzzer_BlockingBuzz(500);
 
 
     MotionControllerSequenceTest_ShowFinal();
