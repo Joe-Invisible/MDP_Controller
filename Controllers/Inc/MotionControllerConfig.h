@@ -49,8 +49,15 @@ typedef struct
     const RobotKinematics *kinematics;
     const MotionControllerArcConfig *arcConfig;
 
-    /* Hold time after commanding steering centre before straight motion. */
+    /* Hold time after commanding the straight feedforward before motion. */
     float straightSteeringSettlingTimeSec;
+
+    /*
+     * Unified straight-only raw steering feedforward command. This is an
+     * empirical bias-cancellation operating point, not the legacy model's
+     * zero-effective-angle centre crossing.
+     */
+    float straightSteeringFeedforwardCommand;
 
     /* Temporary A/B baseline: only straight motion uses the angle model. */
     bool useLegacyStraightSteering;
