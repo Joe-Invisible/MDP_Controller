@@ -4,8 +4,9 @@
  * Isolated zero-curvature feedforward calibration. Derived from the original
  * arc harness; that file is preserved for the pending raw +95 calibration.
  * Edit only this test's distance, unsigned speed and candidate raw command.
- * Both steering feedback stages are disabled. Rear-wheel reference curvature
- * stays zero; wheel-speed and synchronization feedback remain enabled.
+ * FF_EXP selects either open-loop feedforward or the current straight-path
+ * feedback tuning. Rear-wheel reference curvature stays zero; wheel-speed
+ * and synchronization feedback remain enabled.
  */
 
 #include "MotionControllerStraightFeedforwardTest.h"
@@ -26,7 +27,7 @@
 /* -------------------------------------------------------------------------- */
 
 #define STRAIGHT_FF_TEST_DISTANCE_MM              (-500.0f)
-// #define STRAIGHT_FF_TEST_RAW_COMMAND              (-9.525f)
+#define STRAIGHT_FF_TEST_RAW_COMMAND              (0.0f)
 #define STRAIGHT_FF_TEST_SPEED_CPS                (2000.0f)
 
 #define STRAIGHT_FF_TEST_CONTROL_PERIOD_MS        (10U)
@@ -52,7 +53,6 @@
 #define STRAIGHT_FF_TEST_SYNC_MAX_CORRECTION_CPS  (100.0f)
 
 #define FF_EXP	(0)
-/* Shared steering feedback is disabled for fixed-command calibration. */
 #define STRAIGHT_FF_TEST_HEADING_KP               (0.0f)
 #define STRAIGHT_FF_TEST_HEADING_KI               (0.0f)
 #define STRAIGHT_FF_TEST_HEADING_KD               (0.0f)
@@ -64,10 +64,10 @@
 #define STRAIGHT_FF_TEST_YAWRATE_LIMIT_UNIT       (5.0f)
 #define STRAIGHT_FF_TEST_HEADING_OUTER_KP_PER_SEC (0.0f)
 #elif FF_EXP == 0
-#define STRAIGHT_FF_TEST_YAWRATE_KP              (370.0f)
-#define STRAIGHT_FF_TEST_YAWRATE_KI              (450.0f)
-#define STRAIGHT_FF_TEST_YAWRATE_KD              (0.0f)
-#define STRAIGHT_FF_TEST_YAWRATE_LIMIT_UNIT      (30.0f)
+#define STRAIGHT_FF_TEST_YAWRATE_KP               (370.0f)
+#define STRAIGHT_FF_TEST_YAWRATE_KI               (450.0f)
+#define STRAIGHT_FF_TEST_YAWRATE_KD               (0.0f)
+#define STRAIGHT_FF_TEST_YAWRATE_LIMIT_UNIT       (30.0f)
 #define STRAIGHT_FF_TEST_HEADING_OUTER_KP_PER_SEC (2.0f)
 #endif
 
@@ -83,6 +83,7 @@ static const MotionControllerConfig straightFeedforwardTestMotionConfig =
     .arcConfig = &arcMotionConfig,
 
     .straightSteeringSettlingTimeSec = 0.5f,
+    .straightSteeringFeedforwardCommand = STRAIGHT_FF_TEST_RAW_COMMAND,
     .useLegacyStraightSteering = false,
     .maxPathCorrectionCurvaturePerMm = 1.0f / 1000.0f,
 
@@ -91,6 +92,12 @@ static const MotionControllerConfig straightFeedforwardTestMotionConfig =
     .headingKd = STRAIGHT_FF_TEST_HEADING_KD,
     .maxHeadingSteeringAngleRad = STRAIGHT_FF_TEST_HEADING_LIMIT_RAD,
 
+    .straightYawRateKp = STRAIGHT_FF_TEST_YAWRATE_KP,
+    .straightYawRateKi = STRAIGHT_FF_TEST_YAWRATE_KI,
+    .straightYawRateKd = STRAIGHT_FF_TEST_YAWRATE_KD,
+    .straightHeadingKpPerSec = STRAIGHT_FF_TEST_HEADING_OUTER_KP_PER_SEC,
+
+    /* Explicitly initialize the arc regime too, although this harness is straight-only. */
     .arcYawRateKp = STRAIGHT_FF_TEST_YAWRATE_KP,
     .arcYawRateKi = STRAIGHT_FF_TEST_YAWRATE_KI,
     .arcYawRateKd = STRAIGHT_FF_TEST_YAWRATE_KD,
@@ -140,7 +147,7 @@ volatile const float motionControllerStraightFeedforwardTestRequestedDistanceMm 
 volatile const float motionControllerStraightFeedforwardTestRequestedSpeedCps =
     STRAIGHT_FF_TEST_SPEED_CPS;
 volatile const float motionControllerStraightFeedforwardTestRawCommand =
-    -9.525;
+    STRAIGHT_FF_TEST_RAW_COMMAND;
 volatile MotionControllerStatus motionControllerStraightFeedforwardTestUpdateStatus =
     MOTIONCONTROLLER_STATUS_OK;
 
@@ -813,7 +820,8 @@ void MotionControllerStraightFeedforwardTestRun(void)
     }
 
     /*
-     * Start the zero-curvature motion.
+     * Start the zero-curvature motion. MoveStraight() applies the configured
+     * raw feedforward before the 500 ms preparation interval.
      */
     motionControllerStraightFeedforwardTestCommandAccepted =
         MotionController_MoveStraight(
@@ -829,16 +837,6 @@ void MotionControllerStraightFeedforwardTestRun(void)
         SW1_WhileNotPressed();
         return;
     }
-
-    /* MoveStraight centres and captures neutral. Override AFTER that call,
-     * before any update, so the 500 ms preparation holds our candidate. */
-//    fixture.motionController.arcSteeringFeedforwardCommand =
-//        rawCommand;
-//    fixture.motionController.arcSteeringTargetCommand =
-//        rawCommand;
-//    SteeringController_SetRawCommand(
-//        &fixture.steeringController,
-//        rawCommand);
 
     /*
      * Capture state before the first control update.
