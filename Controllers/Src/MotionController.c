@@ -613,6 +613,8 @@ static MotionControllerStatus MotionController_StartMotion(
 
     controller->yawRateDps = 0.0f;
     controller->filteredYawRateDps = 0.0f;
+    controller->measuredCentreSpeedMmps = 0.0f;
+    controller->filteredMeasuredCentreSpeedMmps = 0.0f;
 
     controller->arcDesiredYawRad = 0.0f;
     controller->arcHeadingErrorRad = 0.0f;
@@ -996,6 +998,8 @@ static MotionControllerStatus MotionController_UpdateSteeringPreparation(
     controller->yawDeg = 0.0f;
     controller->yawRateDps = 0.0f;
     controller->filteredYawRateDps = 0.0f;
+    controller->measuredCentreSpeedMmps = 0.0f;
+    controller->filteredMeasuredCentreSpeedMmps = 0.0f;
 
     MotionController_ResetOdometry(controller);
 
@@ -1098,11 +1102,27 @@ static void MotionController_UpdatePathSteering(
      * updates occur later in this control cycle, so the first active cycle
      * after steering preparation naturally sees the stationary measurement.
      */
-    float measuredCentreSpeedMmps =
+    controller->measuredCentreSpeedMmps =
         0.5f *
         (controller->leftWheel->measuredSpeedCps +
          controller->rightWheel->measuredSpeedCps) *
         mmPerCount;
+
+    /*
+     * Match the measured-speed feedforward bandwidth to the filtered yaw
+     * rate used by the inner loop. With tau = 0, alpha = 1 and the speed
+     * feedforward remains effectively unfiltered.
+     */
+    const float speedFilterTau =
+        controller->config->arcYawRateFilterTauSec;
+
+    float speedFilterAlpha =
+        dt / (speedFilterTau + dt);
+
+    controller->filteredMeasuredCentreSpeedMmps +=
+        speedFilterAlpha *
+        (controller->measuredCentreSpeedMmps -
+         controller->filteredMeasuredCentreSpeedMmps);
 
     /*
      * --------------------------------------------------------
@@ -1131,14 +1151,15 @@ static void MotionController_UpdatePathSteering(
     /*
      * Nominal geometric yaw-rate feedforward:
      *
-     *     omega_ff = kappa_path * v_measured
+     *     omega_ff = kappa_path * v_measured_filtered
      *
-     * Using measured centre speed prevents longitudinal acceleration lag
-     * from appearing to the inner loop as a steering/yaw-rate error.
+     * The measured centre speed is filtered with the same time constant as
+     * yaw-rate feedback so the inner-loop target and measurement have
+     * comparable bandwidth during acceleration and deceleration.
      */
     float feedforwardYawRateRadPerSec =
         controller->targetCurvaturePerMm *
-        measuredCentreSpeedMmps;
+        controller->filteredMeasuredCentreSpeedMmps;
 
     /*
      * Heading error directly biases the requested yaw rate:
