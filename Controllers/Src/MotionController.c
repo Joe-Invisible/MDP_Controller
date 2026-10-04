@@ -15,6 +15,18 @@
 #define MOTIONCONTROLLER_TIME_EPSILON_SEC                (1.0e-6f)
 
 /*
+ * EXPERIMENTAL yaw-priority arc termination.
+ *
+ * Straight motion never enters this path. Near the nominal end of an arc,
+ * measured yaw is allowed to complete the command before distance does, or
+ * to extend the arc slightly when distance finishes first.
+ */
+#define MOTIONCONTROLLER_ARC_TERMINAL_ENTRY_DISTANCE_MM  (30.0f)
+#define MOTIONCONTROLLER_ARC_TERMINAL_MAX_OVERRUN_MM     (30.0f)
+#define MOTIONCONTROLLER_ARC_TERMINAL_SPEED_CPS           (400.0f)
+#define MOTIONCONTROLLER_ARC_TERMINAL_YAW_TOLERANCE_DEG   (0.5f)
+
+/*
  * TEMPORARY hardware-regression exemption.
  *
  * The +/-275 mm regression deliberately retains the existing extreme
@@ -1297,8 +1309,94 @@ static MotionControllerStatus MotionController_UpdateActiveMotion(
             dt);
 
     /*
+     * Arc-only terminal completion experiment.
+     *
+     * The existing distance profile remains authoritative until the final
+     * 30 mm. In that terminal window, final camera heading has priority:
+     *
+     *  - if yaw reaches the requested heading (minus the braking allowance)
+     *    first, brake early;
+     *  - if nominal distance finishes first, continue slowly until yaw is
+     *    reached;
+     *  - never continue beyond the configured overrun safety envelope.
+     *
+     * STRAIGHT deliberately bypasses this entire block and therefore keeps
+     * the original distance-only MotionProfile behaviour bit-for-bit.
+     */
+    if (controller->mode == MOTIONCONTROLLER_ARC)
+    {
+        float targetYawRad =
+            controller->targetCurvaturePerMm *
+            (float)controller->motionDirection *
+            controller->targetDistanceMm;
+
+        float yawToleranceRad =
+            MOTIONCONTROLLER_ARC_TERMINAL_YAW_TOLERANCE_DEG *
+            (MOTION_PI / 180.0f);
+
+        float targetYawMagnitudeRad =
+            fabsf(targetYawRad);
+
+        float terminalEntryProgressMm =
+            controller->targetDistanceMm -
+            MOTIONCONTROLLER_ARC_TERMINAL_ENTRY_DISTANCE_MM;
+
+        if (terminalEntryProgressMm < 0.0f)
+        {
+            terminalEntryProgressMm = 0.0f;
+        }
+
+        if (targetYawMagnitudeRad > yawToleranceRad &&
+            progressMm >= terminalEntryProgressMm)
+        {
+            float measuredYawRad =
+                controller->yawDeg *
+                (MOTION_PI / 180.0f);
+
+            float yawDirection =
+                targetYawRad >= 0.0f ? 1.0f : -1.0f;
+
+            bool yawReached =
+                yawDirection * measuredYawRad >=
+                targetYawMagnitudeRad - yawToleranceRad;
+
+            float maximumProgressMm =
+                controller->targetDistanceMm +
+                MOTIONCONTROLLER_ARC_TERMINAL_MAX_OVERRUN_MM;
+
+            if (yawReached || progressMm >= maximumProgressMm)
+            {
+                MotionProfile_Stop(&controller->motionProfile);
+                targetSpeedMmps = 0.0f;
+            }
+            else
+            {
+                float terminalSpeedMmps =
+                    MOTIONCONTROLLER_ARC_TERMINAL_SPEED_CPS *
+                    MotionController_GetMmPerCount(controller);
+
+                /* MotionProfile normally becomes inactive at nominal
+                 * distance. Keep the active controller alive only inside
+                 * this bounded terminal-yaw extension. */
+                if (!MotionProfile_IsActive(&controller->motionProfile))
+                {
+                    controller->motionProfile.active = true;
+                }
+
+                if (targetSpeedMmps < terminalSpeedMmps)
+                {
+                    targetSpeedMmps = terminalSpeedMmps;
+                    controller->motionProfile.targetSpeedMmps =
+                        terminalSpeedMmps;
+                }
+            }
+        }
+    }
+
+    /*
      * MotionProfile becomes inactive once the requested
-     * distance has been reached.
+     * distance has been reached, or when the arc terminal-yaw condition
+     * above explicitly completes the motion.
      *
      * Enter the existing braking state so that zero velocity
      * is actively enforced until both wheels are stationary.
