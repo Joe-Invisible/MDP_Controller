@@ -61,13 +61,29 @@ typedef struct
     float headingKd;
     float maxHeadingSteeringAngleRad;
 
-    /* Shared straight/arc yaw-rate loop; historical arc names retained. */
+    /*
+     * Unified zero-curvature path tuning used by MoveStraight().
+     *
+     * The software control law is shared with ARC, but the steering plant
+     * around the centre operating point has experimentally required a
+     * different yaw-rate PI and outer heading gain.
+     */
+    float straightYawRateKp;
+    float straightYawRateKi;
+    float straightYawRateKd;
+    float straightHeadingKpPerSec;
+
+    /*
+     * Unified finite-curvature path tuning used by MoveArc().
+     * Historical arc-prefixed names are retained for existing diagnostics.
+     */
     float arcYawRateKp;
     float arcYawRateKi;
     float arcYawRateKd;
-    float maxArcSteeringCommandCorrection;
-
     float arcHeadingKpPerSec;
+
+    /* Shared raw-command feedback authority for both unified regimes. */
+    float maxArcSteeringCommandCorrection;
 
     /*
      * Shared outer-loop bound [1/mm]:
@@ -84,6 +100,7 @@ typedef struct
     float motionDecelerationMmps2;
     float motionCompletionToleranceMm;
 
+    /* Shared measured-speed / yaw-rate feedback filter time constant. */
     float arcYawRateFilterTauSec;
 
     /* Consecutive stationary updates required to complete braking. */
