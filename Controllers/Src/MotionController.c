@@ -428,11 +428,15 @@ MotionControllerStatus MotionController_Init(
     }
 
     if (!isfinite(config->straightSteeringSettlingTimeSec) ||
+        !isfinite(config->straightYawRateKp) ||
+        !isfinite(config->straightYawRateKi) ||
+        !isfinite(config->straightYawRateKd) ||
+        !isfinite(config->straightHeadingKpPerSec) ||
         !isfinite(config->arcYawRateKp) ||
         !isfinite(config->arcYawRateKi) ||
         !isfinite(config->arcYawRateKd) ||
-        !isfinite(config->maxArcSteeringCommandCorrection) ||
         !isfinite(config->arcHeadingKpPerSec) ||
+        !isfinite(config->maxArcSteeringCommandCorrection) ||
         !isfinite(config->maxPathCorrectionCurvaturePerMm) ||
         !isfinite(config->wheelSyncKpCpsPerMm) ||
         !isfinite(config->maxWheelSyncCorrectionCps) ||
@@ -500,6 +504,7 @@ MotionControllerStatus MotionController_Init(
     }
 
     if (config->straightSteeringSettlingTimeSec < 0.0f ||
+        config->straightHeadingKpPerSec < 0.0f ||
         config->arcHeadingKpPerSec < 0.0f ||
         config->maxPathCorrectionCurvaturePerMm < 0.0f ||
         config->motionCompletionToleranceMm <= 0.0f ||
@@ -546,6 +551,11 @@ MotionControllerStatus MotionController_Init(
         return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
     }
 
+    /*
+     * The shared path PID is initialised with the ARC operating-point gains.
+     * MoveStraight()/MoveArc() select and reset the appropriate gain set when
+     * a command is accepted.
+     */
     if (!PIDController_Init(
             &controller->arcYawRatePID,
             config->arcYawRateKp,
@@ -670,6 +680,38 @@ static MotionControllerStatus MotionController_StartMotion(
     return MOTIONCONTROLLER_STATUS_OK;
 }
 
+/*
+ * Select the experimentally validated operating-point gains while retaining
+ * one shared yaw-rate PID implementation and one shared path-control law.
+ * Resetting after the gain change prevents integral/derivative history from
+ * leaking between straight and finite-curvature commands.
+ */
+static void MotionController_SelectPathTuning(
+    MotionController *controller,
+    MotionControllerMode mode)
+{
+    if (mode == MOTIONCONTROLLER_STRAIGHT)
+    {
+        controller->arcYawRatePID.kp =
+            controller->config->straightYawRateKp;
+        controller->arcYawRatePID.ki =
+            controller->config->straightYawRateKi;
+        controller->arcYawRatePID.kd =
+            controller->config->straightYawRateKd;
+    }
+    else
+    {
+        controller->arcYawRatePID.kp =
+            controller->config->arcYawRateKp;
+        controller->arcYawRatePID.ki =
+            controller->config->arcYawRateKi;
+        controller->arcYawRatePID.kd =
+            controller->config->arcYawRateKd;
+    }
+
+    PIDController_Reset(&controller->arcYawRatePID);
+}
+
 MotionControllerStatus MotionController_MoveStraight(
     MotionController *controller,
     float distanceMm,
@@ -702,6 +744,10 @@ MotionControllerStatus MotionController_MoveStraight(
     {
         return status;
     }
+
+    MotionController_SelectPathTuning(
+        controller,
+        MOTIONCONTROLLER_STRAIGHT);
 
     /*
      * Centre is applied immediately, without software slew limiting.
@@ -798,6 +844,10 @@ MotionControllerStatus MotionController_MoveArc(
     {
         return status;
     }
+
+    MotionController_SelectPathTuning(
+        controller,
+        MOTIONCONTROLLER_ARC);
 
     controller->targetCurvaturePerMm =
         curvaturePerMm;
@@ -1205,12 +1255,17 @@ static void MotionController_UpdatePathSteering(
         controller->filteredMeasuredCentreSpeedMmps;
 
     /*
-     * Heading error directly biases the requested yaw rate:
-     *
-     *     omega_heading = K_heading * e_heading
+     * Heading error directly biases the requested yaw rate. Straight and arc
+     * share the same law but use independently validated operating-point
+     * gains.
      */
+    float headingKpPerSec =
+        controller->mode == MOTIONCONTROLLER_STRAIGHT
+            ? controller->config->straightHeadingKpPerSec
+            : controller->config->arcHeadingKpPerSec;
+
     float headingYawRateCorrectionRadPerSec =
-        controller->config->arcHeadingKpPerSec *
+        headingKpPerSec *
         headingErrorRad;
 
     /*
