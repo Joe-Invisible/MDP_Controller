@@ -94,6 +94,14 @@ const MotionControllerConfig motionControllerConfig =
     .straightSteeringSettlingTimeSec =
         STRAIGHT_STEERING_SETTLING_TIME_SEC,
 
+    /*
+     * Post-tuning straight feedforward refinement. The closed loop was
+     * repeatedly cancelling the previous centre bias, so unified straight
+     * motion now starts from raw zero and leaves only the residual error to
+     * the already-tuned feedback loops.
+     */
+    .straightSteeringFeedforwardCommand = 0.0f,
+
     .useLegacyStraightSteering = false,
 
     .headingKp = 1.2f,
