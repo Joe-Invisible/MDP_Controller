@@ -21,12 +21,19 @@
  * measured yaw is allowed to complete the command before distance does, or
  * to extend the arc slightly when distance finishes first.
  *
+ * Before the final yaw-sensitive window, an additional deceleration envelope
+ * guarantees that the profiled centre-speed request has fallen to the
+ * terminal-approach speed by the window entry. This preserves fast bulk
+ * motion while preventing the stopping predictor from firing immediately
+ * after a high-speed cruise.
+ *
  * The terminal braking decision predicts the yaw that will be accumulated
  * after braking begins from the freshest raw gyro rate. The 75 ms horizon is
  * the initial empirical estimate from the first two yaw-priority trials.
  */
 #define MOTIONCONTROLLER_ARC_TERMINAL_ENTRY_DISTANCE_MM      (30.0f)
 #define MOTIONCONTROLLER_ARC_TERMINAL_MAX_OVERRUN_MM         (30.0f)
+#define MOTIONCONTROLLER_ARC_TERMINAL_APPROACH_SPEED_CPS    (1500.0f)
 #define MOTIONCONTROLLER_ARC_TERMINAL_SPEED_CPS               (400.0f)
 #define MOTIONCONTROLLER_ARC_TERMINAL_MIN_TARGET_YAW_DEG       (0.5f)
 #define MOTIONCONTROLLER_ARC_TERMINAL_BRAKE_PREDICTION_SEC     (0.075f)
@@ -1330,8 +1337,10 @@ static MotionControllerStatus MotionController_UpdateActiveMotion(
     /*
      * Arc-only terminal completion experiment.
      *
-     * The existing distance profile remains authoritative until the final
-     * 30 mm. In that terminal window, final camera heading has priority:
+     * A deceleration envelope begins before the final 30 mm whenever needed
+     * so the profile reaches the 1500 CPS terminal-approach speed by the
+     * terminal-window entry. Inside that window, final camera heading has
+     * priority:
      *
      *  - predict stopping yaw from the freshest measured yaw and raw yaw rate;
      *  - if predicted stopping yaw reaches the requested heading, brake early;
@@ -1365,64 +1374,119 @@ static MotionControllerStatus MotionController_UpdateActiveMotion(
             terminalEntryProgressMm = 0.0f;
         }
 
-        if (targetYawMagnitudeRad > minimumTargetYawRad &&
-            progressMm >= terminalEntryProgressMm)
+        if (targetYawMagnitudeRad > minimumTargetYawRad)
         {
-            float yawDirection =
-                targetYawRad >= 0.0f ? 1.0f : -1.0f;
+            float mmPerCount =
+                MotionController_GetMmPerCount(controller);
 
-            float measuredYawRad =
-                controller->yawDeg *
-                (MOTION_PI / 180.0f);
+            float terminalApproachSpeedMmps =
+                MOTIONCONTROLLER_ARC_TERMINAL_APPROACH_SPEED_CPS *
+                mmPerCount;
 
-            float directedYawRateRadPerSec =
-                yawDirection *
-                controller->yawRateDps *
-                (MOTION_PI / 180.0f);
+            /*
+             * Additional braking envelope for the terminal approach:
+             *
+             *     v^2 <= v_approach^2 + 2 d (s_entry - s)
+             *
+             * This is the same kinematic relation used by MotionProfile for
+             * its ordinary stop envelope, except the boundary condition is
+             * 1500 CPS at terminal-window entry instead of zero speed at the
+             * nominal endpoint. Taking the minimum of the two envelopes
+             * preserves whichever one is more restrictive.
+             */
+            float terminalApproachSpeedLimitMmps =
+                terminalApproachSpeedMmps;
 
-            /* Do not predict motion away from the requested final heading. */
-            if (directedYawRateRadPerSec < 0.0f)
+            float distanceToTerminalEntryMm =
+                terminalEntryProgressMm - progressMm;
+
+            if (distanceToTerminalEntryMm > 0.0f)
             {
-                directedYawRateRadPerSec = 0.0f;
+                float decelerationMmps2 =
+                    controller->config->motionDecelerationMmps2;
+
+                terminalApproachSpeedLimitMmps =
+                    sqrtf(
+                        terminalApproachSpeedMmps *
+                        terminalApproachSpeedMmps +
+                        2.0f *
+                        decelerationMmps2 *
+                        distanceToTerminalEntryMm);
             }
 
-            float predictedStoppingYawMagnitudeRad =
-                yawDirection * measuredYawRad +
-                directedYawRateRadPerSec *
-                MOTIONCONTROLLER_ARC_TERMINAL_BRAKE_PREDICTION_SEC;
-
-            bool predictedYawReached =
-                predictedStoppingYawMagnitudeRad >=
-                targetYawMagnitudeRad;
-
-            float maximumProgressMm =
-                controller->targetDistanceMm +
-                MOTIONCONTROLLER_ARC_TERMINAL_MAX_OVERRUN_MM;
-
-            if (predictedYawReached || progressMm >= maximumProgressMm)
+            if (targetSpeedMmps > terminalApproachSpeedLimitMmps)
             {
-                MotionProfile_Stop(&controller->motionProfile);
-                targetSpeedMmps = 0.0f;
+                targetSpeedMmps =
+                    terminalApproachSpeedLimitMmps;
+
+                /*
+                 * Keep MotionProfile's internal reference consistent with
+                 * the externally imposed envelope. Otherwise its next
+                 * acceleration-limited update would start from the uncapped
+                 * speed and repeatedly fight the terminal approach.
+                 */
+                controller->motionProfile.targetSpeedMmps =
+                    terminalApproachSpeedLimitMmps;
             }
-            else
-            {
-                float terminalSpeedMmps =
-                    MOTIONCONTROLLER_ARC_TERMINAL_SPEED_CPS *
-                    MotionController_GetMmPerCount(controller);
 
-                /* MotionProfile normally becomes inactive at nominal
-                 * distance. Keep the active controller alive only inside
-                 * this bounded terminal-yaw extension. */
-                if (!MotionProfile_IsActive(&controller->motionProfile))
+            if (progressMm >= terminalEntryProgressMm)
+            {
+                float yawDirection =
+                    targetYawRad >= 0.0f ? 1.0f : -1.0f;
+
+                float measuredYawRad =
+                    controller->yawDeg *
+                    (MOTION_PI / 180.0f);
+
+                float directedYawRateRadPerSec =
+                    yawDirection *
+                    controller->yawRateDps *
+                    (MOTION_PI / 180.0f);
+
+                /* Do not predict motion away from the requested final heading. */
+                if (directedYawRateRadPerSec < 0.0f)
                 {
-                    controller->motionProfile.active = true;
+                    directedYawRateRadPerSec = 0.0f;
                 }
 
-                if (targetSpeedMmps < terminalSpeedMmps)
+                float predictedStoppingYawMagnitudeRad =
+                    yawDirection * measuredYawRad +
+                    directedYawRateRadPerSec *
+                    MOTIONCONTROLLER_ARC_TERMINAL_BRAKE_PREDICTION_SEC;
+
+                bool predictedYawReached =
+                    predictedStoppingYawMagnitudeRad >=
+                    targetYawMagnitudeRad;
+
+                float maximumProgressMm =
+                    controller->targetDistanceMm +
+                    MOTIONCONTROLLER_ARC_TERMINAL_MAX_OVERRUN_MM;
+
+                if (predictedYawReached || progressMm >= maximumProgressMm)
                 {
-                    targetSpeedMmps = terminalSpeedMmps;
-                    controller->motionProfile.targetSpeedMmps =
-                        terminalSpeedMmps;
+                    MotionProfile_Stop(&controller->motionProfile);
+                    targetSpeedMmps = 0.0f;
+                }
+                else
+                {
+                    float terminalSpeedMmps =
+                        MOTIONCONTROLLER_ARC_TERMINAL_SPEED_CPS *
+                        mmPerCount;
+
+                    /* MotionProfile normally becomes inactive at nominal
+                     * distance. Keep the active controller alive only inside
+                     * this bounded terminal-yaw extension. */
+                    if (!MotionProfile_IsActive(&controller->motionProfile))
+                    {
+                        controller->motionProfile.active = true;
+                    }
+
+                    if (targetSpeedMmps < terminalSpeedMmps)
+                    {
+                        targetSpeedMmps = terminalSpeedMmps;
+                        controller->motionProfile.targetSpeedMmps =
+                            terminalSpeedMmps;
+                    }
                 }
             }
         }
