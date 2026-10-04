@@ -20,11 +20,16 @@
  * Straight motion never enters this path. Near the nominal end of an arc,
  * measured yaw is allowed to complete the command before distance does, or
  * to extend the arc slightly when distance finishes first.
+ *
+ * The terminal braking decision predicts the yaw that will be accumulated
+ * after braking begins from the freshest raw gyro rate. The 75 ms horizon is
+ * the initial empirical estimate from the first two yaw-priority trials.
  */
-#define MOTIONCONTROLLER_ARC_TERMINAL_ENTRY_DISTANCE_MM  (30.0f)
-#define MOTIONCONTROLLER_ARC_TERMINAL_MAX_OVERRUN_MM     (30.0f)
-#define MOTIONCONTROLLER_ARC_TERMINAL_SPEED_CPS           (400.0f)
-#define MOTIONCONTROLLER_ARC_TERMINAL_YAW_TOLERANCE_DEG   (0.5f)
+#define MOTIONCONTROLLER_ARC_TERMINAL_ENTRY_DISTANCE_MM      (30.0f)
+#define MOTIONCONTROLLER_ARC_TERMINAL_MAX_OVERRUN_MM         (30.0f)
+#define MOTIONCONTROLLER_ARC_TERMINAL_SPEED_CPS               (400.0f)
+#define MOTIONCONTROLLER_ARC_TERMINAL_MIN_TARGET_YAW_DEG       (0.5f)
+#define MOTIONCONTROLLER_ARC_TERMINAL_BRAKE_PREDICTION_SEC     (0.075f)
 
 /*
  * TEMPORARY hardware-regression exemption.
@@ -1309,19 +1314,33 @@ static MotionControllerStatus MotionController_UpdateActiveMotion(
             dt);
 
     /*
+     * Arc termination is yaw-sensitive, so sample the IMU before making the
+     * terminal decision. Straight motion intentionally retains the historical
+     * ordering and updates yaw only after its distance-completion check.
+     */
+    if (controller->mode == MOTIONCONTROLLER_ARC)
+    {
+        if (!MotionController_UpdateYawEstimate(controller, dt))
+        {
+            MotionController_Stop(controller);
+            return MOTIONCONTROLLER_STATUS_IMU_ERROR;
+        }
+    }
+
+    /*
      * Arc-only terminal completion experiment.
      *
      * The existing distance profile remains authoritative until the final
      * 30 mm. In that terminal window, final camera heading has priority:
      *
-     *  - if yaw reaches the requested heading (minus the braking allowance)
-     *    first, brake early;
-     *  - if nominal distance finishes first, continue slowly until yaw is
-     *    reached;
+     *  - predict stopping yaw from the freshest measured yaw and raw yaw rate;
+     *  - if predicted stopping yaw reaches the requested heading, brake early;
+     *  - if nominal distance finishes first, continue slowly until the
+     *    predicted stopping yaw reaches the target;
      *  - never continue beyond the configured overrun safety envelope.
      *
      * STRAIGHT deliberately bypasses this entire block and therefore keeps
-     * the original distance-only MotionProfile behaviour bit-for-bit.
+     * the original distance-only MotionProfile behaviour.
      */
     if (controller->mode == MOTIONCONTROLLER_ARC)
     {
@@ -1330,8 +1349,8 @@ static MotionControllerStatus MotionController_UpdateActiveMotion(
             (float)controller->motionDirection *
             controller->targetDistanceMm;
 
-        float yawToleranceRad =
-            MOTIONCONTROLLER_ARC_TERMINAL_YAW_TOLERANCE_DEG *
+        float minimumTargetYawRad =
+            MOTIONCONTROLLER_ARC_TERMINAL_MIN_TARGET_YAW_DEG *
             (MOTION_PI / 180.0f);
 
         float targetYawMagnitudeRad =
@@ -1346,25 +1365,41 @@ static MotionControllerStatus MotionController_UpdateActiveMotion(
             terminalEntryProgressMm = 0.0f;
         }
 
-        if (targetYawMagnitudeRad > yawToleranceRad &&
+        if (targetYawMagnitudeRad > minimumTargetYawRad &&
             progressMm >= terminalEntryProgressMm)
         {
+            float yawDirection =
+                targetYawRad >= 0.0f ? 1.0f : -1.0f;
+
             float measuredYawRad =
                 controller->yawDeg *
                 (MOTION_PI / 180.0f);
 
-            float yawDirection =
-                targetYawRad >= 0.0f ? 1.0f : -1.0f;
+            float directedYawRateRadPerSec =
+                yawDirection *
+                controller->yawRateDps *
+                (MOTION_PI / 180.0f);
 
-            bool yawReached =
-                yawDirection * measuredYawRad >=
-                targetYawMagnitudeRad - yawToleranceRad;
+            /* Do not predict motion away from the requested final heading. */
+            if (directedYawRateRadPerSec < 0.0f)
+            {
+                directedYawRateRadPerSec = 0.0f;
+            }
+
+            float predictedStoppingYawMagnitudeRad =
+                yawDirection * measuredYawRad +
+                directedYawRateRadPerSec *
+                MOTIONCONTROLLER_ARC_TERMINAL_BRAKE_PREDICTION_SEC;
+
+            bool predictedYawReached =
+                predictedStoppingYawMagnitudeRad >=
+                targetYawMagnitudeRad;
 
             float maximumProgressMm =
                 controller->targetDistanceMm +
                 MOTIONCONTROLLER_ARC_TERMINAL_MAX_OVERRUN_MM;
 
-            if (yawReached || progressMm >= maximumProgressMm)
+            if (predictedYawReached || progressMm >= maximumProgressMm)
             {
                 MotionProfile_Stop(&controller->motionProfile);
                 targetSpeedMmps = 0.0f;
@@ -1420,7 +1455,13 @@ static MotionControllerStatus MotionController_UpdateActiveMotion(
         targetSpeedMmps /
         mmPerCount;
 
-    if (!MotionController_UpdateYawEstimate(controller, dt)) {
+    /*
+     * ARC already sampled the IMU before its terminal decision. Keep the
+     * original STRAIGHT ordering unchanged by sampling it here only.
+     */
+    if (controller->mode != MOTIONCONTROLLER_ARC &&
+        !MotionController_UpdateYawEstimate(controller, dt))
+    {
         /*
          * Heading feedback has failed.
          * Stop rather than continuing open-loop.
