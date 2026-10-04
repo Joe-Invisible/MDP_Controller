@@ -3,7 +3,7 @@ set print repeats unlimited
 set max-value-size unlimited
 set pagination off
 
-set logging file mctrl_seq_test_alt_term_run37.txt
+set logging file mctrl_seq_regr_run03.txt
 set logging overwrite on
 set logging enabled on
 
@@ -15,7 +15,8 @@ echo Controller states: 0=IDLE, 1=STRAIGHT, 2=ARC, 3=BRAKING, 4=ARC_PREPARING, 5
 echo Log sampling interval: 40 ms; controller update period: 10 ms.\n
 echo ======================================\n
 
-p "pid,Kh:270/150/0/0"
+p "straight 	pid,Kh:370/450/  0/2"
+p "arc		pid,Kh:270/150/  0/0"
 p motionControllerSequenceTestPassed
 p motionControllerSequenceTestTimedOut
 p motionControllerSequenceTestCommandRejected
