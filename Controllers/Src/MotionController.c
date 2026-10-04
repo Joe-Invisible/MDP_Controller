@@ -33,7 +33,7 @@
  */
 #define MOTIONCONTROLLER_ARC_TERMINAL_ENTRY_DISTANCE_MM      (30.0f)
 #define MOTIONCONTROLLER_ARC_TERMINAL_MAX_OVERRUN_MM         (30.0f)
-#define MOTIONCONTROLLER_ARC_TERMINAL_APPROACH_SPEED_CPS    (1500.0f)
+#define MOTIONCONTROLLER_ARC_TERMINAL_APPROACH_SPEED_CPS     (800.0f)
 #define MOTIONCONTROLLER_ARC_TERMINAL_SPEED_CPS               (400.0f)
 #define MOTIONCONTROLLER_ARC_TERMINAL_MIN_TARGET_YAW_DEG       (0.5f)
 #define MOTIONCONTROLLER_ARC_TERMINAL_BRAKE_PREDICTION_SEC     (0.075f)
@@ -1157,12 +1157,31 @@ static void MotionController_UpdatePathSteering(
      *
      *     psi_d = kappa_path * s
      *
-     * travelledDistanceMm is signed, so reverse motion is naturally
-     * handled here.
+     * During an ARC terminal extension, freeze s at the requested path
+     * length. This keeps a nonzero heading loop aimed at the commanded final
+     * orientation instead of moving the reference beyond it as the robot
+     * deliberately travels past nominal distance to complete yaw.
      */
+    float desiredPathDistanceMm =
+        controller->travelledDistanceMm;
+
+    if (controller->mode == MOTIONCONTROLLER_ARC)
+    {
+        float directedProgressMm =
+            (float)controller->motionDirection *
+            desiredPathDistanceMm;
+
+        if (directedProgressMm > controller->targetDistanceMm)
+        {
+            desiredPathDistanceMm =
+                (float)controller->motionDirection *
+                controller->targetDistanceMm;
+        }
+    }
+
     float desiredYawRad =
         controller->targetCurvaturePerMm *
-        controller->travelledDistanceMm;
+        desiredPathDistanceMm;
 
     float measuredYawRad =
         controller->yawDeg *
@@ -1338,7 +1357,7 @@ static MotionControllerStatus MotionController_UpdateActiveMotion(
      * Arc-only terminal completion experiment.
      *
      * A deceleration envelope begins before the final 30 mm whenever needed
-     * so the profile reaches the 1500 CPS terminal-approach speed by the
+     * so the profile reaches the terminal-approach speed by the
      * terminal-window entry. Inside that window, final camera heading has
      * priority:
      *
@@ -1390,9 +1409,10 @@ static MotionControllerStatus MotionController_UpdateActiveMotion(
              *
              * This is the same kinematic relation used by MotionProfile for
              * its ordinary stop envelope, except the boundary condition is
-             * 1500 CPS at terminal-window entry instead of zero speed at the
-             * nominal endpoint. Taking the minimum of the two envelopes
-             * preserves whichever one is more restrictive.
+             * the configured terminal-approach speed at terminal-window
+             * entry instead of zero speed at the nominal endpoint. Taking
+             * the minimum of the two envelopes preserves whichever one is
+             * more restrictive.
              */
             float terminalApproachSpeedLimitMmps =
                 terminalApproachSpeedMmps;
