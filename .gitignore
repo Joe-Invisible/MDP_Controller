@@ -69,3 +69,6 @@ Desktop.ini
 
 # Automatically exported experiment logs and generated GDB commands
 exp/logs/
+
+# Python host-test imports
+__pycache__/

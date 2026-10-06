@@ -21,6 +21,7 @@
 #include "RobotKinematicsTest.h"
 #include "MotionControllerArcTest.h"
 #include "MotionControllerSequenceTest.h"
+#include "MotionSequenceFusionTest.h"
 #include "MotionControllerStraightFeedforwardTest.h"
 #include "MotionControllerTest.h"
 #include "oled.h"
@@ -35,7 +36,9 @@ void InvokeTest() {
 	/* Select this separate harness for straight feedforward calibration:
 	 * MotionControllerStraightFeedforwardTestRun();
 	 * The original arc harness retains the pending raw +95 setup. */
-	MotionControllerSequenceTestRun();
+	/* Experimental branch: one fused straight/arc/straight run.
+     * Restore MotionControllerSequenceTestRun() for the original harness. */
+    MotionSequenceFusionTestRun();
 
 	while (1) {
 		// Test ended. Loop forever.

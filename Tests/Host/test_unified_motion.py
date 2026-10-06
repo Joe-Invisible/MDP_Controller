@@ -134,7 +134,8 @@ static void testStraightSignsAndGeometry(void)
                                                 2000.0f) == 0);
             float centre = SteeringController_GetCommand(&f.steering);
             near(f.motion.arcSteeringFeedforwardCommand, centre, 0.0f);
-            assert(f.steering.effectiveAngleModelValid);
+            assert(!f.steering.effectiveAngleModelValid);
+            near(centre, f.config.straightSteeringFeedforwardCommand, 0.0f);
             prepare(&f, MOTIONCONTROLLER_STRAIGHT_PREPARING,
                         MOTIONCONTROLLER_STRAIGHT);
             f.motion.yawDeg = yawSign * 2.0f;
@@ -175,10 +176,10 @@ static void testFixedStraightFeedforward(void)
     for (int direction = -1; direction <= 1; direction += 2) {
         Fixture f;
         setup(&f, false);
-        f.config.arcYawRateKp = 0.0f;
-        f.config.arcYawRateKi = 0.0f;
-        f.config.arcYawRateKd = 0.0f;
-        f.config.arcHeadingKpPerSec = 0.0f;
+        f.config.straightYawRateKp = 0.0f;
+        f.config.straightYawRateKi = 0.0f;
+        f.config.straightYawRateKd = 0.0f;
+        f.config.straightHeadingKpPerSec = 0.0f;
         assert(initMotion(&f) == MOTIONCONTROLLER_STATUS_OK);
         assert(MotionController_MoveStraight(&f.motion, direction * 1000.0f,
                                             2000.0f) == 0);
@@ -212,11 +213,18 @@ static void testArcAndReverse(void)
         for (int turn = -1; turn <= 1; turn += 2) {
             Fixture f;
             setup(&f, false);
+            /* Explicit nonzero outer gain for sign/curvature checks; production
+             * arc heading gain is currently zero. Supply measured wheel speed
+             * because yaw-rate FF now uses filtered measured centre speed. */
+            f.config.arcHeadingKpPerSec = 1.0f;
+            assert(initMotion(&f) == 0);
+            f.left.measuredSpeedCps = direction * 100.0f;
+            f.right.measuredSpeedCps = direction * 100.0f;
             assert(MotionController_MoveArc(&f.motion, direction * 500.0f,
                                             turn * 500.0f, 2000.0f) == 0);
             near(f.steering.command, turn == -1 ? 47.5f : -47.5f, 1e-5f);
             prepare(&f, MOTIONCONTROLLER_ARC_PREPARING, MOTIONCONTROLLER_ARC);
-            near(f.motion.arcCommandedCurvaturePerMm, turn / 500.0f, 1e-7f);
+            near(f.motion.targetCurvaturePerMm, turn / 500.0f, 1e-7f);
             assert(f.motion.arcFeedforwardYawRateRadPerSec * turn * direction > 0);
             float nominalKappa = f.motion.targetCurvaturePerMm;
             f.motion.yawDeg = 10.0f;

@@ -241,6 +241,39 @@ static bool MotionController_GetPathSteeringFeedforwardCommand(
         rawSteeringCommand);
 }
 
+MotionControllerStatus MotionController_GetProfileFeedforward(
+    const MotionController *controller, float curvaturePerMm, float *rawCommand)
+{
+    if (controller == NULL || rawCommand == NULL || !isfinite(curvaturePerMm))
+        return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
+    if (!controller->initialized) return MOTIONCONTROLLER_STATUS_NOT_INITIALIZED;
+    const MotionControllerConfig *c = controller->config;
+    if (curvaturePerMm == 0.0f) {
+        *rawCommand = c->straightSteeringFeedforwardCommand;
+        return MOTIONCONTROLLER_STATUS_OK;
+    }
+    const MotionControllerArcConfig *a = c->arcConfig;
+    const MotionControllerArcFeedforwardPoint *nearZero = curvaturePerMm < 0.0f
+        ? &a->negativePoints[a->negativePointCount - 1U] : &a->positivePoints[0];
+    if (fabsf(curvaturePerMm) < fabsf(nearZero->curvaturePerMm)) {
+        float t = curvaturePerMm / nearZero->curvaturePerMm;
+        *rawCommand = c->straightSteeringFeedforwardCommand +
+            t * (nearZero->rawSteeringCommand - c->straightSteeringFeedforwardCommand);
+        return MOTIONCONTROLLER_STATUS_OK;
+    }
+    return MotionController_GetPathSteeringFeedforwardCommand(controller,
+        curvaturePerMm, rawCommand) ? MOTIONCONTROLLER_STATUS_OK :
+        MOTIONCONTROLLER_STATUS_UNSUPPORTED_CURVATURE;
+}
+
+static bool MotionController_ValidPathSample(const MotionPathSample *s)
+{
+    return isfinite(s->curvaturePerMm) && isfinite(s->desiredYawRad) &&
+        isfinite(s->speedLimitCps) && s->speedLimitCps > 0.0f &&
+        isfinite(s->straightTuningWeight) && s->straightTuningWeight >= 0.0f &&
+        s->straightTuningWeight <= 1.0f;
+}
+
 static void MotionController_ResetOdometry(
     MotionController *controller)
 {
@@ -819,6 +852,43 @@ MotionControllerStatus MotionController_MoveArc(
     return MOTIONCONTROLLER_STATUS_OK;
 }
 
+MotionControllerStatus MotionController_FollowProfile(
+    MotionController *controller, const MotionPathProfile *profile)
+{
+    if (controller == NULL || profile == NULL || profile->evaluate == NULL ||
+        !isfinite(profile->steeringSettlingTimeSec) || profile->steeringSettlingTimeSec < 0.0f)
+        return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
+    bool required;
+    MotionControllerStatus status = MotionController_ValidateMotionRequest(
+        controller, profile->signedDistanceMm, profile->maxSpeedCps, &required);
+    if (status != MOTIONCONTROLLER_STATUS_OK || !required) return status;
+    if (controller->config->useLegacyStraightSteering)
+        return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
+    MotionPathSample initial, final;
+    float raw, finalRaw;
+    if (!profile->evaluate(profile->context, 0.0f, &initial) ||
+        !profile->evaluate(profile->context, fabsf(profile->signedDistanceMm), &final) ||
+        !MotionController_ValidPathSample(&initial) ||
+        !MotionController_ValidPathSample(&final))
+        return MOTIONCONTROLLER_STATUS_PROFILE_ERROR;
+    status = MotionController_GetProfileFeedforward(controller, initial.curvaturePerMm, &raw);
+    if (status != MOTIONCONTROLLER_STATUS_OK) return status;
+    status = MotionController_GetProfileFeedforward(controller, final.curvaturePerMm, &finalRaw);
+    if (status != MOTIONCONTROLLER_STATUS_OK) return status;
+    status = MotionController_StartMotion(controller, profile->signedDistanceMm, profile->maxSpeedCps);
+    if (status != MOTIONCONTROLLER_STATUS_OK) return status;
+    controller->pathProfile = *profile;
+    controller->pathSample = initial;
+    controller->targetCurvaturePerMm = initial.curvaturePerMm;
+    controller->arcSteeringFeedforwardCommand = raw;
+    controller->arcSteeringTargetCommand = raw;
+    controller->arcCommandedCurvaturePerMm = initial.curvaturePerMm;
+    SteeringController_SetRawCommand(controller->steering, raw);
+    controller->mode = profile->steeringSettlingTimeSec > 0.0f
+        ? MOTIONCONTROLLER_PROFILE_PREPARING : MOTIONCONTROLLER_PROFILE;
+    return MOTIONCONTROLLER_STATUS_OK;
+}
+
 MotionControllerStatus MotionController_Brake(
     MotionController *controller)
 {
@@ -1088,9 +1158,9 @@ static void MotionController_UpdatePathSteering(
         }
     }
 
-    float desiredYawRad =
-        controller->targetCurvaturePerMm *
-        desiredPathDistanceMm;
+    float desiredYawRad = controller->mode == MOTIONCONTROLLER_PROFILE
+        ? controller->pathSample.desiredYawRad
+        : controller->targetCurvaturePerMm * desiredPathDistanceMm;
 
     float measuredYawRad =
         controller->yawDeg *
@@ -1108,6 +1178,22 @@ static void MotionController_UpdatePathSteering(
         controller->mode == MOTIONCONTROLLER_STRAIGHT
             ? controller->config->straightHeadingKpPerSec
             : controller->config->arcHeadingKpPerSec;
+
+    if (controller->mode == MOTIONCONTROLLER_PROFILE) {
+        float w = controller->pathSample.straightTuningWeight;
+        const MotionControllerConfig *c = controller->config;
+        headingKpPerSec = c->arcHeadingKpPerSec + w *
+            (c->straightHeadingKpPerSec - c->arcHeadingKpPerSec);
+        float nextKi = c->arcYawRateKi + w * (c->straightYawRateKi - c->arcYawRateKi);
+        /* Retain the integral OUTPUT across gain scheduling. */
+        if (nextKi > 0.0f)
+            controller->arcYawRatePID.integral *= controller->arcYawRatePID.ki / nextKi;
+        else
+            controller->arcYawRatePID.integral = 0.0f;
+        controller->arcYawRatePID.kp = c->arcYawRateKp + w * (c->straightYawRateKp - c->arcYawRateKp);
+        controller->arcYawRatePID.ki = nextKi;
+        controller->arcYawRatePID.kd = c->arcYawRateKd + w * (c->straightYawRateKd - c->arcYawRateKd);
+    }
 
     float headingYawRateCorrectionRadPerSec =
         headingKpPerSec *
@@ -1187,6 +1273,47 @@ static void MotionController_UpdatePathSteering(
         controller->steering,
         targetCommand,
         dt);
+}
+
+static MotionControllerStatus MotionController_UpdateProfile(
+    MotionController *controller, float dt)
+{
+    MotionController_UpdateOdometry(controller);
+    if (!MotionController_UpdateYawEstimate(controller, dt)) {
+        MotionController_Stop(controller);
+        return MOTIONCONTROLLER_STATUS_IMU_ERROR;
+    }
+    float progress = fmaxf(0.0f, controller->motionDirection * controller->travelledDistanceMm);
+    MotionPathSample sample;
+    if (!controller->pathProfile.evaluate(controller->pathProfile.context, progress, &sample) ||
+        !MotionController_ValidPathSample(&sample)) {
+        MotionController_Stop(controller);
+        return MOTIONCONTROLLER_STATUS_PROFILE_ERROR;
+    }
+    float raw;
+    MotionControllerStatus status = MotionController_GetProfileFeedforward(
+        controller, sample.curvaturePerMm, &raw);
+    if (status != MOTIONCONTROLLER_STATUS_OK) {
+        MotionController_Stop(controller);
+        return status;
+    }
+    float mmPerCount = MotionController_GetMmPerCount(controller);
+    controller->pathSample = sample;
+    controller->targetCurvaturePerMm = sample.curvaturePerMm;
+    controller->arcSteeringFeedforwardCommand = raw;
+    controller->motionProfile.maxSpeedMmps =
+        fminf(controller->maxSpeedCps, sample.speedLimitCps) * mmPerCount;
+    float speed = MotionProfile_Update(&controller->motionProfile, progress, dt);
+    if (!MotionProfile_IsActive(&controller->motionProfile)) {
+        MotionController_BeginBraking(controller);
+        return MOTIONCONTROLLER_STATUS_OK;
+    }
+    controller->targetSpeedCps = controller->motionDirection * speed / mmPerCount;
+    MotionController_UpdatePathSteering(controller, dt, mmPerCount);
+    MotionController_UpdateWheelSynchronisation(controller);
+    WheelSpeedController_Update(controller->leftWheel, dt);
+    WheelSpeedController_Update(controller->rightWheel, dt);
+    return MOTIONCONTROLLER_STATUS_OK;
 }
 
 static MotionControllerStatus MotionController_UpdateActiveMotion(
@@ -1436,6 +1563,19 @@ MotionControllerStatus MotionController_Update(
                 controller,
                 dt);
         }
+
+        case MOTIONCONTROLLER_PROFILE_PREPARING:
+        {
+            MotionControllerStatus status = MotionController_UpdateSteeringPreparation(
+                controller, dt, controller->pathProfile.steeringSettlingTimeSec,
+                MOTIONCONTROLLER_PROFILE);
+            if (status != MOTIONCONTROLLER_STATUS_OK ||
+                controller->mode == MOTIONCONTROLLER_PROFILE_PREPARING)
+                return status;
+            return MotionController_UpdateProfile(controller, dt);
+        }
+        case MOTIONCONTROLLER_PROFILE:
+            return MotionController_UpdateProfile(controller, dt);
 
         case MOTIONCONTROLLER_STRAIGHT:
         case MOTIONCONTROLLER_ARC:

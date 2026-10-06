@@ -6,6 +6,19 @@ The robot uses two independently driven rear DC motors with Hall encoders for pr
 
 > **Status:** Active development. The low-level hardware drivers, rear-wheel speed control, steering control, motion profiling, encoder odometry, dynamic braking, and unified straight/arc motion controller are implemented and have been exercised on hardware. This branch is focused on motion-controller tuning and regression testing before reintegration with the production UART/RPi application layer.
 
+## Experimental Motion Fusion
+
+This branch adds `MotionSequence` above the unified controller and
+`MotionController_FollowProfile()` for continuous straight/arc batches. Internal
+curvature ramps preserve nominal total distance and heading area; reversals and
+explicit stop waypoints remain stopped boundaries. Near-zero feedforward
+interpolation and physical transition tracking are experimental.
+
+`TestMain.c` selects the new fusion harness. See
+[the fusion experiment guide](Tests/README_fused_motion.md) for API usage,
+software-only tests, endpoint policy, logging and the stopped comparison.
+Hardware validation and a full CubeIDE target build are pending.
+
 ## Robot Geometry
 
 The current controller configuration uses:

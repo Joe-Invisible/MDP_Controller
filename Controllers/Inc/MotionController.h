@@ -18,6 +18,7 @@
 #include "WheelSpeedController.h"
 #include "SteeringController.h"
 #include "MotionProfile.h"
+#include "MotionPathProfile.h"
 
 #include "MotionControllerConfig.h"
 
@@ -54,6 +55,9 @@ typedef enum
 	 * the front axle is settling mechanically before motion.
 	 */
 	MOTIONCONTROLLER_STRAIGHT_PREPARING,
+    /* Continuous varying-reference run, with one initial preparation. */
+    MOTIONCONTROLLER_PROFILE_PREPARING,
+    MOTIONCONTROLLER_PROFILE,
 } MotionControllerMode;
 
 /**
@@ -82,6 +86,10 @@ typedef struct
 {
 	/* True only after MotionController_Init() completes successfully. */
 	bool initialized;
+
+    /* Profile is copied; callback context must outlive execution. */
+    MotionPathProfile pathProfile;
+    MotionPathSample pathSample;
 
 	/*
 	 * Controlled hardware / lower-level controllers
@@ -296,6 +304,23 @@ MotionControllerStatus MotionController_MoveArc(
     float distanceMm,
     float radiusMm,
     float speedCps);
+
+/**
+ * Experimental continuous, rest-to-rest profile. Callback references are
+ * evaluated AFTER current encoder odometry is sampled. One preparation at
+ * run start; distance completion (no standalone yaw-priority arc extension).
+ * Legacy straight steering is rejected. No PI/filter/odometry reset at
+ * virtual junctions. Callback must be pure, bounded and nonblocking.
+ * Caller must preflight its entire profile; invalid runtime samples stop it.
+ */
+MotionControllerStatus MotionController_FollowProfile(
+    MotionController *controller, const MotionPathProfile *profile);
+
+/* Profile-only FF lookup: explicitly bridges raw straight FF to the nearest
+ * calibrated point on each side of zero. Standalone arc lookup is unchanged.
+ * This centre-region interpolation is an unvalidated experimental model. */
+MotionControllerStatus MotionController_GetProfileFeedforward(
+    const MotionController *controller, float curvaturePerMm, float *rawCommand);
 
 /**
  * Full brake. Unfinished motion will be aborted.

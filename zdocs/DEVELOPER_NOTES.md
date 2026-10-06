@@ -372,3 +372,25 @@ for each physical experiment. Export commands were checked with host GDB and
 PowerShell, and runner orchestration with mock build/debug tools. CubeIDE,
 Windows PowerShell 5.1, and ST-LINK hardware integration still require local
 verification.
+
+
+## Experimental fused motion sequence (6 Oct 2026)
+
+`experiment/fused-motion-sequence` inherits unified-control commit `69a661e`.
+`MotionSequence` generates bounded same-direction profiles above
+`MotionController_FollowProfile`, retaining controller state through virtual
+junctions. Symmetric curvature ramps consume neighbouring distances and
+preserve nominal heading area. Reversals and explicit stops split continuous
+runs; profile endpoints use distance completion and existing braking.
+
+The profile-only near-centre raw feedforward bridge is an experimental model,
+and straight/arc gains are scheduled through blends while preserving integral
+output. Standalone commands retain their existing behaviour. Defaults are a
+200 mm maximum blend and 500 CPS changing-curvature junction ceiling, further
+limited by the configured raw slew rate. Equal curvature has no extra slowdown.
+
+The selected `MotionSequenceFusionTest` logs a straight/arc/straight experiment;
+`FUSION_STOP_EACH_SEGMENT` enables the stopped profile comparison. Host tests
+cover geometry, state continuity, speed lookahead, faults and the harness.
+Full target build and hardware validation remain local. Details and GDB export:
+[Tests/README_fused_motion.md](../Tests/README_fused_motion.md).
