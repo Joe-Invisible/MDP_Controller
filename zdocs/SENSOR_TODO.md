@@ -38,7 +38,7 @@ This section and the final protocol checklist supersede historical entries below
 
 ## Explicit reset addition — 1 October, flashed and stationary verified
 
-- [x] Inspect Team 37's G -> NVIC_SystemReset path and current controller/session.
+- [x] Inspect the G -> NVIC_SystemReset path and current controller/session.
 - [x] Implement standalone idle-only G and INIT fault-loop recovery in our
   application layer. Preserve controller/driver tuning and reject G in batches.
 - [x] Pi helper stops first when needed, saves available progress before G,

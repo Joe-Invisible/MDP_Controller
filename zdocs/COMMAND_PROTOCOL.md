@@ -74,15 +74,15 @@ remain available. Fix the hardware issue before retrying initialization.
 
 ## Explicit reboot (`G`)
 
-Standalone, unnumbered `G` uses the same letter as Team 37's Checklist reset.
-It is not a movement and cannot appear inside a batch. MotionTask accepts it
-only when neither the session nor the controller is busy/stopping; otherwise
-it replies `NAK - BUSY`. Pi must first send S and confirm STOPPED when necessary.
-The initialization-failure loop also accepts G without calling uninitialized
-controller objects. G disables rear PWM outputs, sends `RESETTING`, and invokes
-CMSIS `NVIC_SystemReset`. Ordinary startup then centres the steering, initializes
-sensors/controllers and emits READY (or a new INIT fault). No route resumes.
-No new task, periodic UART traffic or motor calibration is introduced.
+Standalone, unnumbered `G` reboots the STM. It is not a movement and cannot
+appear inside a batch. MotionTask accepts it only when neither the session nor
+the controller is busy/stopping; otherwise it replies `NAK - BUSY`. Pi must
+first send S and confirm STOPPED when necessary. The initialization-failure
+loop also accepts G without calling uninitialized controller objects. G
+disables rear PWM outputs, sends `RESETTING`, and invokes CMSIS
+`NVIC_SystemReset`. Ordinary startup then centres the steering, initializes
+sensors/controllers and emits READY (or a new INIT fault). No route resumes. No
+new task, periodic UART traffic or motor calibration is introduced.
 
 A real CPU HardFault or stuck UART task may never process G. This command does
 not install a hardware watchdog or a Pi-to-NRST connection. Use hardware reset
