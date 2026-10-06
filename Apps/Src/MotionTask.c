@@ -185,11 +185,10 @@ static char diagnosticReply[MOTION_DIAGNOSTICS_REPLY_SIZE];
 static void MotionTask_Capture(const char *event) {
     if (session.next >= session.count) return;
     const Command *cmd = &session.commands[session.next];
-    static const char letters[] = "FBLRSU";
     static const char *const modes[] = { "IDLE", "STRAIGHT", "ARC", "BRAKING", "PREPARE", "STRAIGHT_PREPARE" };
     diagnostics = (MotionDiagnostics){
         .valid = true, .numbered = session.hasSeq, .seq = session.seq,
-        .step = (unsigned)session.next + 1U, .command = letters[cmd->type],
+        .step = (unsigned)session.next + 1U, .command = CommandParser_CommandName(cmd->type),
         .parameter = cmd->param, .event = event,
         .mode = (unsigned)motionController.mode < sizeof(modes)/sizeof(modes[0])
             ? modes[motionController.mode] : "UNKNOWN",
@@ -319,8 +318,7 @@ static const char *MotionTask_Start(const Command *cmd) {
                              motion.speedCps * mmPerCount,
                              motion.radiusMm != 0.0f ? WATCH_PREPARE : WATCH_MOVE))
         return "REJECTED";
-    static const char letters[] = "FBLRSU";
-    OLED_Post(&cmdStatus, "%c %.0f", letters[cmd->type], cmd->param);
+    OLED_Post(&cmdStatus, "%s %.0f", CommandParser_CommandName(cmd->type), cmd->param);
     if (motion.radiusMm != 0.0f)
         return MotionController_MoveArc(&motionController, motion.distanceMm,
                                         motion.radiusMm, motion.speedCps)

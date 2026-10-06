@@ -15,7 +15,7 @@ int main(void) {
     MotionDiagnostics_Format(&d, out, sizeof(out));
     assert(!strcmp(out, "D NONE\n"));
     d = (MotionDiagnostics){ .valid = true, .numbered = true, .seq = 31,
-        .step = 1, .command = 'F', .parameter = 18.8f,
+        .step = 1, .command = "F", .parameter = 18.8f,
         .event = "NO_PROGRESS", .mode = "STRAIGHT", .targetMm = 18.8f,
         .travelledMm = 0, .steeringCommand = 0.123f, .yawDeg = -1.25f };
     MotionDiagnostics copy = d;
@@ -24,6 +24,11 @@ int main(void) {
     assert(strstr(out, "target=18.8 travel=0"));
     assert(strstr(out, "steer=0.123 yaw=-1.25\n"));
     assert(!memcmp(&d, &copy, sizeof(d)));
+    MotionDiagnostics reverse = d;
+    reverse.command = "BR";
+    reverse.parameter = 90.0f;
+    MotionDiagnostics_Format(&reverse, out, sizeof(out));
+    assert(strstr(out, "D 31 step=1 BR90 NO_PROGRESS"));
     d.numbered = false;
     d.targetMm = FLT_MAX;
     d.travelledMm = -FLT_MAX;

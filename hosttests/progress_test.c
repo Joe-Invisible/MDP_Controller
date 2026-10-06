@@ -49,6 +49,13 @@ int main(void)
     CommandProgress_Sample(&progress,NAN,0,COMMANDPROGRESS_IDLE);
     CommandProgress_Format(&session,&progress,out,sizeof(out));
     assert(strstr(out," - - IDLE")!=NULL); /* Invalid odometry is never fabricated as zero. */
+    CommandSession reverse;CommandProgress reverseProgress={0};
+    CommandSession_Init(&reverse);
+    CommandSession_Receive(&reverse,"1:BR90",reply);
+    CommandProgress_Attempt(&reverseProgress,1,CommandSession_Current(&reverse));
+    CommandProgress_Sample(&reverseProgress,-200,-41.5f,COMMANDPROGRESS_ACTIVE);
+    CommandProgress_Format(&reverse,&reverseProgress,out,sizeof(out));
+    assert(strcmp(out,"P 1 BUSY 0 1 1 BR 90 -200 -41.5 ACTIVE\n")==0);
     progress.command.param=FLT_MAX;
     CommandProgress_Sample(&progress,FLT_MAX,-FLT_MAX,COMMANDPROGRESS_IDLE);
     CommandProgress_Format(&session,&progress,out,sizeof(out));

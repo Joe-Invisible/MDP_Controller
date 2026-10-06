@@ -25,19 +25,18 @@ void CommandProgress_Format(const CommandSession *session,
 {
     static const char *const states[] = {"READY","BUSY","DONE","FAULT","STOPPING","STOPPED"};
     static const char *const phases[] = {"NOT_STARTED","ACTIVE","BRAKING","IDLE"};
-    static const char letters[] = "FBLRSU";
     char id[4]="-", parameter[24]="-", travel[24]="-", yaw[24]="-";
-    char command='-';
+    const char *command="-";
     if (session->hasSeq) (void)snprintf(id,sizeof(id),"%u",(unsigned)session->seq);
-    if (progress->step && (unsigned)progress->command.type < sizeof(letters)-1U) {
-        command=letters[progress->command.type];
+    if (progress->step) {
+        command=CommandParser_CommandName(progress->command.type);
         (void)snprintf(parameter,sizeof(parameter),"%.7g",(double)progress->command.param);
     }
     if (progress->measured) {
         (void)snprintf(travel,sizeof(travel),"%.7g",(double)progress->travelMm);
         (void)snprintf(yaw,sizeof(yaw),"%.6g",(double)progress->yawDeg);
     }
-    int written=snprintf(reply,size,"P %s %s %u %u %u %c %s %s %s %s\n",
+    int written=snprintf(reply,size,"P %s %s %u %u %u %s %s %s %s %s\n",
         id, (unsigned)session->state < sizeof(states)/sizeof(states[0])
             ? states[session->state] : "UNKNOWN",
         (unsigned)session->next,(unsigned)session->count,progress->step,command,

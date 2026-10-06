@@ -14,7 +14,8 @@
  * Frame grammar (terminator '\n' already stripped by the caller):
  *
  *   frame    :=  [seq ':'] command (';' command)*
- *   command  :=  'F' number | 'B' number | 'L' number | 'R' number | 'U' number | 'S'
+ *   command  :=  'F' number | 'B' number | 'L' number | 'R' number
+ *             |  'BL' number | 'BR' number | 'U' number | 'S'
  *   number   :=  positive decimal, fraction allowed (e.g. 100, 90.5)
  *   seq      :=  0..255, wrapping
  *
@@ -33,6 +34,8 @@ typedef enum {
 	COMMAND_RIGHT,		/* R<deg> */
 	COMMAND_STOP,		/* S      */
 	COMMAND_ULTRASONIC, /* U<remaining sensor gap mm> */
+	COMMAND_BACK_LEFT,	/* BL<deg>: reverse arc, steering left */
+	COMMAND_BACK_RIGHT,	/* BR<deg>: reverse arc, steering right */
 } CommandType;
 
 typedef struct {
@@ -80,5 +83,8 @@ CommandParserStatus CommandParser_ParseFrame(
  * Short human-readable name for a status, for diagnostics.
  */
 const char *CommandParser_StatusName(CommandParserStatus status);
+
+/* Wire token for a command ("F", "BL", ...); "?" for an unknown type. */
+const char *CommandParser_CommandName(CommandType type);
 
 #endif /* INC_COMMANDPARSER_H_ */

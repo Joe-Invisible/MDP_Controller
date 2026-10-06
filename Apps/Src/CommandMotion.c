@@ -29,13 +29,21 @@ bool CommandMotion_Resolve(const Command *command, CommandMotion *motion) {
         break;
     case COMMAND_LEFT:
     case COMMAND_RIGHT:
+    case COMMAND_BACK_LEFT:
+    case COMMAND_BACK_RIGHT:
         if (command->param > COMMANDMOTION_MAX_TURN_DEG)
             return false;
-        /* Forward arc: s = |R| * angle in radians. */
+        /* Arc length s = |R| * angle in radians. */
         result.distanceMm = COMMANDMOTION_TURN_RADIUS_MM *
                             (command->param * (3.14159265358979323846f / 180.0f));
-        result.radiusMm = command->type == COMMAND_LEFT
+        /* The letter names the steering side, so BL steers like L but reverses:
+         * the heading then turns clockwise. */
+        result.radiusMm = (command->type == COMMAND_LEFT ||
+                           command->type == COMMAND_BACK_LEFT)
             ? COMMANDMOTION_TURN_RADIUS_MM : -COMMANDMOTION_TURN_RADIUS_MM;
+        if (command->type == COMMAND_BACK_LEFT ||
+            command->type == COMMAND_BACK_RIGHT)
+            result.distanceMm = -result.distanceMm;
         result.speedCps = COMMANDMOTION_TURN_SPEED_CPS;
         break;
     default:

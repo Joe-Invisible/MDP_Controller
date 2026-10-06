@@ -18,12 +18,23 @@ int main(void) {
     cmd = (Command){ COMMAND_LEFT, 90.0f };
     assert(CommandMotion_Resolve(&cmd, &motion));
     assert(fabsf(motion.distanceMm - 431.9690f) < 0.001f);
-    assert(motion.radiusMm == 275.0f && motion.speedCps == 2000.0f);
+    assert(motion.radiusMm == 275.0f && motion.speedCps == 4000.0f);
     cmd.type = COMMAND_RIGHT;
     assert(CommandMotion_Resolve(&cmd, &motion));
     assert(fabsf(motion.distanceMm - 431.9690f) < 0.001f);
-    assert(motion.radiusMm == -275.0f && motion.speedCps == 2000.0f);
-    cmd.param = 360.0f;
+    assert(motion.radiusMm == -275.0f && motion.speedCps == 4000.0f);
+    /* Reverse arcs keep the steering side's radius and drive backwards. */
+    cmd = (Command){ COMMAND_BACK_LEFT, 90.0f };
+    assert(CommandMotion_Resolve(&cmd, &motion));
+    assert(fabsf(motion.distanceMm + 431.9690f) < 0.001f);
+    assert(motion.radiusMm == 275.0f && motion.speedCps == 4000.0f);
+    cmd.type = COMMAND_BACK_RIGHT;
+    assert(CommandMotion_Resolve(&cmd, &motion));
+    assert(fabsf(motion.distanceMm + 431.9690f) < 0.001f);
+    assert(motion.radiusMm == -275.0f);
+    cmd.param = 360.1f;
+    assert(!CommandMotion_Resolve(&cmd, &motion));
+    cmd = (Command){ COMMAND_RIGHT, 360.0f };
     assert(CommandMotion_Resolve(&cmd, &motion));
     assert(fabsf(motion.distanceMm - 1727.8760f) < 0.001f);
     cmd.param = 0.5f;

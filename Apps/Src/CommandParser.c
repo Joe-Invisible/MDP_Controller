@@ -16,7 +16,15 @@ static CommandParserStatus ParseOneCommand(const char **cursor, Command *out) {
 
 	switch (*p) {
 	case 'F': type = COMMAND_FORWARD;  break;
-	case 'B': type = COMMAND_BACKWARD; break;
+	case 'B':
+		/* B is otherwise always followed by a digit, so BL/BR cannot clash. */
+		if (p[1] == 'L' || p[1] == 'R') {
+			type = p[1] == 'L' ? COMMAND_BACK_LEFT : COMMAND_BACK_RIGHT;
+			p++;
+		} else {
+			type = COMMAND_BACKWARD;
+		}
+		break;
 	case 'L': type = COMMAND_LEFT;     break;
 	case 'R': type = COMMAND_RIGHT;    break;
 	case 'U': type = COMMAND_ULTRASONIC; break;
@@ -131,5 +139,19 @@ const char *CommandParser_StatusName(CommandParserStatus status) {
 	case COMMANDPARSER_ERROR_BAD_SEQ:         return "BAD_SEQ";
 	case COMMANDPARSER_ERROR_TOO_MANY:        return "TOO_MANY";
 	default:                                  return "UNKNOWN";
+	}
+}
+
+const char *CommandParser_CommandName(CommandType type) {
+	switch (type) {
+	case COMMAND_FORWARD:    return "F";
+	case COMMAND_BACKWARD:   return "B";
+	case COMMAND_LEFT:       return "L";
+	case COMMAND_RIGHT:      return "R";
+	case COMMAND_STOP:       return "S";
+	case COMMAND_ULTRASONIC: return "U";
+	case COMMAND_BACK_LEFT:  return "BL";
+	case COMMAND_BACK_RIGHT: return "BR";
+	default:                 return "?";
 	}
 }

@@ -8,7 +8,8 @@
  * after a radius change; calibration experiments keep their own settings.
  */
 #define COMMANDMOTION_TURN_RADIUS_MM 275.0f
-#define COMMANDMOTION_TURN_SPEED_CPS 2000.0f
+/* Arc speed from the controller's terminal-arc validation runs. */
+#define COMMANDMOTION_TURN_SPEED_CPS 4000.0f
 #define COMMANDMOTION_STRAIGHT_SPEED_CPS 5000.0f
 #define COMMANDMOTION_MAX_TURN_DEG 360.0f
 

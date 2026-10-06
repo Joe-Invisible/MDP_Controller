@@ -17,7 +17,7 @@
 typedef struct {
     bool valid, numbered;
     unsigned seq, step;
-    char command;
+    const char *command; /* Static string, e.g. "F" or "BR". */
     const char *event, *mode; /* Static strings only. */
     float parameter, targetMm, travelledMm, leftMm, rightMm;
     float leftCps, rightCps, steeringCommand, yawDeg;

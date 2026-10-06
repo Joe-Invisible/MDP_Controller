@@ -14,9 +14,13 @@
  * This avoids commanding unreliable near-zero wheel speeds for sensor noise.
  */
 #define ULTRASONIC_APPROACH_STOP_MARGIN_MM       10.0f
-/* Compile-time override for an explicitly identified speed-test build only. */
+/* Same cruise speed as F/B: COMMANDMOTION_STRAIGHT_SPEED_CPS (5000 counts/s)
+ * on a 65.5 mm wheel at 1560 counts/rev. Stopping on target assumes the robot
+ * brakes at the motion profile's deceleration.
+ * Compile-time override for an explicitly identified speed-test build only.
+ */
 #ifndef ULTRASONIC_APPROACH_CRUISE_MMPS
-#define ULTRASONIC_APPROACH_CRUISE_MMPS          100.0f
+#define ULTRASONIC_APPROACH_CRUISE_MMPS          659.5f
 #endif
 #define ULTRASONIC_APPROACH_MAX_AGE_MS           150U
 #define ULTRASONIC_APPROACH_TIMEOUT_MS         15000U

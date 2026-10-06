@@ -15,9 +15,9 @@ void MotionDiagnostics_Format(const MotionDiagnostics *d, char *out, size_t size
      * readable without overflowing a line. Distances mm, speeds counts/s.
      */
     int n = snprintf(out, size,
-        "D %s step=%u %c%.6g %s mode=%s target=%.6g travel=%.6g "
+        "D %s step=%u %s%.6g %s mode=%s target=%.6g travel=%.6g "
         "left=%.6g right=%.6g vl=%.6g vr=%.6g steer=%.6g yaw=%.6g\n",
-        seq, d->step, d->command, (double)d->parameter, d->event, d->mode,
+        seq, d->step, d->command ? d->command : "-", (double)d->parameter, d->event, d->mode,
         (double)d->targetMm, (double)d->travelledMm,
         (double)d->leftMm, (double)d->rightMm,
         (double)d->leftCps, (double)d->rightCps,

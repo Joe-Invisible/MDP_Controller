@@ -7,6 +7,7 @@
 
 #include <stdio.h>
 #include <math.h>
+#include <string.h>
 
 #include "CommandParser.h"
 
@@ -52,6 +53,24 @@ int main(void) {
 	CHECK(cmd[0].type == COMMAND_FORWARD  && fabsf(cmd[0].param - 100.0f) < 1e-6f);
 	CHECK(cmd[1].type == COMMAND_LEFT     && fabsf(cmd[1].param -  90.0f) < 1e-6f);
 	CHECK(cmd[2].type == COMMAND_BACKWARD && fabsf(cmd[2].param -  50.0f) < 1e-6f);
+
+	/* Reverse arcs: BL/BR, and B followed by a digit stays a straight move */
+	CHECK(Parse("BL90;BR45.5;B50", cmd, &n) == COMMANDPARSER_OK);
+	CHECK(n == 3);
+	CHECK(cmd[0].type == COMMAND_BACK_LEFT  && fabsf(cmd[0].param - 90.0f) < 1e-6f);
+	CHECK(cmd[1].type == COMMAND_BACK_RIGHT && fabsf(cmd[1].param - 45.5f) < 1e-4f);
+	CHECK(cmd[2].type == COMMAND_BACKWARD   && fabsf(cmd[2].param - 50.0f) < 1e-6f);
+	CHECK(Parse("BL", cmd, &n) == COMMANDPARSER_ERROR_BAD_COMMAND);
+	CHECK(Parse("BX90", cmd, &n) == COMMANDPARSER_ERROR_BAD_COMMAND);
+	CHECK(Parse("BLL90", cmd, &n) == COMMANDPARSER_ERROR_BAD_COMMAND);
+	CHECK(Parse("BS", cmd, &n) == COMMANDPARSER_ERROR_BAD_COMMAND);
+
+	/* One name table for every consumer (progress, OLED, diagnostics) */
+	CHECK(strcmp(CommandParser_CommandName(COMMAND_FORWARD), "F") == 0);
+	CHECK(strcmp(CommandParser_CommandName(COMMAND_ULTRASONIC), "U") == 0);
+	CHECK(strcmp(CommandParser_CommandName(COMMAND_BACK_LEFT), "BL") == 0);
+	CHECK(strcmp(CommandParser_CommandName(COMMAND_BACK_RIGHT), "BR") == 0);
+	CHECK(strcmp(CommandParser_CommandName((CommandType)99), "?") == 0);
 
 	/* Batch without a sequence prefix */
 	CHECK(Parse("R45;S", cmd, &n) == COMMANDPARSER_OK);
