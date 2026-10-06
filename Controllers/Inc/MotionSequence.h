@@ -4,7 +4,8 @@
 #include "MotionController.h"
 #include "MotionSequencePlan.h"
 
-typedef enum {
+typedef enum
+{
     MOTION_SEQUENCE_BUILDING = 0,
     MOTION_SEQUENCE_RUNNING,
     MOTION_SEQUENCE_COMPLETE,
@@ -16,7 +17,8 @@ typedef enum {
 /* Single owner of MotionController while running. Call ONLY
  * MotionSequence_Update (not also MotionController_Update) at the control
  * period. Keep this object alive and unchanged until execution finishes. */
-typedef struct {
+typedef struct
+{
     MotionController *controller;
     MotionSequenceConfig config;
     MotionSequencePlan plan;
@@ -30,12 +32,18 @@ typedef struct {
     bool initialized;
 } MotionSequence;
 
-MotionControllerStatus MotionSequence_Begin(MotionSequence *sequence,
-    MotionController *controller, const MotionSequenceConfig *config);
-MotionControllerStatus MotionSequence_AddStraight(MotionSequence *sequence,
-    float signedDistanceMm, float speedCps, bool stopAfter);
-MotionControllerStatus MotionSequence_AddArc(MotionSequence *sequence,
-    float signedDistanceMm, float radiusMm, float speedCps, bool stopAfter);
+MotionControllerStatus MotionSequence_Begin(
+    MotionSequence *sequence,
+    MotionController *controller,
+    const MotionSequenceConfig *config);
+MotionControllerStatus MotionSequence_AddStraight(
+    MotionSequence *sequence, float signedDistanceMm, float speedCps, bool stopAfter);
+MotionControllerStatus MotionSequence_AddArc(
+    MotionSequence *sequence,
+    float signedDistanceMm,
+    float radiusMm,
+    float speedCps,
+    bool stopAfter);
 /* Preflight and launch asynchronously. Empty sequence completes immediately.
  * Capacity or infeasible plan is PROFILE_ERROR. No heap allocation. */
 MotionControllerStatus MotionSequence_Execute(MotionSequence *sequence);

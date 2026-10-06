@@ -243,36 +243,54 @@ static bool MotionController_GetPathSteeringFeedforwardCommand(
 }
 
 MotionControllerStatus MotionController_GetProfileFeedforward(
-    const MotionController *controller, float curvaturePerMm, float *rawCommand)
+    const MotionController *controller,
+    float curvaturePerMm,
+    float *rawCommand)
 {
     if (controller == NULL || rawCommand == NULL || !isfinite(curvaturePerMm))
+    {
         return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
-    if (!controller->initialized) return MOTIONCONTROLLER_STATUS_NOT_INITIALIZED;
-    const MotionControllerConfig *c = controller->config;
-    if (curvaturePerMm == 0.0f) {
-        *rawCommand = c->straightSteeringFeedforwardCommand;
+    }
+    if (!controller->initialized)
+    {
+        return MOTIONCONTROLLER_STATUS_NOT_INITIALIZED;
+    }
+
+    const MotionControllerConfig *config = controller->config;
+    if (curvaturePerMm == 0.0f)
+    {
+        *rawCommand = config->straightSteeringFeedforwardCommand;
         return MOTIONCONTROLLER_STATUS_OK;
     }
-    const MotionControllerArcConfig *a = c->arcConfig;
-    const MotionControllerArcFeedforwardPoint *nearZero = curvaturePerMm < 0.0f
-        ? &a->negativePoints[a->negativePointCount - 1U] : &a->positivePoints[0];
-    if (fabsf(curvaturePerMm) < fabsf(nearZero->curvaturePerMm)) {
-        float t = curvaturePerMm / nearZero->curvaturePerMm;
-        *rawCommand = c->straightSteeringFeedforwardCommand +
-            t * (nearZero->rawSteeringCommand - c->straightSteeringFeedforwardCommand);
+
+    /* Bridge the uncalibrated centre gap for continuous profile transitions. */
+    const MotionControllerArcConfig *arcConfig = config->arcConfig;
+    const MotionControllerArcFeedforwardPoint *nearZero =
+        curvaturePerMm < 0.0f
+            ? &arcConfig->negativePoints[arcConfig->negativePointCount - 1U]
+            : &arcConfig->positivePoints[0];
+    if (fabsf(curvaturePerMm) < fabsf(nearZero->curvaturePerMm))
+    {
+        float interpolationFraction = curvaturePerMm / nearZero->curvaturePerMm;
+        *rawCommand =
+            config->straightSteeringFeedforwardCommand +
+            interpolationFraction * (nearZero->rawSteeringCommand -
+                                     config->straightSteeringFeedforwardCommand);
         return MOTIONCONTROLLER_STATUS_OK;
     }
-    return MotionController_GetPathSteeringFeedforwardCommand(controller,
-        curvaturePerMm, rawCommand) ? MOTIONCONTROLLER_STATUS_OK :
-        MOTIONCONTROLLER_STATUS_UNSUPPORTED_CURVATURE;
+
+    return MotionController_GetPathSteeringFeedforwardCommand(
+               controller, curvaturePerMm, rawCommand)
+               ? MOTIONCONTROLLER_STATUS_OK
+               : MOTIONCONTROLLER_STATUS_UNSUPPORTED_CURVATURE;
 }
 
-static bool MotionController_ValidPathSample(const MotionPathSample *s)
+static bool MotionController_ValidPathSample(const MotionPathSample *sample)
 {
-    return isfinite(s->curvaturePerMm) && isfinite(s->desiredYawRad) &&
-        isfinite(s->speedLimitCps) && s->speedLimitCps > 0.0f &&
-        isfinite(s->straightTuningWeight) && s->straightTuningWeight >= 0.0f &&
-        s->straightTuningWeight <= 1.0f;
+    return isfinite(sample->curvaturePerMm) && isfinite(sample->desiredYawRad) &&
+           isfinite(sample->speedLimitCps) && sample->speedLimitCps > 0.0f &&
+           isfinite(sample->straightTuningWeight) &&
+           sample->straightTuningWeight >= 0.0f && sample->straightTuningWeight <= 1.0f;
 }
 
 static void MotionController_ResetOdometry(
@@ -856,46 +874,83 @@ MotionControllerStatus MotionController_MoveArc(
 }
 
 MotionControllerStatus MotionController_FollowProfile(
-    MotionController *controller, const MotionPathProfile *profile)
+    MotionController *controller,
+    const MotionPathProfile *profile)
 {
     if (controller == NULL || profile == NULL || profile->evaluate == NULL ||
-        !isfinite(profile->steeringSettlingTimeSec) || profile->steeringSettlingTimeSec < 0.0f)
+        !isfinite(profile->steeringSettlingTimeSec) ||
+        profile->steeringSettlingTimeSec < 0.0f)
+    {
         return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
-    bool required;
+    }
+
+    bool motionRequired;
     MotionControllerStatus status = MotionController_ValidateMotionRequest(
-        controller, profile->signedDistanceMm, profile->maxSpeedCps, &required);
-    if (status != MOTIONCONTROLLER_STATUS_OK || !required) return status;
+        controller, profile->signedDistanceMm, profile->maxSpeedCps, &motionRequired);
+    if (status != MOTIONCONTROLLER_STATUS_OK || !motionRequired)
+    {
+        return status;
+    }
     if (controller->config->useLegacyStraightSteering)
+    {
         return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
-    MotionPathSample initial, final;
-    float raw, finalRaw;
-    if (!profile->evaluate(profile->context, 0.0f, &initial) ||
-        !profile->evaluate(profile->context, fabsf(profile->signedDistanceMm), &final) ||
-        !MotionController_ValidPathSample(&initial) ||
-        !MotionController_ValidPathSample(&final))
+    }
+
+    /* Validate both endpoints before starting or moving the steering. */
+    MotionPathSample initialSample;
+    MotionPathSample finalSample;
+    float initialRawCommand;
+    float finalRawCommand;
+    if (!profile->evaluate(profile->context, 0.0f, &initialSample) ||
+        !profile->evaluate(
+            profile->context, fabsf(profile->signedDistanceMm), &finalSample) ||
+        !MotionController_ValidPathSample(&initialSample) ||
+        !MotionController_ValidPathSample(&finalSample))
+    {
         return MOTIONCONTROLLER_STATUS_PROFILE_ERROR;
+    }
     if (profile->terminalYawPriority &&
         (!isfinite(profile->terminalEntryProgressMm) ||
          profile->terminalEntryProgressMm < 0.0f ||
          profile->terminalEntryProgressMm >= fabsf(profile->signedDistanceMm) ||
-         final.curvaturePerMm == 0.0f))
+         finalSample.curvaturePerMm == 0.0f))
+    {
         return MOTIONCONTROLLER_STATUS_PROFILE_ERROR;
-    status = MotionController_GetProfileFeedforward(controller, initial.curvaturePerMm, &raw);
-    if (status != MOTIONCONTROLLER_STATUS_OK) return status;
-    status = MotionController_GetProfileFeedforward(controller, final.curvaturePerMm, &finalRaw);
-    if (status != MOTIONCONTROLLER_STATUS_OK) return status;
-    status = MotionController_StartMotion(controller, profile->signedDistanceMm, profile->maxSpeedCps);
-    if (status != MOTIONCONTROLLER_STATUS_OK) return status;
+    }
+
+    status = MotionController_GetProfileFeedforward(
+        controller, initialSample.curvaturePerMm, &initialRawCommand);
+    if (status != MOTIONCONTROLLER_STATUS_OK)
+    {
+        return status;
+    }
+
+    status = MotionController_GetProfileFeedforward(
+        controller, finalSample.curvaturePerMm, &finalRawCommand);
+    if (status != MOTIONCONTROLLER_STATUS_OK)
+    {
+        return status;
+    }
+
+    status = MotionController_StartMotion(
+        controller, profile->signedDistanceMm, profile->maxSpeedCps);
+    if (status != MOTIONCONTROLLER_STATUS_OK)
+    {
+        return status;
+    }
+
     controller->pathProfile = *profile;
-    controller->pathSample = initial;
-    controller->pathFinalSample = final;
-    controller->targetCurvaturePerMm = initial.curvaturePerMm;
-    controller->arcSteeringFeedforwardCommand = raw;
-    controller->arcSteeringTargetCommand = raw;
-    controller->arcCommandedCurvaturePerMm = initial.curvaturePerMm;
-    SteeringController_SetRawCommand(controller->steering, raw);
+    controller->pathSample = initialSample;
+    controller->pathFinalSample = finalSample;
+    controller->targetCurvaturePerMm = initialSample.curvaturePerMm;
+    controller->arcSteeringFeedforwardCommand = initialRawCommand;
+    controller->arcSteeringTargetCommand = initialRawCommand;
+    controller->arcCommandedCurvaturePerMm = initialSample.curvaturePerMm;
+
+    SteeringController_SetRawCommand(controller->steering, initialRawCommand);
     controller->mode = profile->steeringSettlingTimeSec > 0.0f
-        ? MOTIONCONTROLLER_PROFILE_PREPARING : MOTIONCONTROLLER_PROFILE;
+                           ? MOTIONCONTROLLER_PROFILE_PREPARING
+                           : MOTIONCONTROLLER_PROFILE;
     return MOTIONCONTROLLER_STATUS_OK;
 }
 
@@ -1189,20 +1244,36 @@ static void MotionController_UpdatePathSteering(
             ? controller->config->straightHeadingKpPerSec
             : controller->config->arcHeadingKpPerSec;
 
-    if (controller->mode == MOTIONCONTROLLER_PROFILE) {
-        float w = controller->pathSample.straightTuningWeight;
-        const MotionControllerConfig *c = controller->config;
-        headingKpPerSec = c->arcHeadingKpPerSec + w *
-            (c->straightHeadingKpPerSec - c->arcHeadingKpPerSec);
-        float nextKi = c->arcYawRateKi + w * (c->straightYawRateKi - c->arcYawRateKi);
+    if (controller->mode == MOTIONCONTROLLER_PROFILE)
+    {
+        float straightWeight = controller->pathSample.straightTuningWeight;
+        const MotionControllerConfig *config = controller->config;
+        headingKpPerSec = config->arcHeadingKpPerSec +
+                          straightWeight * (config->straightHeadingKpPerSec -
+                                            config->arcHeadingKpPerSec);
+
+        float nextYawRateKi =
+            config->arcYawRateKi +
+            straightWeight * (config->straightYawRateKi - config->arcYawRateKi);
+
         /* Retain the integral OUTPUT across gain scheduling. */
-        if (nextKi > 0.0f)
-            controller->arcYawRatePID.integral *= controller->arcYawRatePID.ki / nextKi;
+        if (nextYawRateKi > 0.0f)
+        {
+            controller->arcYawRatePID.integral *=
+                controller->arcYawRatePID.ki / nextYawRateKi;
+        }
         else
+        {
             controller->arcYawRatePID.integral = 0.0f;
-        controller->arcYawRatePID.kp = c->arcYawRateKp + w * (c->straightYawRateKp - c->arcYawRateKp);
-        controller->arcYawRatePID.ki = nextKi;
-        controller->arcYawRatePID.kd = c->arcYawRateKd + w * (c->straightYawRateKd - c->arcYawRateKd);
+        }
+
+        controller->arcYawRatePID.kp =
+            config->arcYawRateKp +
+            straightWeight * (config->straightYawRateKp - config->arcYawRateKp);
+        controller->arcYawRatePID.ki = nextYawRateKi;
+        controller->arcYawRatePID.kd =
+            config->arcYawRateKd +
+            straightWeight * (config->straightYawRateKd - config->arcYawRateKd);
     }
 
     float headingYawRateCorrectionRadPerSec =
@@ -1288,88 +1359,144 @@ static void MotionController_UpdatePathSteering(
 /* Shared terminal policy. targetYawRad is relative to the current motion/run
  * origin. For a mixed-curvature run its sign need not match the final turn. */
 static float MotionController_ApplyArcTerminalPolicy(
-    MotionController *controller, float progressMm, float terminalEntryProgressMm,
-    float targetYawRad, float yawDirection, float terminalSpeedMmps,
+    MotionController *controller,
+    float progressMm,
+    float terminalEntryProgressMm,
+    float targetYawRad,
+    float yawDirection,
+    float terminalSpeedMmps,
     float targetSpeedMmps)
 {
-    float approachSpeed = MOTIONCONTROLLER_ARC_TERMINAL_APPROACH_SPEED_CPS *
-        MotionController_GetMmPerCount(controller);
-    float distanceToEntry = fmaxf(0.0f, terminalEntryProgressMm - progressMm);
-    float approachLimit = sqrtf(approachSpeed * approachSpeed +
-        2.0f * controller->config->motionDecelerationMmps2 * distanceToEntry);
-    if (targetSpeedMmps > approachLimit) {
-        targetSpeedMmps = approachLimit;
-        controller->motionProfile.targetSpeedMmps = approachLimit;
+    float approachSpeedMmps = MOTIONCONTROLLER_ARC_TERMINAL_APPROACH_SPEED_CPS *
+                              MotionController_GetMmPerCount(controller);
+    float distanceToEntryMm = fmaxf(0.0f, terminalEntryProgressMm - progressMm);
+    float approachLimitMmps = sqrtf(
+        approachSpeedMmps * approachSpeedMmps +
+        2.0f * controller->config->motionDecelerationMmps2 * distanceToEntryMm);
+
+    if (targetSpeedMmps > approachLimitMmps)
+    {
+        targetSpeedMmps = approachLimitMmps;
+        controller->motionProfile.targetSpeedMmps = approachLimitMmps;
     }
-    if (progressMm >= terminalEntryProgressMm) {
+
+    if (progressMm >= terminalEntryProgressMm)
+    {
         float measuredYawRad = controller->yawDeg * (MOTION_PI / 180.0f);
-        float directedYawRate = fmaxf(0.0f, yawDirection * controller->yawRateDps *
-            (MOTION_PI / 180.0f));
-        float predictedStoppingYaw = yawDirection * measuredYawRad +
-            directedYawRate * MOTIONCONTROLLER_ARC_TERMINAL_BRAKE_PREDICTION_SEC;
+        float directedYawRateRadPerSec =
+            fmaxf(0.0f, yawDirection * controller->yawRateDps * (MOTION_PI / 180.0f));
+        float predictedStoppingYawRad =
+            yawDirection * measuredYawRad +
+            directedYawRateRadPerSec *
+                MOTIONCONTROLLER_ARC_TERMINAL_BRAKE_PREDICTION_SEC;
+
         controller->terminalYawPredictedReached =
-            predictedStoppingYaw >= yawDirection * targetYawRad;
-        controller->terminalDistanceLimitReached = progressMm >=
+            predictedStoppingYawRad >= yawDirection * targetYawRad;
+        controller->terminalDistanceLimitReached =
+            progressMm >=
             controller->targetDistanceMm + MOTIONCONTROLLER_ARC_TERMINAL_MAX_OVERRUN_MM;
-        if (controller->terminalYawPredictedReached || controller->terminalDistanceLimitReached) {
+
+        if (controller->terminalYawPredictedReached ||
+            controller->terminalDistanceLimitReached)
+        {
             MotionProfile_Stop(&controller->motionProfile);
             targetSpeedMmps = 0.0f;
-        } else {
+        }
+        else
+        {
             controller->motionProfile.active = true;
-            if (targetSpeedMmps < terminalSpeedMmps) {
+            if (targetSpeedMmps < terminalSpeedMmps)
+            {
                 targetSpeedMmps = terminalSpeedMmps;
                 controller->motionProfile.targetSpeedMmps = terminalSpeedMmps;
             }
         }
     }
+
     return targetSpeedMmps;
 }
 
 static MotionControllerStatus MotionController_UpdateProfile(
-    MotionController *controller, float dt)
+    MotionController *controller,
+    float dt)
 {
     MotionController_UpdateOdometry(controller);
-    if (!MotionController_UpdateYawEstimate(controller, dt)) {
+
+    if (!MotionController_UpdateYawEstimate(controller, dt))
+    {
         MotionController_Stop(controller);
         return MOTIONCONTROLLER_STATUS_IMU_ERROR;
     }
-    float progress = fmaxf(0.0f, controller->motionDirection * controller->travelledDistanceMm);
+
+    /* Sample the path at measured progress; freeze the final yaw on overrun. */
+    float progressMm =
+        fmaxf(0.0f, controller->motionDirection * controller->travelledDistanceMm);
     MotionPathSample sample;
-    float referenceProgress = controller->pathProfile.terminalYawPriority
-        ? fminf(progress, controller->targetDistanceMm) : progress;
-    if (!controller->pathProfile.evaluate(controller->pathProfile.context, referenceProgress, &sample) ||
-        !MotionController_ValidPathSample(&sample)) {
+    float referenceProgressMm =
+        controller->pathProfile.terminalYawPriority
+            ? fminf(progressMm, controller->targetDistanceMm)
+            : progressMm;
+
+    if (!controller->pathProfile.evaluate(
+            controller->pathProfile.context,
+            referenceProgressMm,
+            &sample) ||
+        !MotionController_ValidPathSample(&sample))
+    {
         MotionController_Stop(controller);
         return MOTIONCONTROLLER_STATUS_PROFILE_ERROR;
     }
-    float raw;
+
+    float rawSteeringCommand;
     MotionControllerStatus status = MotionController_GetProfileFeedforward(
-        controller, sample.curvaturePerMm, &raw);
-    if (status != MOTIONCONTROLLER_STATUS_OK) {
+        controller, sample.curvaturePerMm, &rawSteeringCommand);
+    if (status != MOTIONCONTROLLER_STATUS_OK)
+    {
         MotionController_Stop(controller);
         return status;
     }
+
+    /* Apply the local speed ceiling before the terminal yaw policy. */
     float mmPerCount = MotionController_GetMmPerCount(controller);
     controller->pathSample = sample;
     controller->targetCurvaturePerMm = sample.curvaturePerMm;
-    controller->arcSteeringFeedforwardCommand = raw;
+    controller->arcSteeringFeedforwardCommand = rawSteeringCommand;
     controller->motionProfile.maxSpeedMmps =
         fminf(controller->maxSpeedCps, sample.speedLimitCps) * mmPerCount;
-    float speed = MotionProfile_Update(&controller->motionProfile, progress, dt);
-    if (controller->pathProfile.terminalYawPriority) {
-        float yawDirection = controller->motionDirection *
-            controller->pathFinalSample.curvaturePerMm > 0.0f ? 1.0f : -1.0f;
-        float terminalSpeed = fminf(MOTIONCONTROLLER_ARC_TERMINAL_SPEED_CPS,
-            fminf(controller->maxSpeedCps, sample.speedLimitCps)) * mmPerCount;
-        speed = MotionController_ApplyArcTerminalPolicy(controller, progress,
+
+    float targetSpeedMmps =
+        MotionProfile_Update(&controller->motionProfile, progressMm, dt);
+
+    if (controller->pathProfile.terminalYawPriority)
+    {
+        float yawDirection =
+            controller->motionDirection *
+            controller->pathFinalSample.curvaturePerMm > 0.0f
+                ? 1.0f : -1.0f;
+        float terminalSpeedMmps =
+            fminf(
+                MOTIONCONTROLLER_ARC_TERMINAL_SPEED_CPS,
+                fminf(controller->maxSpeedCps, sample.speedLimitCps)) *
+            mmPerCount;
+        targetSpeedMmps = MotionController_ApplyArcTerminalPolicy(
+            controller,
+            progressMm,
             controller->pathProfile.terminalEntryProgressMm,
-            controller->pathFinalSample.desiredYawRad, yawDirection, terminalSpeed, speed);
+            controller->pathFinalSample.desiredYawRad,
+            yawDirection,
+            terminalSpeedMmps,
+            targetSpeedMmps);
     }
-    if (!MotionProfile_IsActive(&controller->motionProfile)) {
+
+    if (!MotionProfile_IsActive(&controller->motionProfile))
+    {
         MotionController_BeginBraking(controller);
         return MOTIONCONTROLLER_STATUS_OK;
     }
-    controller->targetSpeedCps = controller->motionDirection * speed / mmPerCount;
+
+    /* Reuse the shared steering, wheel synchronisation and speed loops. */
+    controller->targetSpeedCps =
+        controller->motionDirection * targetSpeedMmps / mmPerCount;
     MotionController_UpdatePathSteering(controller, dt, mmPerCount);
     MotionController_UpdateWheelSynchronisation(controller);
     WheelSpeedController_Update(controller->leftWheel, dt);
@@ -1529,14 +1656,22 @@ MotionControllerStatus MotionController_Update(
 
         case MOTIONCONTROLLER_PROFILE_PREPARING:
         {
-            MotionControllerStatus status = MotionController_UpdateSteeringPreparation(
-                controller, dt, controller->pathProfile.steeringSettlingTimeSec,
-                MOTIONCONTROLLER_PROFILE);
+            MotionControllerStatus status =
+                MotionController_UpdateSteeringPreparation(
+                    controller,
+                    dt,
+                    controller->pathProfile.steeringSettlingTimeSec,
+                    MOTIONCONTROLLER_PROFILE);
+
             if (status != MOTIONCONTROLLER_STATUS_OK ||
                 controller->mode == MOTIONCONTROLLER_PROFILE_PREPARING)
+            {
                 return status;
+            }
+
             return MotionController_UpdateProfile(controller, dt);
         }
+
         case MOTIONCONTROLLER_PROFILE:
             return MotionController_UpdateProfile(controller, dt);
 

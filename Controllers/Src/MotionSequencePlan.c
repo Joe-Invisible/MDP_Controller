@@ -6,157 +6,263 @@
  * more than 500 CPS. These are configurable protections, not servo physics. */
 const MotionSequenceConfig motionSequenceConfig = {200.0f, 500.0f};
 
-static bool boundary(const MotionSequencePlan *p, uint32_t i)
+static bool MotionSequencePlan_IsRunBoundary(const MotionSequencePlan *plan, uint32_t i)
 {
-    return p->segments[i].stopAfter ||
-        ((p->segments[i].signedDistanceMm > 0.0f) !=
-         (p->segments[i + 1U].signedDistanceMm > 0.0f));
+    return plan->segments[i].stopAfter ||
+           ((plan->segments[i].signedDistanceMm > 0.0f) !=
+            (plan->segments[i + 1U].signedDistanceMm > 0.0f));
 }
 
-bool MotionSequencePlan_Prepare(MotionSequencePlan *p,
-    const MotionSequenceConfig *c, float mmPerCount,
-    float decelerationMmps2, float rawSlopeBound, float rawRatePerSec)
+bool MotionSequencePlan_Prepare(
+    MotionSequencePlan *plan,
+    const MotionSequenceConfig *config,
+    float mmPerCount,
+    float decelerationMmps2,
+    float rawSlopeBound,
+    float rawRatePerSec)
 {
-    if (p == NULL) return false;
-    p->prepared = false;
-    if (c == NULL || p->count > MOTION_SEQUENCE_CAPACITY ||
-        !isfinite(c->blendLengthMm) || c->blendLengthMm <= 0.0f ||
-        !isfinite(c->junctionSpeedCps) || c->junctionSpeedCps <= 0.0f ||
-        !isfinite(mmPerCount) || mmPerCount <= 0.0f ||
-        !isfinite(decelerationMmps2) || decelerationMmps2 <= 0.0f ||
-        !isfinite(rawSlopeBound) || rawSlopeBound < 0.0f ||
-        !isfinite(rawRatePerSec) || rawRatePerSec <= 0.0f)
+    if (plan == NULL)
+    {
         return false;
-    p->totalTravelMm = 0.0f;
-    p->nominalFinalYawRad = 0.0f;
-    p->mmPerCount = mmPerCount;
-    p->decelerationMmps2 = decelerationMmps2;
-    for (uint32_t i = 0U; i < p->count; ++i) {
-        const MotionSequenceSegment *s = &p->segments[i];
-        if (!isfinite(s->signedDistanceMm) || s->signedDistanceMm == 0.0f ||
-            !isfinite(s->curvaturePerMm) ||
-            !isfinite(s->speedCps) || s->speedCps <= 0.0f)
-            return false;
-        p->totalTravelMm += fabsf(s->signedDistanceMm);
-        p->nominalFinalYawRad += s->signedDistanceMm * s->curvaturePerMm;
-        p->junctionHalfLengthMm[i] = 0.0f;
-        p->junctionSpeedCps[i] = 0.0f;
-        float speedMmps = s->speedCps * mmPerCount;
-        if (!isfinite(speedMmps * speedMmps +
-            2.0f * decelerationMmps2 * p->totalTravelMm)) return false;
     }
-    if (!isfinite(p->totalTravelMm) || !isfinite(p->nominalFinalYawRad))
+    plan->prepared = false;
+    if (config == NULL || plan->count > MOTION_SEQUENCE_CAPACITY ||
+        !isfinite(config->blendLengthMm) || config->blendLengthMm <= 0.0f ||
+        !isfinite(config->junctionSpeedCps) || config->junctionSpeedCps <= 0.0f ||
+        !isfinite(mmPerCount) || mmPerCount <= 0.0f || !isfinite(decelerationMmps2) ||
+        decelerationMmps2 <= 0.0f || !isfinite(rawSlopeBound) || rawSlopeBound < 0.0f ||
+        !isfinite(rawRatePerSec) || rawRatePerSec <= 0.0f)
+    {
         return false;
-    for (uint32_t i = 0U; i + 1U < p->count; ++i) {
-        if (boundary(p, i)) continue;
-        const MotionSequenceSegment *a = &p->segments[i];
-        const MotionSequenceSegment *b = &p->segments[i + 1U];
-        float half = fminf(0.5f * c->blendLengthMm,
-            0.25f * fminf(fabsf(a->signedDistanceMm), fabsf(b->signedDistanceMm)));
-        float delta = fabsf(b->curvaturePerMm - a->curvaturePerMm);
-        float cap = fminf(a->speedCps, b->speedCps);
+    }
+
+    /* Validate segments and initialise nominal totals before blending. */
+    plan->totalTravelMm = 0.0f;
+    plan->nominalFinalYawRad = 0.0f;
+    plan->mmPerCount = mmPerCount;
+    plan->decelerationMmps2 = decelerationMmps2;
+    for (uint32_t i = 0U; i < plan->count; ++i)
+    {
+        const MotionSequenceSegment *segment = &plan->segments[i];
+        if (!isfinite(segment->signedDistanceMm) || segment->signedDistanceMm == 0.0f ||
+            !isfinite(segment->curvaturePerMm) || !isfinite(segment->speedCps) ||
+            segment->speedCps <= 0.0f)
+        {
+            return false;
+        }
+        plan->totalTravelMm += fabsf(segment->signedDistanceMm);
+        plan->nominalFinalYawRad += segment->signedDistanceMm * segment->curvaturePerMm;
+        plan->junctionHalfLengthMm[i] = 0.0f;
+        plan->junctionSpeedCps[i] = 0.0f;
+        float speedMmps = segment->speedCps * mmPerCount;
+        if (!isfinite(
+                speedMmps * speedMmps + 2.0f * decelerationMmps2 * plan->totalTravelMm))
+        {
+            return false;
+        }
+    }
+    if (!isfinite(plan->totalTravelMm) || !isfinite(plan->nominalFinalYawRad))
+    {
+        return false;
+    }
+
+    /* Size each blend and cap its speed using the feedforward slew budget. */
+    for (uint32_t i = 0U; i + 1U < plan->count; ++i)
+    {
+        if (MotionSequencePlan_IsRunBoundary(plan, i))
+        {
+            continue;
+        }
+        const MotionSequenceSegment *previousSegment = &plan->segments[i];
+        const MotionSequenceSegment *nextSegment = &plan->segments[i + 1U];
+        float halfLengthMm = fminf(
+            0.5f * config->blendLengthMm,
+            0.25f * fminf(
+                        fabsf(previousSegment->signedDistanceMm),
+                        fabsf(nextSegment->signedDistanceMm)));
+        float curvatureChangePerMm =
+            fabsf(nextSegment->curvaturePerMm - previousSegment->curvaturePerMm);
+        float speedLimitCps = fminf(previousSegment->speedCps, nextSegment->speedCps);
         /* Equal curvature needs no steering transition or junction slowdown. */
-        if (delta > 0.0f) cap = fminf(cap, c->junctionSpeedCps);
+        if (curvatureChangePerMm > 0.0f)
+        {
+            speedLimitCps = fminf(speedLimitCps, config->junctionSpeedCps);
+        }
         /* Reserve half the configured software slew rate for feedback.
          * The global piecewise-linear FF slope bound also covers the centre
          * bridge and opposite-sign transitions. No physical servo claim. */
-        if (delta > 0.0f && rawSlopeBound > 0.0f)
-            cap = fminf(cap, 0.5f * rawRatePerSec * (2.0f * half) /
-                (rawSlopeBound * delta * mmPerCount));
-        if (!isfinite(cap) || cap <= 0.0f || half <= 0.0f) return false;
-        p->junctionHalfLengthMm[i] = half;
-        p->junctionSpeedCps[i] = cap;
+        if (curvatureChangePerMm > 0.0f && rawSlopeBound > 0.0f)
+        {
+            speedLimitCps = fminf(
+                speedLimitCps,
+                0.5f * rawRatePerSec * (2.0f * halfLengthMm) /
+                    (rawSlopeBound * curvatureChangePerMm * mmPerCount));
+        }
+        if (!isfinite(speedLimitCps) || speedLimitCps <= 0.0f || halfLengthMm <= 0.0f)
+        {
+            return false;
+        }
+        plan->junctionHalfLengthMm[i] = halfLengthMm;
+        plan->junctionSpeedCps[i] = speedLimitCps;
     }
-    p->prepared = true;
+
+    plan->prepared = true;
     return true;
 }
 
-uint32_t MotionSequencePlan_RunEnd(const MotionSequencePlan *p, uint32_t first)
+uint32_t MotionSequencePlan_RunEnd(const MotionSequencePlan *plan, uint32_t first)
 {
-    if (p == NULL || first >= p->count) return first;
+    if (plan == NULL || first >= plan->count)
+    {
+        return first;
+    }
     uint32_t last = first;
-    while (last + 1U < p->count && !boundary(p, last)) ++last;
+    while (last + 1U < plan->count && !MotionSequencePlan_IsRunBoundary(plan, last))
+    {
+        ++last;
+    }
     return last;
 }
 
-static float envelope(const MotionSequencePlan *p, float capCps, float distanceMm)
+static float MotionSequencePlan_GetApproachSpeedCps(
+    const MotionSequencePlan *plan, float capCps, float distanceMm)
 {
-    float speed = capCps * p->mmPerCount;
-    return sqrtf(speed * speed + 2.0f * p->decelerationMmps2 * distanceMm) /
-        p->mmPerCount;
+    float speedMmps = capCps * plan->mmPerCount;
+    return sqrtf(speedMmps * speedMmps + 2.0f * plan->decelerationMmps2 * distanceMm) /
+           plan->mmPerCount;
 }
 
-bool MotionSequencePlan_Evaluate(const void *context, float progressMm,
-                                 MotionPathSample *out)
+bool MotionSequencePlan_Evaluate(
+    const void *context, float progressMm, MotionPathSample *sample)
 {
     const MotionSequenceRun *run = context;
-    if (run == NULL || out == NULL || run->plan == NULL ||
-        !run->plan->prepared || !isfinite(progressMm) ||
-        run->first > run->last || run->last >= run->plan->count ||
+    if (run == NULL || sample == NULL || run->plan == NULL || !run->plan->prepared ||
+        !isfinite(progressMm) || run->first > run->last ||
+        run->last >= run->plan->count ||
         MotionSequencePlan_RunEnd(run->plan, run->first) != run->last)
+    {
         return false;
-    const MotionSequencePlan *p = run->plan;
-    float total = 0.0f;
+    }
+
+    const MotionSequencePlan *plan = run->plan;
+    float runLengthMm = 0.0f;
     for (uint32_t i = run->first; i <= run->last; ++i)
-        total += fabsf(p->segments[i].signedDistanceMm);
-    float x = fmaxf(0.0f, fminf(progressMm, total));
-    float position = 0.0f, area = 0.0f;
-    float speed = p->segments[run->first].speedCps;
+    {
+        runLengthMm += fabsf(plan->segments[i].signedDistanceMm);
+    }
+
+    float clampedProgressMm = fmaxf(0.0f, fminf(progressMm, runLengthMm));
+    float sectionStartMm = 0.0f;
+    float integratedCurvatureRad = 0.0f;
+    float speedLimitCps = plan->segments[run->first].speedCps;
     bool found = false;
-    *out = (MotionPathSample){0};
+    *sample = (MotionPathSample){0};
+
     /* Emit constant sections and symmetric linear ramps. Analytic integrals
      * keep heading independent of update rate and encoder sample skipping. */
-    for (uint32_t i = run->first; i <= run->last; ++i) {
-        const MotionSequenceSegment *s = &p->segments[i];
-        float left = i > run->first ? p->junctionHalfLengthMm[i - 1U] : 0.0f;
-        float right = i < run->last ? p->junctionHalfLengthMm[i] : 0.0f;
-        float constantLength = fabsf(s->signedDistanceMm) - left - right;
-        if (!found && (x <= position + constantLength || i == run->last)) {
-            out->curvaturePerMm = s->curvaturePerMm;
-            out->desiredYawRad = area + s->curvaturePerMm *
-                fmaxf(0.0f, fminf(x - position, constantLength));
-            out->straightTuningWeight = s->curvaturePerMm == 0.0f ? 1.0f : 0.0f;
+    for (uint32_t i = run->first; i <= run->last; ++i)
+    {
+        const MotionSequenceSegment *segment = &plan->segments[i];
+        float incomingHalfLengthMm =
+            i > run->first ? plan->junctionHalfLengthMm[i - 1U] : 0.0f;
+        float outgoingHalfLengthMm =
+            i < run->last ? plan->junctionHalfLengthMm[i] : 0.0f;
+        float constantLengthMm = fabsf(segment->signedDistanceMm) -
+                                 incomingHalfLengthMm - outgoingHalfLengthMm;
+        if (!found &&
+            (clampedProgressMm <= sectionStartMm + constantLengthMm || i == run->last))
+        {
+            sample->curvaturePerMm = segment->curvaturePerMm;
+            sample->desiredYawRad =
+                integratedCurvatureRad +
+                segment->curvaturePerMm *
+                    fmaxf(
+                        0.0f,
+                        fminf(clampedProgressMm - sectionStartMm, constantLengthMm));
+            sample->straightTuningWeight =
+                segment->curvaturePerMm == 0.0f ? 1.0f : 0.0f;
             found = true;
         }
-        area += s->curvaturePerMm * constantLength;
-        position += constantLength;
-        if (i < run->last) {
-            float length = 2.0f * right;
-            float k0 = s->curvaturePerMm;
-            float k1 = p->segments[i + 1U].curvaturePerMm;
-            if (!found && x <= position + length) {
-                float t = fmaxf(0.0f, fminf(1.0f, (x - position) / length));
-                out->curvaturePerMm = fmaxf(fminf(k0, k1),
-                    fminf(fmaxf(k0, k1), k0 + (k1 - k0) * t));
-                out->desiredYawRad = area + length * (k0 * t + 0.5f * (k1 - k0) * t * t);
-                float w0 = k0 == 0.0f ? 1.0f : 0.0f;
-                float w1 = k1 == 0.0f ? 1.0f : 0.0f;
-                out->straightTuningWeight = w0 + (w1 - w0) * t;
+
+        integratedCurvatureRad += segment->curvaturePerMm * constantLengthMm;
+        sectionStartMm += constantLengthMm;
+
+        if (i < run->last)
+        {
+            float blendLengthMm = 2.0f * outgoingHalfLengthMm;
+            float startCurvaturePerMm = segment->curvaturePerMm;
+            float endCurvaturePerMm = plan->segments[i + 1U].curvaturePerMm;
+            if (!found && clampedProgressMm <= sectionStartMm + blendLengthMm)
+            {
+                float blendFraction = fmaxf(
+                    0.0f,
+                    fminf(1.0f, (clampedProgressMm - sectionStartMm) / blendLengthMm));
+                sample->curvaturePerMm = fmaxf(
+                    fminf(startCurvaturePerMm, endCurvaturePerMm),
+                    fminf(
+                        fmaxf(startCurvaturePerMm, endCurvaturePerMm),
+                        startCurvaturePerMm +
+                            (endCurvaturePerMm - startCurvaturePerMm) * blendFraction));
+                sample->desiredYawRad =
+                    integratedCurvatureRad +
+                    blendLengthMm * (startCurvaturePerMm * blendFraction +
+                                     0.5f * (endCurvaturePerMm - startCurvaturePerMm) *
+                                         blendFraction * blendFraction);
+                float startStraightWeight = startCurvaturePerMm == 0.0f ? 1.0f : 0.0f;
+                float endStraightWeight = endCurvaturePerMm == 0.0f ? 1.0f : 0.0f;
+                sample->straightTuningWeight =
+                    startStraightWeight +
+                    (endStraightWeight - startStraightWeight) * blendFraction;
                 found = true;
             }
-            area += 0.5f * (k0 + k1) * length;
-            position += length;
+
+            integratedCurvatureRad +=
+                0.5f * (startCurvaturePerMm + endCurvaturePerMm) * blendLengthMm;
+            sectionStartMm += blendLengthMm;
         }
     }
-    if (!found) return false;
-    out->desiredYawRad *= p->segments[run->first].signedDistanceMm > 0.0f ? 1.0f : -1.0f;
+
+    if (!found)
+    {
+        return false;
+    }
+    sample->desiredYawRad *=
+        plan->segments[run->first].signedDistanceMm > 0.0f ? 1.0f : -1.0f;
+
     /* Look ahead to every lower segment cap and every blend interval.
      * Current/earlier constraints are released only after their interval. */
-    float nominalPosition = 0.0f;
-    speed = INFINITY;
-    for (uint32_t i = run->first; i <= run->last; ++i) {
-        float end = nominalPosition + fabsf(p->segments[i].signedDistanceMm);
-        if (x <= end || i == run->last)
-            speed = fminf(speed, envelope(p, p->segments[i].speedCps,
-                                         fmaxf(0.0f, nominalPosition - x)));
-        if (i < run->last) {
-            float half = p->junctionHalfLengthMm[i];
-            if (x <= end + half)
-                speed = fminf(speed, envelope(p, p->junctionSpeedCps[i],
-                                             fmaxf(0.0f, end - half - x)));
+    float nominalPositionMm = 0.0f;
+    speedLimitCps = INFINITY;
+    for (uint32_t i = run->first; i <= run->last; ++i)
+    {
+        float segmentEndMm =
+            nominalPositionMm + fabsf(plan->segments[i].signedDistanceMm);
+        if (clampedProgressMm <= segmentEndMm || i == run->last)
+        {
+            speedLimitCps = fminf(
+                speedLimitCps,
+                MotionSequencePlan_GetApproachSpeedCps(
+                    plan,
+                    plan->segments[i].speedCps,
+                    fmaxf(0.0f, nominalPositionMm - clampedProgressMm)));
         }
-        nominalPosition = end;
+
+        if (i < run->last)
+        {
+            float halfLengthMm = plan->junctionHalfLengthMm[i];
+            if (clampedProgressMm <= segmentEndMm + halfLengthMm)
+            {
+                speedLimitCps = fminf(
+                    speedLimitCps,
+                    MotionSequencePlan_GetApproachSpeedCps(
+                        plan,
+                        plan->junctionSpeedCps[i],
+                        fmaxf(0.0f, segmentEndMm - halfLengthMm - clampedProgressMm)));
+            }
+        }
+        nominalPositionMm = segmentEndMm;
     }
-    out->speedLimitCps = speed;
-    return isfinite(speed) && speed > 0.0f;
+
+    sample->speedLimitCps = speedLimitCps;
+    return isfinite(speedLimitCps) && speedLimitCps > 0.0f;
 }

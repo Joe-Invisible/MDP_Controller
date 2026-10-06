@@ -320,13 +320,16 @@ MotionControllerStatus MotionController_MoveArc(
  * Caller must preflight its entire profile; invalid runtime samples stop it.
  */
 MotionControllerStatus MotionController_FollowProfile(
-    MotionController *controller, const MotionPathProfile *profile);
+    MotionController *controller,
+    const MotionPathProfile *profile);
 
 /* Profile-only FF lookup: explicitly bridges raw straight FF to the nearest
  * calibrated point on each side of zero. Standalone arc lookup is unchanged.
  * This centre-region interpolation is an unvalidated experimental model. */
 MotionControllerStatus MotionController_GetProfileFeedforward(
-    const MotionController *controller, float curvaturePerMm, float *rawCommand);
+    const MotionController *controller,
+    float curvaturePerMm,
+    float *rawCommand);
 
 /**
  * Full brake. Unfinished motion will be aborted.

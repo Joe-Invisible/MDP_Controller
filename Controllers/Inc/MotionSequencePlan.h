@@ -6,21 +6,24 @@
 
 #define MOTION_SEQUENCE_CAPACITY 16U
 
-typedef struct {
+typedef struct
+{
     float signedDistanceMm;
     float curvaturePerMm;
     float speedCps;
     bool stopAfter;
 } MotionSequenceSegment;
 
-typedef struct {
+typedef struct
+{
     /* Full blend length; each neighbour supplies half. Short motions shrink
      * the blend so at most half of any segment is consumed by both blends. */
     float blendLengthMm;
     float junctionSpeedCps;
 } MotionSequenceConfig;
 
-typedef struct {
+typedef struct
+{
     MotionSequenceSegment segments[MOTION_SEQUENCE_CAPACITY];
     float junctionHalfLengthMm[MOTION_SEQUENCE_CAPACITY];
     float junctionSpeedCps[MOTION_SEQUENCE_CAPACITY];
@@ -32,7 +35,8 @@ typedef struct {
     bool prepared;
 } MotionSequencePlan;
 
-typedef struct {
+typedef struct
+{
     const MotionSequencePlan *plan;
     uint32_t first;
     uint32_t last; /* inclusive; all segments have the same direction */
@@ -40,12 +44,15 @@ typedef struct {
 
 extern const MotionSequenceConfig motionSequenceConfig;
 
-bool MotionSequencePlan_Prepare(MotionSequencePlan *plan,
-    const MotionSequenceConfig *config, float mmPerCount,
-    float decelerationMmps2, float rawSlopeBound, float rawRatePerSec);
-bool MotionSequencePlan_Evaluate(const void *context, float progressMm,
-                                 MotionPathSample *sample);
-uint32_t MotionSequencePlan_RunEnd(const MotionSequencePlan *plan,
-                                 uint32_t first);
+bool MotionSequencePlan_Prepare(
+    MotionSequencePlan *plan,
+    const MotionSequenceConfig *config,
+    float mmPerCount,
+    float decelerationMmps2,
+    float rawSlopeBound,
+    float rawRatePerSec);
+bool MotionSequencePlan_Evaluate(
+    const void *context, float progressMm, MotionPathSample *sample);
+uint32_t MotionSequencePlan_RunEnd(const MotionSequencePlan *plan, uint32_t first);
 
 #endif

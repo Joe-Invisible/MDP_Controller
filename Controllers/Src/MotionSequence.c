@@ -4,192 +4,337 @@
 
 #define SEQUENCE_PI 3.14159265358979323846f
 
-bool MotionSequence_IsBusy(const MotionSequence *s)
+bool MotionSequence_IsBusy(const MotionSequence *sequence)
 {
-    return s != NULL && s->initialized &&
-        (s->state == MOTION_SEQUENCE_RUNNING || s->state == MOTION_SEQUENCE_ABORTING);
+    return sequence != NULL && sequence->initialized &&
+           (sequence->state == MOTION_SEQUENCE_RUNNING ||
+            sequence->state == MOTION_SEQUENCE_ABORTING);
 }
 
-MotionControllerStatus MotionSequence_Begin(MotionSequence *s,
-    MotionController *m, const MotionSequenceConfig *config)
+MotionControllerStatus MotionSequence_Begin(
+    MotionSequence *sequence,
+    MotionController *controller,
+    const MotionSequenceConfig *config)
 {
-    if (s == NULL || m == NULL || config == NULL)
+    if (sequence == NULL || controller == NULL || config == NULL)
+    {
         return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
-    if (!m->initialized) return MOTIONCONTROLLER_STATUS_NOT_INITIALIZED;
-    if (MotionController_IsBusy(m)) return MOTIONCONTROLLER_STATUS_BUSY;
-    if (m->config->useLegacyStraightSteering ||
+    }
+    if (!controller->initialized)
+    {
+        return MOTIONCONTROLLER_STATUS_NOT_INITIALIZED;
+    }
+    if (MotionController_IsBusy(controller))
+    {
+        return MOTIONCONTROLLER_STATUS_BUSY;
+    }
+    if (controller->config->useLegacyStraightSteering ||
         !isfinite(config->blendLengthMm) || config->blendLengthMm <= 0.0f ||
         !isfinite(config->junctionSpeedCps) || config->junctionSpeedCps <= 0.0f)
+    {
         return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
-    *s = (MotionSequence){0};
-    s->controller = m;
-    s->config = *config;
-    s->initialized = true;
+    }
+
+    *sequence = (MotionSequence){0};
+    sequence->controller = controller;
+    sequence->config = *config;
+    sequence->initialized = true;
     return MOTIONCONTROLLER_STATUS_OK;
 }
 
-static MotionControllerStatus add(MotionSequence *s, float distance,
-                                  float curvature, float speed, bool stopAfter)
+static MotionControllerStatus MotionSequence_AddSegment(
+    MotionSequence *sequence,
+    float signedDistanceMm,
+    float curvaturePerMm,
+    float speedCps,
+    bool stopAfter)
 {
-    if (s == NULL) return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
-    if (!s->initialized) return MOTIONCONTROLLER_STATUS_NOT_INITIALIZED;
-    if (s->state != MOTION_SEQUENCE_BUILDING) return MOTIONCONTROLLER_STATUS_INVALID_STATE;
-    if (!isfinite(distance)) return MOTIONCONTROLLER_STATUS_INVALID_DISTANCE;
-    if (!isfinite(speed) || speed <= 0.0f) return MOTIONCONTROLLER_STATUS_INVALID_SPEED;
-    if (!isfinite(curvature)) return MOTIONCONTROLLER_STATUS_INVALID_RADIUS;
-    if (distance == 0.0f) {
+    if (sequence == NULL)
+    {
+        return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
+    }
+    if (!sequence->initialized)
+    {
+        return MOTIONCONTROLLER_STATUS_NOT_INITIALIZED;
+    }
+    if (sequence->state != MOTION_SEQUENCE_BUILDING)
+    {
+        return MOTIONCONTROLLER_STATUS_INVALID_STATE;
+    }
+    if (!isfinite(signedDistanceMm))
+    {
+        return MOTIONCONTROLLER_STATUS_INVALID_DISTANCE;
+    }
+    if (!isfinite(speedCps) || speedCps <= 0.0f)
+    {
+        return MOTIONCONTROLLER_STATUS_INVALID_SPEED;
+    }
+    if (!isfinite(curvaturePerMm))
+    {
+        return MOTIONCONTROLLER_STATUS_INVALID_RADIUS;
+    }
+
+    if (signedDistanceMm == 0.0f)
+    {
         /* A zero-distance stop waypoint still marks the preceding junction. */
-        if (stopAfter && s->plan.count > 0U)
-            s->plan.segments[s->plan.count - 1U].stopAfter = true;
+        if (stopAfter && sequence->plan.count > 0U)
+        {
+            sequence->plan.segments[sequence->plan.count - 1U].stopAfter = true;
+        }
         return MOTIONCONTROLLER_STATUS_OK;
     }
-    if (s->plan.count == MOTION_SEQUENCE_CAPACITY)
+    if (sequence->plan.count == MOTION_SEQUENCE_CAPACITY)
+    {
         return MOTIONCONTROLLER_STATUS_PROFILE_ERROR;
-    float raw;
+    }
+
+    float rawSteeringCommand;
     MotionControllerStatus status = MotionController_GetProfileFeedforward(
-        s->controller, curvature, &raw);
-    if (status != MOTIONCONTROLLER_STATUS_OK) return status;
-    s->plan.segments[s->plan.count++] = (MotionSequenceSegment){distance, curvature, speed, stopAfter};
+        sequence->controller, curvaturePerMm, &rawSteeringCommand);
+    if (status != MOTIONCONTROLLER_STATUS_OK)
+    {
+        return status;
+    }
+
+    sequence->plan.segments[sequence->plan.count++] =
+        (MotionSequenceSegment){signedDistanceMm, curvaturePerMm, speedCps, stopAfter};
     return MOTIONCONTROLLER_STATUS_OK;
 }
 
-MotionControllerStatus MotionSequence_AddStraight(MotionSequence *s,
-    float signedDistanceMm, float speedCps, bool stopAfter)
+MotionControllerStatus MotionSequence_AddStraight(
+    MotionSequence *sequence, float signedDistanceMm, float speedCps, bool stopAfter)
 {
-    return add(s, signedDistanceMm, 0.0f, speedCps, stopAfter);
+    return MotionSequence_AddSegment(
+        sequence, signedDistanceMm, 0.0f, speedCps, stopAfter);
 }
 
-MotionControllerStatus MotionSequence_AddArc(MotionSequence *s,
-    float signedDistanceMm, float radiusMm, float speedCps, bool stopAfter)
+MotionControllerStatus MotionSequence_AddArc(
+    MotionSequence *sequence,
+    float signedDistanceMm,
+    float radiusMm,
+    float speedCps,
+    bool stopAfter)
 {
     if (!isfinite(radiusMm) || radiusMm == 0.0f)
+    {
         return MOTIONCONTROLLER_STATUS_INVALID_RADIUS;
-    return add(s, signedDistanceMm, 1.0f / radiusMm, speedCps, stopAfter);
+    }
+    return MotionSequence_AddSegment(
+        sequence, signedDistanceMm, 1.0f / radiusMm, speedCps, stopAfter);
 }
 
-static float rawSlopeBound(const MotionControllerConfig *c)
+static float MotionSequence_GetRawSlopeBound(const MotionControllerConfig *config)
 {
-    const MotionControllerArcConfig *a = c->arcConfig;
+    const MotionControllerArcConfig *arcConfig = config->arcConfig;
     float bound = 0.0f;
-    for (unsigned branch = 0U; branch < 2U; ++branch) {
-        const MotionControllerArcFeedforwardPoint *points = branch == 0U
-            ? a->negativePoints : a->positivePoints;
-        uint32_t count = branch == 0U ? a->negativePointCount : a->positivePointCount;
-        uint32_t near = branch == 0U ? count - 1U : 0U;
-        bound = fmaxf(bound, fabsf((points[near].rawSteeringCommand -
-            c->straightSteeringFeedforwardCommand) / points[near].curvaturePerMm));
+    for (unsigned branch = 0U; branch < 2U; ++branch)
+    {
+        const MotionControllerArcFeedforwardPoint *points =
+            branch == 0U ? arcConfig->negativePoints : arcConfig->positivePoints;
+        uint32_t count = branch == 0U ? arcConfig->negativePointCount
+                                      : arcConfig->positivePointCount;
+        uint32_t nearestZeroPointIndex = branch == 0U ? count - 1U : 0U;
+        bound = fmaxf(
+            bound,
+            fabsf(
+                (points[nearestZeroPointIndex].rawSteeringCommand -
+                 config->straightSteeringFeedforwardCommand) /
+                points[nearestZeroPointIndex].curvaturePerMm));
         for (uint32_t i = 1U; i < count; ++i)
-            bound = fmaxf(bound, fabsf((points[i].rawSteeringCommand - points[i - 1U].rawSteeringCommand) /
-                (points[i].curvaturePerMm - points[i - 1U].curvaturePerMm)));
+        {
+            bound = fmaxf(
+                bound,
+                fabsf(
+                    (points[i].rawSteeringCommand - points[i - 1U].rawSteeringCommand) /
+                    (points[i].curvaturePerMm - points[i - 1U].curvaturePerMm)));
+        }
     }
     return bound;
 }
 
-static MotionControllerStatus launchRun(MotionSequence *s, uint32_t first)
+static MotionControllerStatus MotionSequence_LaunchRun(
+    MotionSequence *sequence, uint32_t first)
 {
-    s->expectedBraking = false;
-    s->run = (MotionSequenceRun){&s->plan, first, MotionSequencePlan_RunEnd(&s->plan, first)};
-    float length = 0.0f, maxSpeed = 0.0f;
-    for (uint32_t i = first; i <= s->run.last; ++i) {
-        length += fabsf(s->plan.segments[i].signedDistanceMm);
-        maxSpeed = fmaxf(maxSpeed, s->plan.segments[i].speedCps);
+    sequence->expectedBraking = false;
+    sequence->run = (MotionSequenceRun){
+        &sequence->plan, first, MotionSequencePlan_RunEnd(&sequence->plan, first)};
+
+    float runLengthMm = 0.0f;
+    float maxSpeedCps = 0.0f;
+    for (uint32_t i = first; i <= sequence->run.last; ++i)
+    {
+        runLengthMm += fabsf(sequence->plan.segments[i].signedDistanceMm);
+        maxSpeedCps = fmaxf(maxSpeedCps, sequence->plan.segments[i].speedCps);
     }
-    const MotionSequenceSegment *initial = &s->plan.segments[first];
-    const MotionControllerConfig *c = s->controller->config;
-    const MotionSequenceSegment *final = &s->plan.segments[s->run.last];
-    bool finalArc = s->run.last + 1U == s->plan.count &&
-        final->curvaturePerMm != 0.0f &&
-        fabsf(final->signedDistanceMm * final->curvaturePerMm) >
+
+    /* Choose preparation and terminal policy for this continuous run. */
+    const MotionSequenceSegment *initialSegment = &sequence->plan.segments[first];
+    const MotionControllerConfig *config = sequence->controller->config;
+    const MotionSequenceSegment *finalSegment =
+        &sequence->plan.segments[sequence->run.last];
+    bool terminalYawPriority =
+        sequence->run.last + 1U == sequence->plan.count &&
+        finalSegment->curvaturePerMm != 0.0f &&
+        fabsf(finalSegment->signedDistanceMm * finalSegment->curvaturePerMm) >
             MOTION_PATH_TERMINAL_MIN_YAW_DEG * (SEQUENCE_PI / 180.0f);
-    float finalConstantStartMm = length - fabsf(final->signedDistanceMm);
-    if (s->run.last > first)
-        finalConstantStartMm += s->plan.junctionHalfLengthMm[s->run.last - 1U];
+    float finalConstantStartMm = runLengthMm - fabsf(finalSegment->signedDistanceMm);
+    if (sequence->run.last > first)
+    {
+        finalConstantStartMm +=
+            sequence->plan.junctionHalfLengthMm[sequence->run.last - 1U];
+    }
+
     MotionPathProfile profile = {
-        .signedDistanceMm = initial->signedDistanceMm > 0.0f ? length : -length,
-        .maxSpeedCps = maxSpeed,
-        .steeringSettlingTimeSec = initial->curvaturePerMm == 0.0f
-            ? c->straightSteeringSettlingTimeSec : c->arcConfig->steeringSettlingTimeSec,
+        .signedDistanceMm =
+            initialSegment->signedDistanceMm > 0.0f ? runLengthMm : -runLengthMm,
+        .maxSpeedCps = maxSpeedCps,
+        .steeringSettlingTimeSec = initialSegment->curvaturePerMm == 0.0f
+                                       ? config->straightSteeringSettlingTimeSec
+                                       : config->arcConfig->steeringSettlingTimeSec,
         .evaluate = MotionSequencePlan_Evaluate,
-        .context = &s->run,
-        .terminalYawPriority = finalArc,
-        .terminalEntryProgressMm = fmaxf(finalConstantStartMm,
-            length - MOTION_PATH_TERMINAL_ENTRY_DISTANCE_MM)
-    };
-    return MotionController_FollowProfile(s->controller, &profile);
+        .context = &sequence->run,
+        .terminalYawPriority = terminalYawPriority,
+        .terminalEntryProgressMm = fmaxf(
+            finalConstantStartMm,
+            runLengthMm - MOTION_PATH_TERMINAL_ENTRY_DISTANCE_MM)};
+    return MotionController_FollowProfile(sequence->controller, &profile);
 }
 
-MotionControllerStatus MotionSequence_Execute(MotionSequence *s)
+MotionControllerStatus MotionSequence_Execute(MotionSequence *sequence)
 {
-    if (s == NULL) return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
-    if (!s->initialized) return MOTIONCONTROLLER_STATUS_NOT_INITIALIZED;
-    if (s->state != MOTION_SEQUENCE_BUILDING) return MOTIONCONTROLLER_STATUS_INVALID_STATE;
-    if (MotionController_IsBusy(s->controller)) return MOTIONCONTROLLER_STATUS_BUSY;
-    const MotionControllerConfig *c = s->controller->config;
-    float mmPerCount = SEQUENCE_PI * c->kinematics->rearWheelDiameterMm /
-        c->kinematics->rearEncoderCountsPerRev;
-    if (!MotionSequencePlan_Prepare(&s->plan, &s->config, mmPerCount,
-        c->motionDecelerationMmps2, rawSlopeBound(c),
-        s->controller->steering->calibration->maxCommandRatePerSec))
+    if (sequence == NULL)
+    {
+        return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
+    }
+    if (!sequence->initialized)
+    {
+        return MOTIONCONTROLLER_STATUS_NOT_INITIALIZED;
+    }
+    if (sequence->state != MOTION_SEQUENCE_BUILDING)
+    {
+        return MOTIONCONTROLLER_STATUS_INVALID_STATE;
+    }
+    if (MotionController_IsBusy(sequence->controller))
+    {
+        return MOTIONCONTROLLER_STATUS_BUSY;
+    }
+    const MotionControllerConfig *config = sequence->controller->config;
+    float mmPerCount = SEQUENCE_PI * config->kinematics->rearWheelDiameterMm /
+                       config->kinematics->rearEncoderCountsPerRev;
+    if (!MotionSequencePlan_Prepare(
+            &sequence->plan,
+            &sequence->config,
+            mmPerCount,
+            config->motionDecelerationMmps2,
+            MotionSequence_GetRawSlopeBound(config),
+            sequence->controller->steering->calibration->maxCommandRatePerSec))
+    {
         return MOTIONCONTROLLER_STATUS_PROFILE_ERROR;
-    if (s->plan.count == 0U) {
-        s->state = MOTION_SEQUENCE_COMPLETE;
+    }
+
+    if (sequence->plan.count == 0U)
+    {
+        sequence->state = MOTION_SEQUENCE_COMPLETE;
         return MOTIONCONTROLLER_STATUS_OK;
     }
-    s->lastStatus = launchRun(s, 0U);
-    s->state = s->lastStatus == MOTIONCONTROLLER_STATUS_OK
-        ? MOTION_SEQUENCE_RUNNING : MOTION_SEQUENCE_FAILED;
-    return s->lastStatus;
+
+    sequence->lastStatus = MotionSequence_LaunchRun(sequence, 0U);
+    sequence->state = sequence->lastStatus == MOTIONCONTROLLER_STATUS_OK
+                          ? MOTION_SEQUENCE_RUNNING
+                          : MOTION_SEQUENCE_FAILED;
+    return sequence->lastStatus;
 }
 
-MotionControllerStatus MotionSequence_Update(MotionSequence *s, float dt)
+MotionControllerStatus MotionSequence_Update(MotionSequence *sequence, float dt)
 {
-    if (s == NULL) return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
-    if (!s->initialized) return MOTIONCONTROLLER_STATUS_NOT_INITIALIZED;
-    if (!isfinite(dt) || dt <= 0.0f) return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
-    if (!MotionSequence_IsBusy(s)) return s->lastStatus;
+    if (sequence == NULL)
+    {
+        return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
+    }
+    if (!sequence->initialized)
+    {
+        return MOTIONCONTROLLER_STATUS_NOT_INITIALIZED;
+    }
+    if (!isfinite(dt) || dt <= 0.0f)
+    {
+        return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
+    }
+    if (!MotionSequence_IsBusy(sequence))
+    {
+        return sequence->lastStatus;
+    }
+
     /* A direct Stop/Brake by another caller invalidates ownership. It must
      * never be mistaken for successful completion and launch the next run. */
-    MotionControllerMode before = s->controller->mode;
-    if (before != MOTIONCONTROLLER_PROFILE_PREPARING &&
-        before != MOTIONCONTROLLER_PROFILE &&
-        !(before == MOTIONCONTROLLER_BRAKING && s->expectedBraking)) {
-        s->state = MOTION_SEQUENCE_FAILED;
-        s->lastStatus = MOTIONCONTROLLER_STATUS_INVALID_STATE;
-        MotionController_Stop(s->controller);
-        return s->lastStatus;
+    MotionControllerMode modeBeforeUpdate = sequence->controller->mode;
+    if (modeBeforeUpdate != MOTIONCONTROLLER_PROFILE_PREPARING &&
+        modeBeforeUpdate != MOTIONCONTROLLER_PROFILE &&
+        !(modeBeforeUpdate == MOTIONCONTROLLER_BRAKING && sequence->expectedBraking))
+    {
+        sequence->state = MOTION_SEQUENCE_FAILED;
+        sequence->lastStatus = MOTIONCONTROLLER_STATUS_INVALID_STATE;
+        MotionController_Stop(sequence->controller);
+        return sequence->lastStatus;
     }
-    s->lastStatus = MotionController_Update(s->controller, dt);
-    if (s->lastStatus != MOTIONCONTROLLER_STATUS_OK) {
-        s->state = MOTION_SEQUENCE_FAILED;
-        return s->lastStatus;
+
+    sequence->lastStatus = MotionController_Update(sequence->controller, dt);
+    if (sequence->lastStatus != MOTIONCONTROLLER_STATUS_OK)
+    {
+        sequence->state = MOTION_SEQUENCE_FAILED;
+        return sequence->lastStatus;
     }
-    s->expectedBraking = s->controller->mode == MOTIONCONTROLLER_BRAKING;
-    if (MotionController_IsBusy(s->controller)) return s->lastStatus;
-    s->completedMeasuredTravelMm += fabsf(s->controller->travelledDistanceMm);
-    s->completedMeasuredYawRad += s->controller->yawDeg * (SEQUENCE_PI / 180.0f);
-    if (s->state == MOTION_SEQUENCE_ABORTING) {
-        s->state = MOTION_SEQUENCE_ABORTED;
-        return s->lastStatus;
+
+    sequence->expectedBraking = sequence->controller->mode == MOTIONCONTROLLER_BRAKING;
+    if (MotionController_IsBusy(sequence->controller))
+    {
+        return sequence->lastStatus;
     }
-    ++s->completedRuns;
-    uint32_t next = s->run.last + 1U;
-    if (next == s->plan.count) {
-        s->state = MOTION_SEQUENCE_COMPLETE;
-        return s->lastStatus;
+
+    /* Accumulate the finished run, including its braking drift. */
+    sequence->completedMeasuredTravelMm +=
+        fabsf(sequence->controller->travelledDistanceMm);
+    sequence->completedMeasuredYawRad +=
+        sequence->controller->yawDeg * (SEQUENCE_PI / 180.0f);
+    if (sequence->state == MOTION_SEQUENCE_ABORTING)
+    {
+        sequence->state = MOTION_SEQUENCE_ABORTED;
+        return sequence->lastStatus;
     }
-    s->lastStatus = launchRun(s, next);
-    if (s->lastStatus != MOTIONCONTROLLER_STATUS_OK) s->state = MOTION_SEQUENCE_FAILED;
-    return s->lastStatus;
+
+    ++sequence->completedRuns;
+    uint32_t nextSegmentIndex = sequence->run.last + 1U;
+    if (nextSegmentIndex == sequence->plan.count)
+    {
+        sequence->state = MOTION_SEQUENCE_COMPLETE;
+        return sequence->lastStatus;
+    }
+
+    sequence->lastStatus = MotionSequence_LaunchRun(sequence, nextSegmentIndex);
+    if (sequence->lastStatus != MOTIONCONTROLLER_STATUS_OK)
+    {
+        sequence->state = MOTION_SEQUENCE_FAILED;
+    }
+    return sequence->lastStatus;
 }
 
-MotionControllerStatus MotionSequence_Brake(MotionSequence *s)
+MotionControllerStatus MotionSequence_Brake(MotionSequence *sequence)
 {
-    if (s == NULL) return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
-    if (!s->initialized) return MOTIONCONTROLLER_STATUS_NOT_INITIALIZED;
-    if (!MotionSequence_IsBusy(s)) return MOTIONCONTROLLER_STATUS_OK;
-    s->lastStatus = MotionController_Brake(s->controller);
-    s->expectedBraking = s->lastStatus == MOTIONCONTROLLER_STATUS_OK;
-    s->state = s->lastStatus == MOTIONCONTROLLER_STATUS_OK
-        ? MOTION_SEQUENCE_ABORTING : MOTION_SEQUENCE_FAILED;
-    return s->lastStatus;
+    if (sequence == NULL)
+    {
+        return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
+    }
+    if (!sequence->initialized)
+    {
+        return MOTIONCONTROLLER_STATUS_NOT_INITIALIZED;
+    }
+    if (!MotionSequence_IsBusy(sequence))
+    {
+        return MOTIONCONTROLLER_STATUS_OK;
+    }
+    sequence->lastStatus = MotionController_Brake(sequence->controller);
+    sequence->expectedBraking = sequence->lastStatus == MOTIONCONTROLLER_STATUS_OK;
+    sequence->state = sequence->lastStatus == MOTIONCONTROLLER_STATUS_OK
+                          ? MOTION_SEQUENCE_ABORTING
+                          : MOTION_SEQUENCE_FAILED;
+    return sequence->lastStatus;
 }
