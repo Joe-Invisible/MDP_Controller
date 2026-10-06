@@ -22,11 +22,16 @@ batch record. A new batch parsed during motion receives `NAK <id> BUSY`.
 
 `L` and `R` take positive heading changes in **degrees**, up to 360 per
 command. They drive forward arcs with a 275 mm rear-axle-centre radius at
-2,000 encoder counts/sec. For example, `L90` travels about 432.0 mm along a
+4,000 encoder counts/sec. For example, `L90` travels about 432.0 mm along a
 left quarter-circle; it does not turn in place. `F`/`B` retain a 5,000
 counts/sec cruise speed. The arc controller prepositions the steering for
 0.5 seconds, then profiles the movement and brakes to a stop. `STATUS` and
 standalone `S` remain available during steering preparation and motion.
+
+`BL` and `BR` are the same arcs driven backwards, for example `BR90`. The
+second letter is the steering side, not the turn direction: `BL90` steers
+left and reverses, so the heading turns 90 degrees clockwise. Reverse arcs
+have not been checked on the floor yet.
 
 The angle is converted to path length (`radius * degrees * pi / 180`); the
 existing controller uses encoder distance and IMU feedback. `DONE` confirms
@@ -157,7 +162,8 @@ was interrupted after -48 mm of measured travel and -2.2 degrees of relative
 heading change. Command 3 never started. `completed` counts whole commands
 only; `step` is the 1-based most recently attempted command, or 0 before any.
 If stopped between commands, `step == completed` refers to the completed one.
-Parameter has the original command's units: F/B travel mm, L/R degrees,
+The command field is `F`, `B`, `L`, `R`, `BL`, `BR` or `U`.
+Parameter has the original command's units: F/B travel mm, L/R/BL/BR degrees,
 U desired remaining sensor gap mm. Float fields can use decimal or exponent
 notation. Travel is signed vehicle-centre encoder odometry and yaw is relative
 to that command's start; neither is a global position or an accuracy guarantee.
