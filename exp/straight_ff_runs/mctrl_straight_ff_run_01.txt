@@ -1,0 +1,21 @@
+=cmd-param-changed,param="logging enabled",value="on"
+110^done
+(gdb) 
+111^error,msg="-interpreter-exec: Usage: -interpreter-exec interp command"
+(gdb) 
+~"=== MotionController Straight Feedforward Test ===\n"
+112^done
+(gdb) 
+~"Battery voltage (0 = unknown): 0.000 V\n"
+113^done
+(gdb) 
+~"States: 0=IDLE, 1=STRAIGHT, 2=ARC, 3=BRAKING, 4=ARC_PREPARING, 5=STRAIGHT_PREPARING.\n"
+114^done
+(gdb) 
+115^error,msg="-interpreter-exec: Usage: -interpreter-exec interp command"
+(gdb) 
+~"=== Loaded ELF ===\n"
+116^done
+(gdb) 
+&"Quit\n"
+(gdb) 

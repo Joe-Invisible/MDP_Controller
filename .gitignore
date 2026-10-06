@@ -67,3 +67,6 @@ Desktop.ini
 
 # JetBrains
 .idea/
+
+# Automatically exported experiment logs and generated GDB commands
+exp/logs/

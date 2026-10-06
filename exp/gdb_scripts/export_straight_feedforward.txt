@@ -1,0 +1,16 @@
+set print elements unlimited
+set print repeats unlimited
+
+set logging file mctrl_aggressive_fb_run24.txt
+set logging enabled on
+
+p "Feedback ENABLED; (if enabled) Kp=370.0, Ki=450.0, Kd=5.0, heading Kp=2.0"
+p "yaw rate limit: 30.0"
+p "STRAIGHT -500 mm @ 2000 CPS"
+p "Unified controller architecture"
+p "Legacy nominal center -9.525... units as zero-curvature feedforward"
+p "Note: After front wheel bearing mechanism fix."
+p "Servo slew limit fixed at 120.0 raw/s"
+
+p motionControllerStraightFeedforwardTestLogCount
+p motionControllerStraightFeedforwardTestLog[0] @ motionControllerStraightFeedforwardTestLogCount

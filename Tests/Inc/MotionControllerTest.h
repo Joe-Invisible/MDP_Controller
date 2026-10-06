@@ -47,6 +47,18 @@ typedef struct {
     float targetSteeringAngleRad;
     float effectiveSteeringAngleRad;
 
+    /* Unified path feedback; angle fields above are legacy-only estimates. */
+    bool effectiveAngleModelValid;
+    float steeringCommand;
+    float steeringFeedforwardCommand;
+    float steeringTargetCommand;
+    float steeringCorrectionCommand;
+    float yawRateDps;
+    float filteredYawRateDps;
+    float headingErrorRad;
+    float targetYawRateRadPerSec;
+    float commandedCurvaturePerMm;
+
     /*
      * Dynamic braking
      */

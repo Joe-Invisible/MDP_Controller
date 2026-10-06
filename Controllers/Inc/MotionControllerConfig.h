@@ -9,6 +9,7 @@
 #define INC_MOTIONCONTROLLERCONFIG_H_
 
 #include <stdint.h>
+#include <stdbool.h>
 
 #include "RobotKinematics.h"
 
@@ -48,20 +49,56 @@ typedef struct
     const RobotKinematics *kinematics;
     const MotionControllerArcConfig *arcConfig;
 
-    /* Hold time after commanding steering centre before straight motion. */
+    /* Hold time after commanding the straight feedforward before motion. */
     float straightSteeringSettlingTimeSec;
 
+    /*
+     * Unified straight-only raw steering feedforward command. This is an
+     * empirical bias-cancellation operating point, not the legacy model's
+     * zero-effective-angle centre crossing.
+     */
+    float straightSteeringFeedforwardCommand;
+
+    /* Temporary A/B baseline: only straight motion uses the angle model. */
+    bool useLegacyStraightSteering;
+
+    /* Legacy straight-only PID; ignored by the unified path controller. */
     float headingKp;
     float headingKi;
     float headingKd;
     float maxHeadingSteeringAngleRad;
 
+    /*
+     * Unified zero-curvature path tuning used by MoveStraight().
+     *
+     * The software control law is shared with ARC, but the steering plant
+     * around the centre operating point has experimentally required a
+     * different yaw-rate PI and outer heading gain.
+     */
+    float straightYawRateKp;
+    float straightYawRateKi;
+    float straightYawRateKd;
+    float straightHeadingKpPerSec;
+
+    /*
+     * Unified finite-curvature path tuning used by MoveArc().
+     * Historical arc-prefixed names are retained for existing diagnostics.
+     */
     float arcYawRateKp;
     float arcYawRateKi;
     float arcYawRateKd;
+    float arcHeadingKpPerSec;
+
+    /* Shared raw-command feedback authority for both unified regimes. */
     float maxArcSteeringCommandCorrection;
 
-    float arcHeadingKpPerSec;
+    /*
+     * Shared outer-loop bound [1/mm]:
+     * |heading yaw-rate correction| <= |signed speed| * this value.
+     * Unlike a multiple of nominal curvature, this also permits correction
+     * on a straight path. Zero disables outer heading correction.
+     */
+    float maxPathCorrectionCurvaturePerMm;
 
     float wheelSyncKpCpsPerMm;
     float maxWheelSyncCorrectionCps;
@@ -70,6 +107,7 @@ typedef struct
     float motionDecelerationMmps2;
     float motionCompletionToleranceMm;
 
+    /* Shared measured-speed / yaw-rate feedback filter time constant. */
     float arcYawRateFilterTauSec;
 
     /* Consecutive stationary updates required to complete braking. */

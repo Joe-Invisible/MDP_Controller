@@ -1,0 +1,51 @@
+=cmd-param-changed,param="logging enabled",value="on"
+70^done
+(gdb) 
+71^error,msg="-interpreter-exec: Usage: -interpreter-exec interp command"
+(gdb) 
+~"=== MotionController Straight Feedforward Test ===\n"
+72^done
+(gdb) 
+~"Battery voltage (0 = unknown): 11.890 V\n"
+73^done
+(gdb) 
+~"States: 0=IDLE, 1=STRAIGHT, 2=ARC, 3=BRAKING, 4=ARC_PREPARING, 5=STRAIGHT_PREPARING.\n"
+74^done
+(gdb) 
+75^error,msg="-interpreter-exec: Usage: -interpreter-exec interp command"
+(gdb) 
+~"=== Loaded ELF ===\n"
+76^done
+(gdb) 
+~"Symbols from \"C:\\Users\\user\\Desktop\\MDP\\code\\MDP_Controller\\Debug\\MDP_Controller.elf\".\n"
+~"Remote target using gdb-specific protocol:\n"
+~"\t`C:\\Users\\user\\Desktop\\MDP\\code\\MDP_Controller\\Debug\\MDP_Controller.elf', file type elf32-littlearm.\n"
+~"\tEntry point: 0x800602c\n"
+~"\t0x08000000 - 0x08000188 is .isr_vector\n"
+~"\t0x08000190 - 0x08013484 is .text\n"
+~"\t0x08013488 - 0x08014214 is .rodata\n"
+~"\t0x08014214 - 0x0801421c is .ARM\n"
+~"\t0x0801421c - 0x0801421c is .preinit_array\n"
+~"\t0x0801421c - 0x08014220 is .init_array\n"
+~"\t0x08014220 - 0x08014224 is .fini_array\n"
+~"\t0x20000000 - 0x200001d8 is .data\n"
+~"\t0x200001d8 - 0x2001b370 is .bss\n"
+~"\t0x2001b370 - 0x2001b970 is ._user_heap_stack\n"
+~"\tWhile running this, GDB does not access memory from...\n"
+~"Local exec file:\n"
+~"\t`C:\\Users\\user\\Desktop\\MDP\\code\\MDP_Controller\\Debug\\MDP_Controller.elf', file type elf32-littlearm.\n"
+~"\tEntry point: 0x800602c\n"
+~"\t0x08000000 - 0x08000188 is .isr_vector\n"
+~"\t0x08000190 - 0x08013484 is .text\n"
+~"\t0x08013488 - 0x08014214 is .rodata\n"
+~"\t0x08014214 - 0x0801421c is .ARM\n"
+~"\t0x0801421c - 0x0801421c is .preinit_array\n"
+~"\t0x0801421c - 0x08014220 is .init_array\n"
+~"\t0x08014220 - 0x08014224 is .fini_array\n"
+~"\t0x20000000 - 0x200001d8 is .data\n"
+~"\t0x200001d8 - 0x2001b370 is .bss\n"
+~"\t0x2001b370 - 0x2001b970 is ._user_heap_stack\n"
+77^done
+(gdb) 
+&"Quit\n"
+(gdb) 

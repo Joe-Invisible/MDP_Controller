@@ -21,6 +21,7 @@
 #include "RobotKinematicsTest.h"
 #include "MotionControllerArcTest.h"
 #include "MotionControllerSequenceTest.h"
+#include "MotionControllerStraightFeedforwardTest.h"
 #include "MotionControllerTest.h"
 #include "oled.h"
 #include "led3.h"
@@ -31,8 +32,11 @@ void InvokeTest() {
 
 	LED_On();
 
-	/* Stationary ultrasonic bring-up: starts immediately, no button required. */
-	HCSR04TestRun();
+	/* Select this separate harness for straight feedforward calibration:
+	 * MotionControllerStraightFeedforwardTestRun();
+	 * The original arc harness retains the pending raw +95 setup.
+	 * Stationary ultrasonic bring-up (no button needed): HCSR04TestRun(); */
+	MotionControllerSequenceTestRun();
 
 	while (1) {
 		// Test ended. Loop forever.

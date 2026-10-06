@@ -77,8 +77,8 @@
  * Set Kp = 0 here as an additional indication that this is
  * a pure feedforward curved-motion experiment.
  *
- * maxHeadingSteeringAngleRad remains non-zero because it must
- * still be a valid MotionController configuration parameter.
+ * Legacy heading parameters are retained for optional straight A/B tests;
+ * the unified path controller uses the yaw-rate and outer-heading settings.
  */
 #define ARC_TEST_HEADING_KP               (0.0f)
 #define ARC_TEST_HEADING_KI               (0.0f)
@@ -96,6 +96,10 @@ static const MotionControllerConfig arcTestMotionConfig =
 {
     .kinematics = &kinematics,
     .arcConfig = &arcMotionConfig,
+
+    .straightSteeringSettlingTimeSec = 0.5f,
+    .useLegacyStraightSteering = false,
+    .maxPathCorrectionCurvaturePerMm = 1.0f / 1000.0f,
 
     .headingKp = ARC_TEST_HEADING_KP,
     .headingKi = ARC_TEST_HEADING_KI,

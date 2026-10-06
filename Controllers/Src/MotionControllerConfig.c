@@ -94,23 +94,48 @@ const MotionControllerConfig motionControllerConfig =
     .straightSteeringSettlingTimeSec =
         STRAIGHT_STEERING_SETTLING_TIME_SEC,
 
+    /*
+     * Post-tuning straight feedforward refinement. The closed loop was
+     * repeatedly cancelling the previous centre bias, so unified straight
+     * motion now starts from raw zero and leaves only the residual error to
+     * the already-tuned feedback loops.
+     */
+    .straightSteeringFeedforwardCommand = 0.0f,
+
+    .useLegacyStraightSteering = false,
+
     .headingKp = 1.2f,
     .headingKi = 0.05f,
     .headingKd = 0.0f,
     .maxHeadingSteeringAngleRad = 0.015f,
 
-    .arcYawRateKp = 10.0f,
-    .arcYawRateKi = 0.0f,
-    .arcYawRateKd = 0.0f,
-    .maxArcSteeringCommandCorrection = 5.0f,
+    /*
+     * Same unified path control law, with operating-point-specific gains.
+     * Straight requires stronger centre-region bias rejection; finite-
+     * curvature arcs are feedforward-dominant and were stable with the
+     * lower PI gains below.
+     */
+    .straightYawRateKp = 370.0f,
+    .straightYawRateKi = 450.0f,
+    .straightYawRateKd = 0.0f,
+    .straightHeadingKpPerSec = 2.0f,
 
-    .arcHeadingKpPerSec = 1.0f,
+    .arcYawRateKp = 270.0f,
+    .arcYawRateKi = 150.0f,
+    .arcYawRateKd = 0.0f,
+    .arcHeadingKpPerSec = 0.0f,
+
+    .maxArcSteeringCommandCorrection = 30.0f,
+
+    /* Shared heading-generated curvature bound. */
+    .maxPathCorrectionCurvaturePerMm = 1.0f / 1000.0f,
 
     .wheelSyncKpCpsPerMm = 10.0f,
     .maxWheelSyncCorrectionCps = 100.0f,
 
-    .motionAccelerationMmps2 = 500.0f,
-    .motionDecelerationMmps2 = 250.0f,
+    /* Current production-candidate profile from the terminal-arc campaign. */
+    .motionAccelerationMmps2 = 1500.0f,
+    .motionDecelerationMmps2 = 1000.0f,
     .motionCompletionToleranceMm = 0.5f,
 
     .arcYawRateFilterTauSec = 0.10f,

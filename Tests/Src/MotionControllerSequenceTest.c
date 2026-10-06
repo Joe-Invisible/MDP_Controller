@@ -53,7 +53,7 @@
  *
  * Change back to 20 ms when analysing a short sequence in more detail.
  */
-#define SEQ_TEST_LOG_INTERVAL_MS               (40U)
+#define SEQ_TEST_LOG_INTERVAL_MS               (20U)
 #define SEQ_TEST_LOG_CAPACITY                  (500U)
 
 #define SEQ_TEST_COMMAND_TIMEOUT_MS            (20000U)
@@ -124,21 +124,41 @@
 
 
 static const MotionControllerSequenceTestCommand
+//motionControllerSequenceTestCommands[] = {
+//    SEQ_STRAIGHT(
+//        -412.0f,
+//        5000.0f),
+//    SEQ_ARC(
+//        -275.0f * SEQ_TEST_PI / 2.0f,
+//        275.0f,
+//        4000.0f),
+//    SEQ_STRAIGHT(
+//        -137.5f,
+//        5000.0f),
+//    SEQ_ARC(
+//        -275.0f * SEQ_TEST_PI,
+//        -275.0f,
+//        4000.0f),
+//};
 motionControllerSequenceTestCommands[] = {
-    SEQ_STRAIGHT(
-        -412.0f,
-        5000.0f),
-    SEQ_ARC(
-        275.0f * SEQ_TEST_PI / 2.0f,
-        275.0f,
-        2000.0f),
-    SEQ_STRAIGHT(
-        -137.5f,
-        5000.0f),
-    SEQ_ARC(
-        275.0f * SEQ_TEST_PI,
-        -275.0f,
-        2000.0f),
+	SEQ_STRAIGHT(
+		-100.0f,
+		5000.0f),
+	SEQ_STRAIGHT(
+		-100.0f,
+		5000.0f),
+	SEQ_STRAIGHT(
+		-100.0f,
+		5000.0f),
+	SEQ_STRAIGHT(
+		-100.0f,
+		5000.0f),
+	SEQ_STRAIGHT(
+		-100.0f,
+		5000.0f),
+	SEQ_STRAIGHT(
+		-100.0f,
+		5000.0f),
 };
 //motionControllerSequenceTestCommands[] =
 //{
@@ -513,10 +533,14 @@ static void MotionControllerSequenceTest_LogSample(
     sample->steeringCommand =
         SteeringController_GetCommand(
             motionController->steering);
+    sample->steeringFeedforwardCommand =
+        motionController->arcSteeringFeedforwardCommand;
+    sample->effectiveAngleModelValid =
+        motionController->steering->effectiveAngleModelValid;
 
 
     /*
-     * ARC outer heading loop.
+     * Shared path outer heading loop (historical arc field names retained).
      */
     sample->arcDesiredYawRad =
         motionController->arcDesiredYawRad;
@@ -532,7 +556,7 @@ static void MotionControllerSequenceTest_LogSample(
 
 
     /*
-     * ARC inner yaw-rate loop.
+     * Shared path inner yaw-rate loop.
      */
     sample->yawRateDps =
         motionController->yawRateDps;
@@ -1337,8 +1361,7 @@ void MotionControllerSequenceTestRun(void)
         state.completedTravelledDistanceMm;
 
 
-    Buzzer_BlockingBuzz(
-        500);
+//    Buzzer_BlockingBuzz(500);
 
 
     MotionControllerSequenceTest_ShowFinal();
