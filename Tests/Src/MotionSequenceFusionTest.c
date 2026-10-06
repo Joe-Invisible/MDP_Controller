@@ -3,6 +3,7 @@
 #include "oledutils.h"
 #include "userbutton.h"
 #include <math.h>
+#include <stddef.h>
 
 #define FUSION_CONTROL_PERIOD_MS 10U
 #define FUSION_LOG_PERIOD_MS 20U
@@ -11,8 +12,25 @@
 #define FUSION_BRAKE_TIMEOUT_MS 3000U
 #define FUSION_SPEED_CPS 2000.0f
 /* Set to true for a stop-at-each-waypoint PROFILE comparison. This uses the
- * same distance-based endpoint policy on both sides of the experiment. */
+ * same profile endpoint policy on both sides of the experiment. */
 #define FUSION_STOP_EACH_SEGMENT false
+
+typedef struct
+{
+    float signedDistanceMm;
+    float radiusMm; /* Zero selects straight motion. */
+    float speedCps;
+    bool stopAfter;
+} MotionSequenceFusionTestStep;
+
+/* Edit this table to change the test sequence. Individual stopAfter flags
+ * remain available when FUSION_STOP_EACH_SEGMENT is false. */
+static const MotionSequenceFusionTestStep fusionTestSteps[] = {
+    /* Distance [mm], radius [mm], speed [CPS], stop after */
+    {300.0f,    0.0f, FUSION_SPEED_CPS, false},
+    {500.0f, -500.0f, FUSION_SPEED_CPS, false},
+    {300.0f,    0.0f, FUSION_SPEED_CPS, false},
+};
 
 static RobotTestFixture fixture;
 MotionSequence motionSequenceFusionTestSequence;
@@ -103,24 +121,35 @@ void MotionSequenceFusionTestRun(void)
         return;
     }
 
-    /* Build the experimental straight / arc / straight sequence. */
+    /* Build the sequence from the test table, stopping at the first error. */
     MotionSequence *sequence = &motionSequenceFusionTestSequence;
     motionSequenceFusionTestStatus = MotionSequence_Begin(
         sequence, &fixture.motionController, &motionSequenceConfig);
-    if (motionSequenceFusionTestStatus == MOTIONCONTROLLER_STATUS_OK)
+    for (size_t stepIndex = 0U;
+         stepIndex < sizeof(fusionTestSteps) / sizeof(fusionTestSteps[0]) &&
+             motionSequenceFusionTestStatus == MOTIONCONTROLLER_STATUS_OK;
+         ++stepIndex)
     {
-        motionSequenceFusionTestStatus = MotionSequence_AddStraight(
-            sequence, 300.0f, FUSION_SPEED_CPS, FUSION_STOP_EACH_SEGMENT);
-    }
-    if (motionSequenceFusionTestStatus == MOTIONCONTROLLER_STATUS_OK)
-    {
-        motionSequenceFusionTestStatus = MotionSequence_AddArc(
-            sequence, 500.0f, -500.0f, FUSION_SPEED_CPS, FUSION_STOP_EACH_SEGMENT);
-    }
-    if (motionSequenceFusionTestStatus == MOTIONCONTROLLER_STATUS_OK)
-    {
-        motionSequenceFusionTestStatus = MotionSequence_AddStraight(
-            sequence, 300.0f, FUSION_SPEED_CPS, FUSION_STOP_EACH_SEGMENT);
+        const MotionSequenceFusionTestStep *step = &fusionTestSteps[stepIndex];
+        bool stopAfter = FUSION_STOP_EACH_SEGMENT || step->stopAfter;
+
+        if (step->radiusMm == 0.0f)
+        {
+            motionSequenceFusionTestStatus = MotionSequence_AddStraight(
+                sequence,
+                step->signedDistanceMm,
+                step->speedCps,
+                stopAfter);
+        }
+        else
+        {
+            motionSequenceFusionTestStatus = MotionSequence_AddArc(
+                sequence,
+                step->signedDistanceMm,
+                step->radiusMm,
+                step->speedCps,
+                stopAfter);
+        }
     }
     if (motionSequenceFusionTestStatus != MOTIONCONTROLLER_STATUS_OK)
     {

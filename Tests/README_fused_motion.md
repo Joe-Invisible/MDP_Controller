@@ -177,6 +177,13 @@ The selected path is straight +300 mm, arc +500 mm at R=-500 mm, straight
 is -1 rad (-57.30 degrees). Each blend is 150 mm long for this path (75 mm
 from each neighbour). The plan records the actual junction speed caps.
 
+Edit `fusionTestSteps[]` near the top of `MotionSequenceFusionTest.c` to change
+the path. Each row contains signed distance, radius, speed, and `stopAfter`.
+A zero radius selects straight motion; a nonzero radius selects an arc.
+The builder loops over the array and stops at the first API error. Individual
+`stopAfter` flags can mark selected waypoints, while
+`FUSION_STOP_EACH_SEGMENT=true` forces every waypoint to stop.
+
 Keep the robot stationary through normal IMU startup. Press/release SW1 to
 start. Press SW1 during execution to cancel and brake. A 20 s watchdog also
 cancels; braking has a further 3 s timeout. The test does not restart itself.
@@ -193,8 +200,8 @@ the identical path. This comparison stops/prepares at every junction. To run
 the original standalone/yaw-priority sequence harness instead, restore
 `MotionControllerSequenceTestRun()` in `TestMain.c`.
 
-To exercise yaw-priority completion specifically, remove the last
-`MotionSequence_AddStraight` call from the harness: the batch becomes straight
+To exercise yaw-priority completion specifically, remove the last row from
+`fusionTestSteps[]`: the batch becomes straight
 +300 mm followed by arc +500 mm at R=-500 mm. Nominal travel is then 800 mm,
 final desired yaw is -1 rad, and the terminal window starts at 770 mm. Its actual
 travel may finish earlier or up to 30 mm later according to the yaw predictor.
