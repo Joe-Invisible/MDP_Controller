@@ -24,13 +24,37 @@ Intermediate junctions are virtual: their exact position and heading are not
 required. The final **nominal** heading and distance are preserved, while the
 XY trajectory differs from the original piecewise straight/arc path.
 
-Profile completion is distance-based using the inherited 0.5 mm tolerance,
-followed by the existing centred-steering braking/stationary-sample completion.
-The standalone arc's yaw-priority terminal extension is deliberately not applied
-to profiles: it could change the requested fused distance. There is no new
-final-yaw correction phase. Actual heading/distance accuracy and braking drift
-remain hardware measurements, particularly with the inherited arc heading gain
-of zero. This implementation does not guarantee final XY pose.
+Straight-ending profiles and intermediate stopped runs complete by distance
+using the inherited 0.5 mm tolerance. If the batch ends in an arc exceeding the
+inherited 0.5-degree minimum, its final run instead retains **yaw-priority arc
+termination** for camera heading:
+
+* The final target is the analytically integrated heading of the entire current
+  fused run. It includes preceding segments and their blends, so yaw error
+  accumulated within that run remains visible to termination.
+* The approach speed is limited toward 800 CPS before the terminal window.
+  The window begins in the final constant-curvature section, after its incoming
+  blend, and at most 30 mm before nominal distance completion.
+* The braking decision predicts stopping yaw from the freshest raw gyro rate
+  using the inherited 75 ms horizon. Direction comes from final arc curvature
+  and travel direction, even when mixed turns give zero or opposite-sign net yaw.
+* The controller may brake before nominal distance completion if predicted yaw
+  reaches the target, or continue at up to 400 CPS when distance finishes first.
+  Creep is also capped by the final segment's requested speed.
+* Heading and curvature references freeze at the nominal endpoint during
+  overrun. The inherited maximum 30 mm overrun guard still forces braking.
+
+Both termination paths use the existing centred-steering braking and stationary
+sample completion. The desired geometric path still preserves nominal distance
+and heading area, but final-arc actual distance may now differ to prioritise
+camera orientation. Actual tracking and the empirical stopping-yaw prediction
+still require hardware validation. No final XY-pose guarantee is provided.
+
+`terminalYawPredictedReached` and `terminalDistanceLimitReached` distinguish
+heading-triggered braking from the distance guard; reaching the guard alone does
+not demonstrate successful camera heading. Final measured yaw includes braking
+and may differ from predicted yaw. Completed-run errors across earlier stops
+remain diagnostic and are not carried into the final run's heading reference.
 
 Direction changes and `stopAfter=true` split the batch into rest-to-rest runs.
 The next run starts only after braking reports stationary for the configured
@@ -121,6 +145,10 @@ forward/reverse signs, both arc signs, opposite-sign ramps, speed lookahead,
 software slew bounds, gain/integral continuity, one preparation per continuous
 run, reversals/stop waypoints, capacity/invalid inputs, cancellation, faults,
 and the selected hardware harness's completion/cancellation/timeout/final log.
+Final-arc cases cover early predicted-yaw braking, continued motion after nominal
+arc distance, frozen references on overrun, bounded distance-guard braking,
+forward/reverse travel with both turn signs, zero/opposite-sign net targets,
+short final arcs, low requested speeds and final-only policy selection.
 
 The real GDB exporter also passed checks against initialized host ELF data:
 plan/config/result fields, all samples, empty/invalid-count guards and the
@@ -165,6 +193,13 @@ the identical path. This comparison stops/prepares at every junction. To run
 the original standalone/yaw-priority sequence harness instead, restore
 `MotionControllerSequenceTestRun()` in `TestMain.c`.
 
+To exercise yaw-priority completion specifically, remove the last
+`MotionSequence_AddStraight` call from the harness: the batch becomes straight
++300 mm followed by arc +500 mm at R=-500 mm. Nominal travel is then 800 mm,
+final desired yaw is -1 rad, and the terminal window starts at 770 mm. Its actual
+travel may finish earlier or up to 30 mm later according to the yaw predictor.
+The unchanged default straight/arc/straight experiment remains distance-ending.
+
 Set a breakpoint on `MotionSequenceFusionTestFinished` before starting. Once
 the target is suspended there, run these in the GDB console (cwd = project):
 
@@ -176,7 +211,7 @@ mctrl-fusion-export fusion_run01.txt
 
 Enter the actual measured voltage. Choose a new output name for each run;
 export appends if the name already exists. The command exports the complete
-plan, inherited tuning, result flags and available samples. It neither resumes
+plan, inherited tuning, final heading policy/termination flags and available samples. It neither resumes
 the target nor initiates motion. The old automatic sequence-export breakpoint
 does not apply to this harness.
 

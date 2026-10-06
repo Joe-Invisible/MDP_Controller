@@ -96,12 +96,24 @@ static MotionControllerStatus launchRun(MotionSequence *s, uint32_t first)
     }
     const MotionSequenceSegment *initial = &s->plan.segments[first];
     const MotionControllerConfig *c = s->controller->config;
+    const MotionSequenceSegment *final = &s->plan.segments[s->run.last];
+    bool finalArc = s->run.last + 1U == s->plan.count &&
+        final->curvaturePerMm != 0.0f &&
+        fabsf(final->signedDistanceMm * final->curvaturePerMm) >
+            MOTION_PATH_TERMINAL_MIN_YAW_DEG * (SEQUENCE_PI / 180.0f);
+    float finalConstantStartMm = length - fabsf(final->signedDistanceMm);
+    if (s->run.last > first)
+        finalConstantStartMm += s->plan.junctionHalfLengthMm[s->run.last - 1U];
     MotionPathProfile profile = {
-        initial->signedDistanceMm > 0.0f ? length : -length,
-        maxSpeed,
-        initial->curvaturePerMm == 0.0f ? c->straightSteeringSettlingTimeSec :
-                                        c->arcConfig->steeringSettlingTimeSec,
-        MotionSequencePlan_Evaluate, &s->run
+        .signedDistanceMm = initial->signedDistanceMm > 0.0f ? length : -length,
+        .maxSpeedCps = maxSpeed,
+        .steeringSettlingTimeSec = initial->curvaturePerMm == 0.0f
+            ? c->straightSteeringSettlingTimeSec : c->arcConfig->steeringSettlingTimeSec,
+        .evaluate = MotionSequencePlan_Evaluate,
+        .context = &s->run,
+        .terminalYawPriority = finalArc,
+        .terminalEntryProgressMm = fmaxf(finalConstantStartMm,
+            length - MOTION_PATH_TERMINAL_ENTRY_DISTANCE_MM)
     };
     return MotionController_FollowProfile(s->controller, &profile);
 }

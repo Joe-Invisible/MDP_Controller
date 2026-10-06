@@ -11,7 +11,8 @@ The robot uses two independently driven rear DC motors with Hall encoders for pr
 This branch adds `MotionSequence` above the unified controller and
 `MotionController_FollowProfile()` for continuous straight/arc batches. Internal
 curvature ramps preserve nominal total distance and heading area; reversals and
-explicit stop waypoints remain stopped boundaries. Near-zero feedforward
+explicit stop waypoints remain stopped boundaries. A batch-ending arc retains
+yaw-priority completion for camera heading. Near-zero feedforward
 interpolation and physical transition tracking are experimental.
 
 `TestMain.c` selects the new fusion harness. See

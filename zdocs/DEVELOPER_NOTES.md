@@ -381,7 +381,11 @@ verification.
 `MotionController_FollowProfile`, retaining controller state through virtual
 junctions. Symmetric curvature ramps consume neighbouring distances and
 preserve nominal heading area. Reversals and explicit stops split continuous
-runs; profile endpoints use distance completion and existing braking.
+runs. Intermediate stopped profiles and straight-ending batches use distance
+completion; a batch-ending arc uses the inherited yaw-priority terminal approach
+and stopping-yaw predictor against the final fused-run heading. Its turn sign
+comes from the final arc, including zero/opposite-sign net-yaw batches, with
+frozen endpoint references on bounded overrun. Existing braking is retained.
 
 The profile-only near-centre raw feedforward bridge is an experimental model,
 and straight/arc gains are scheduled through blends while preserving integral

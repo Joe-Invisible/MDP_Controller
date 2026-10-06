@@ -23,6 +23,11 @@ define mctrl-fusion-export
     if motionSequenceFusionTestSequence.controller != 0
         p *motionSequenceFusionTestSequence.controller->config
         p *motionSequenceFusionTestSequence.controller->steering->calibration
+        echo === Terminal heading policy and result ===\n
+        p motionSequenceFusionTestSequence.controller->pathProfile
+        p motionSequenceFusionTestSequence.controller->pathFinalSample
+        p motionSequenceFusionTestSequence.controller->terminalYawPredictedReached
+        p motionSequenceFusionTestSequence.controller->terminalDistanceLimitReached
     end
     echo === Samples ===\n
     p motionSequenceFusionTestLogCount

@@ -17,7 +17,8 @@
 /*
  * EXPERIMENTAL yaw-priority arc termination.
  *
- * Straight motion never enters this path. Near the nominal end of an arc,
+ * Standalone straights and straight-ending profiles keep distance completion.
+ * Near the nominal end of a standalone or batch-ending arc,
  * measured yaw is allowed to complete the command before distance does, or
  * to extend the arc slightly when distance finishes first.
  *
@@ -31,11 +32,11 @@
  * after braking begins from the freshest raw gyro rate. The 75 ms horizon is
  * the initial empirical estimate from the first two yaw-priority trials.
  */
-#define MOTIONCONTROLLER_ARC_TERMINAL_ENTRY_DISTANCE_MM      (30.0f)
+#define MOTIONCONTROLLER_ARC_TERMINAL_ENTRY_DISTANCE_MM      MOTION_PATH_TERMINAL_ENTRY_DISTANCE_MM
 #define MOTIONCONTROLLER_ARC_TERMINAL_MAX_OVERRUN_MM         (30.0f)
 #define MOTIONCONTROLLER_ARC_TERMINAL_APPROACH_SPEED_CPS     (800.0f)
 #define MOTIONCONTROLLER_ARC_TERMINAL_SPEED_CPS               (400.0f)
-#define MOTIONCONTROLLER_ARC_TERMINAL_MIN_TARGET_YAW_DEG       (0.5f)
+#define MOTIONCONTROLLER_ARC_TERMINAL_MIN_TARGET_YAW_DEG       MOTION_PATH_TERMINAL_MIN_YAW_DEG
 #define MOTIONCONTROLLER_ARC_TERMINAL_BRAKE_PREDICTION_SEC     (0.075f)
 
 /*
@@ -610,6 +611,8 @@ static MotionControllerStatus MotionController_StartMotion(
     controller->targetSteeringAngleRad = 0.0f;
 
     controller->yawDeg = 0.0f;
+    controller->terminalYawPredictedReached = false;
+    controller->terminalDistanceLimitReached = false;
 
     controller->desiredWheelTravelDifferenceMm = 0.0f;
     controller->wheelSyncErrorMm = 0.0f;
@@ -871,6 +874,12 @@ MotionControllerStatus MotionController_FollowProfile(
         !MotionController_ValidPathSample(&initial) ||
         !MotionController_ValidPathSample(&final))
         return MOTIONCONTROLLER_STATUS_PROFILE_ERROR;
+    if (profile->terminalYawPriority &&
+        (!isfinite(profile->terminalEntryProgressMm) ||
+         profile->terminalEntryProgressMm < 0.0f ||
+         profile->terminalEntryProgressMm >= fabsf(profile->signedDistanceMm) ||
+         final.curvaturePerMm == 0.0f))
+        return MOTIONCONTROLLER_STATUS_PROFILE_ERROR;
     status = MotionController_GetProfileFeedforward(controller, initial.curvaturePerMm, &raw);
     if (status != MOTIONCONTROLLER_STATUS_OK) return status;
     status = MotionController_GetProfileFeedforward(controller, final.curvaturePerMm, &finalRaw);
@@ -879,6 +888,7 @@ MotionControllerStatus MotionController_FollowProfile(
     if (status != MOTIONCONTROLLER_STATUS_OK) return status;
     controller->pathProfile = *profile;
     controller->pathSample = initial;
+    controller->pathFinalSample = final;
     controller->targetCurvaturePerMm = initial.curvaturePerMm;
     controller->arcSteeringFeedforwardCommand = raw;
     controller->arcSteeringTargetCommand = raw;
@@ -1275,6 +1285,46 @@ static void MotionController_UpdatePathSteering(
         dt);
 }
 
+/* Shared terminal policy. targetYawRad is relative to the current motion/run
+ * origin. For a mixed-curvature run its sign need not match the final turn. */
+static float MotionController_ApplyArcTerminalPolicy(
+    MotionController *controller, float progressMm, float terminalEntryProgressMm,
+    float targetYawRad, float yawDirection, float terminalSpeedMmps,
+    float targetSpeedMmps)
+{
+    float approachSpeed = MOTIONCONTROLLER_ARC_TERMINAL_APPROACH_SPEED_CPS *
+        MotionController_GetMmPerCount(controller);
+    float distanceToEntry = fmaxf(0.0f, terminalEntryProgressMm - progressMm);
+    float approachLimit = sqrtf(approachSpeed * approachSpeed +
+        2.0f * controller->config->motionDecelerationMmps2 * distanceToEntry);
+    if (targetSpeedMmps > approachLimit) {
+        targetSpeedMmps = approachLimit;
+        controller->motionProfile.targetSpeedMmps = approachLimit;
+    }
+    if (progressMm >= terminalEntryProgressMm) {
+        float measuredYawRad = controller->yawDeg * (MOTION_PI / 180.0f);
+        float directedYawRate = fmaxf(0.0f, yawDirection * controller->yawRateDps *
+            (MOTION_PI / 180.0f));
+        float predictedStoppingYaw = yawDirection * measuredYawRad +
+            directedYawRate * MOTIONCONTROLLER_ARC_TERMINAL_BRAKE_PREDICTION_SEC;
+        controller->terminalYawPredictedReached =
+            predictedStoppingYaw >= yawDirection * targetYawRad;
+        controller->terminalDistanceLimitReached = progressMm >=
+            controller->targetDistanceMm + MOTIONCONTROLLER_ARC_TERMINAL_MAX_OVERRUN_MM;
+        if (controller->terminalYawPredictedReached || controller->terminalDistanceLimitReached) {
+            MotionProfile_Stop(&controller->motionProfile);
+            targetSpeedMmps = 0.0f;
+        } else {
+            controller->motionProfile.active = true;
+            if (targetSpeedMmps < terminalSpeedMmps) {
+                targetSpeedMmps = terminalSpeedMmps;
+                controller->motionProfile.targetSpeedMmps = terminalSpeedMmps;
+            }
+        }
+    }
+    return targetSpeedMmps;
+}
+
 static MotionControllerStatus MotionController_UpdateProfile(
     MotionController *controller, float dt)
 {
@@ -1285,7 +1335,9 @@ static MotionControllerStatus MotionController_UpdateProfile(
     }
     float progress = fmaxf(0.0f, controller->motionDirection * controller->travelledDistanceMm);
     MotionPathSample sample;
-    if (!controller->pathProfile.evaluate(controller->pathProfile.context, progress, &sample) ||
+    float referenceProgress = controller->pathProfile.terminalYawPriority
+        ? fminf(progress, controller->targetDistanceMm) : progress;
+    if (!controller->pathProfile.evaluate(controller->pathProfile.context, referenceProgress, &sample) ||
         !MotionController_ValidPathSample(&sample)) {
         MotionController_Stop(controller);
         return MOTIONCONTROLLER_STATUS_PROFILE_ERROR;
@@ -1304,6 +1356,15 @@ static MotionControllerStatus MotionController_UpdateProfile(
     controller->motionProfile.maxSpeedMmps =
         fminf(controller->maxSpeedCps, sample.speedLimitCps) * mmPerCount;
     float speed = MotionProfile_Update(&controller->motionProfile, progress, dt);
+    if (controller->pathProfile.terminalYawPriority) {
+        float yawDirection = controller->motionDirection *
+            controller->pathFinalSample.curvaturePerMm > 0.0f ? 1.0f : -1.0f;
+        float terminalSpeed = fminf(MOTIONCONTROLLER_ARC_TERMINAL_SPEED_CPS,
+            fminf(controller->maxSpeedCps, sample.speedLimitCps)) * mmPerCount;
+        speed = MotionController_ApplyArcTerminalPolicy(controller, progress,
+            controller->pathProfile.terminalEntryProgressMm,
+            controller->pathFinalSample.desiredYawRad, yawDirection, terminalSpeed, speed);
+    }
     if (!MotionProfile_IsActive(&controller->motionProfile)) {
         MotionController_BeginBraking(controller);
         return MOTIONCONTROLLER_STATUS_OK;
@@ -1343,115 +1404,17 @@ static MotionControllerStatus MotionController_UpdateActiveMotion(
 
     if (controller->mode == MOTIONCONTROLLER_ARC)
     {
-        float targetYawRad =
-            controller->targetCurvaturePerMm *
-            (float)controller->motionDirection *
-            controller->targetDistanceMm;
-
-        float minimumTargetYawRad =
-            MOTIONCONTROLLER_ARC_TERMINAL_MIN_TARGET_YAW_DEG *
-            (MOTION_PI / 180.0f);
-
-        float targetYawMagnitudeRad =
-            fabsf(targetYawRad);
-
-        float terminalEntryProgressMm =
-            controller->targetDistanceMm -
-            MOTIONCONTROLLER_ARC_TERMINAL_ENTRY_DISTANCE_MM;
-
-        if (terminalEntryProgressMm < 0.0f)
-            terminalEntryProgressMm = 0.0f;
-
-        if (targetYawMagnitudeRad > minimumTargetYawRad)
+        float targetYawRad = controller->targetCurvaturePerMm *
+            controller->motionDirection * controller->targetDistanceMm;
+        if (fabsf(targetYawRad) > MOTIONCONTROLLER_ARC_TERMINAL_MIN_TARGET_YAW_DEG *
+            (MOTION_PI / 180.0f))
         {
-            float mmPerCount =
-                MotionController_GetMmPerCount(controller);
-
-            float terminalApproachSpeedMmps =
-                MOTIONCONTROLLER_ARC_TERMINAL_APPROACH_SPEED_CPS *
-                mmPerCount;
-
-            float terminalApproachSpeedLimitMmps =
-                terminalApproachSpeedMmps;
-
-            float distanceToTerminalEntryMm =
-                terminalEntryProgressMm - progressMm;
-
-            if (distanceToTerminalEntryMm > 0.0f)
-            {
-                float decelerationMmps2 =
-                    controller->config->motionDecelerationMmps2;
-
-                terminalApproachSpeedLimitMmps =
-                    sqrtf(
-                        terminalApproachSpeedMmps *
-                        terminalApproachSpeedMmps +
-                        2.0f *
-                        decelerationMmps2 *
-                        distanceToTerminalEntryMm);
-            }
-
-            if (targetSpeedMmps > terminalApproachSpeedLimitMmps)
-            {
-                targetSpeedMmps =
-                    terminalApproachSpeedLimitMmps;
-
-                controller->motionProfile.targetSpeedMmps =
-                    terminalApproachSpeedLimitMmps;
-            }
-
-            if (progressMm >= terminalEntryProgressMm)
-            {
-                float yawDirection =
-                    targetYawRad >= 0.0f ? 1.0f : -1.0f;
-
-                float measuredYawRad =
-                    controller->yawDeg *
-                    (MOTION_PI / 180.0f);
-
-                float directedYawRateRadPerSec =
-                    yawDirection *
-                    controller->yawRateDps *
-                    (MOTION_PI / 180.0f);
-
-                if (directedYawRateRadPerSec < 0.0f)
-                    directedYawRateRadPerSec = 0.0f;
-
-                float predictedStoppingYawMagnitudeRad =
-                    yawDirection * measuredYawRad +
-                    directedYawRateRadPerSec *
-                    MOTIONCONTROLLER_ARC_TERMINAL_BRAKE_PREDICTION_SEC;
-
-                bool predictedYawReached =
-                    predictedStoppingYawMagnitudeRad >=
-                    targetYawMagnitudeRad;
-
-                float maximumProgressMm =
-                    controller->targetDistanceMm +
-                    MOTIONCONTROLLER_ARC_TERMINAL_MAX_OVERRUN_MM;
-
-                if (predictedYawReached || progressMm >= maximumProgressMm)
-                {
-                    MotionProfile_Stop(&controller->motionProfile);
-                    targetSpeedMmps = 0.0f;
-                }
-                else
-                {
-                    float terminalSpeedMmps =
-                        MOTIONCONTROLLER_ARC_TERMINAL_SPEED_CPS *
-                        mmPerCount;
-
-                    if (!MotionProfile_IsActive(&controller->motionProfile))
-                        controller->motionProfile.active = true;
-
-                    if (targetSpeedMmps < terminalSpeedMmps)
-                    {
-                        targetSpeedMmps = terminalSpeedMmps;
-                        controller->motionProfile.targetSpeedMmps =
-                            terminalSpeedMmps;
-                    }
-                }
-            }
+            targetSpeedMmps = MotionController_ApplyArcTerminalPolicy(controller, progressMm,
+                fmaxf(0.0f, controller->targetDistanceMm -
+                    MOTIONCONTROLLER_ARC_TERMINAL_ENTRY_DISTANCE_MM),
+                targetYawRad, targetYawRad >= 0.0f ? 1.0f : -1.0f,
+                MOTIONCONTROLLER_ARC_TERMINAL_SPEED_CPS * MotionController_GetMmPerCount(controller),
+                targetSpeedMmps);
         }
     }
 

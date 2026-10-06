@@ -3,6 +3,9 @@
 
 #include <stdbool.h>
 
+#define MOTION_PATH_TERMINAL_ENTRY_DISTANCE_MM 30.0f
+#define MOTION_PATH_TERMINAL_MIN_YAW_DEG 0.5f
+
 /* References at unsigned, measured progress from the start of one run.
  * desiredYawRad includes travel direction and is relative to that run's origin.
  * speedLimitCps is an unsigned local ceiling, not an instantaneous speed.
@@ -23,6 +26,11 @@ typedef struct {
     float steeringSettlingTimeSec;
     MotionPathEvaluate evaluate;
     const void *context;
+    /* Opt-in for a final constant-curvature arc. Entry must follow its last
+     * blend. Final heading is evaluate(abs(signedDistanceMm)).desiredYawRad;
+     * turn direction comes from final curvature, not the sign of net yaw. */
+    bool terminalYawPriority;
+    float terminalEntryProgressMm;
 } MotionPathProfile;
 
 #endif

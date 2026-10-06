@@ -238,6 +238,123 @@ static void testEqualCurvatureAndSignChange(void)
     near(sample.curvaturePerMm, -1.0f/275, 1e-8f);
 }
 
+static void testFinalArcYawPriority(void)
+{
+    for (int direction = -1; direction <= 1; direction += 2) {
+        for (int turn = -1; turn <= 1; turn += 2) {
+            for (unsigned early = 0; early < 2; ++early) {
+                Fixture f; MotionSequence s;
+                begin(&f, &s);
+                assert(MotionSequence_AddStraight(&s, direction * 300, 2000, false) == 0);
+                assert(MotionSequence_AddArc(&s, direction * 500, turn * 500, 2000, false) == 0);
+                assert(MotionSequence_Execute(&s) == 0);
+                assert(f.motion.pathProfile.terminalYawPriority);
+                near(f.motion.pathProfile.terminalEntryProgressMm, 770, 0);
+                near(f.motion.pathFinalSample.desiredYawRad, direction * turn, 1e-6f);
+                prepareSequence(&f, &s);
+                for (unsigned i = 0; i < 150; ++i) sequenceUpdate(&f, &s);
+                seek(&f, &s, 771);
+                assert(f.motion.mode == MOTIONCONTROLLER_PROFILE);
+                assert(fabsf(f.motion.targetSpeedCps) <= 800.001f);
+                int yawDirection = direction * turn;
+                float target = f.motion.pathFinalSample.desiredYawRad;
+                if (early) {
+                    /* Fresh raw gyro predicts final yaw despite some yaw
+                     * still remaining. Filters must not drive this decision. */
+                    float remaining = 0.04f;
+                    gyroDps = yawDirection * 40;
+                    f.motion.yawDeg = (target - yawDirection * remaining) * 180 / PI;
+                    seek(&f, &s, 790);
+                    assert(f.motion.mode == MOTIONCONTROLLER_BRAKING);
+                    assert(f.motion.terminalYawPredictedReached);
+                    assert(!f.motion.terminalDistanceLimitReached);
+                    assert(fabsf(f.motion.travelledDistanceMm) < 800);
+                } else {
+                    /* Distance ending alone must not terminate an under-turn. */
+                    gyroDps = 0;
+                    f.motion.yawDeg = (target - yawDirection * 0.1f) * 180 / PI;
+                    seek(&f, &s, 801);
+                    assert(f.motion.mode == MOTIONCONTROLLER_PROFILE);
+                    near(fabsf(f.motion.targetSpeedCps), 400, 1e-4f);
+                    near(f.motion.arcDesiredYawRad, target, 1e-6f);
+                    near(f.motion.targetCurvaturePerMm, turn / 500.0f, 1e-8f);
+                    assert(!f.motion.terminalYawPredictedReached);
+                    f.motion.yawDeg = (target + yawDirection * 0.001f) * 180 / PI;
+                    seek(&f, &s, 810);
+                    assert(f.motion.mode == MOTIONCONTROLLER_BRAKING);
+                    assert(f.motion.terminalYawPredictedReached);
+                    assert(!f.motion.terminalDistanceLimitReached);
+                }
+                gyroDps = 0;
+                for (unsigned i = 0; i < f.config.stopStableSampleCount; ++i) sequenceUpdate(&f, &s);
+                assert(s.state == MOTION_SEQUENCE_COMPLETE && s.completedRuns == 1);
+            }
+        }
+    }
+    /* Net target zero/opposite to final turn: use final curvature sign. */
+    for (unsigned zero = 0; zero < 2; ++zero) {
+        Fixture f; MotionSequence s;
+        begin(&f, &s);
+        float firstLength = zero ? 500 : 750;
+        assert(MotionSequence_AddArc(&s, firstLength, -500, 2000, false) == 0);
+        assert(MotionSequence_AddArc(&s, 500, 500, 2000, false) == 0);
+        assert(MotionSequence_Execute(&s) == 0);
+        assert(f.motion.pathProfile.terminalYawPriority);
+        float target = zero ? 0 : -0.5f;
+        near(f.motion.pathFinalSample.desiredYawRad, target, 1e-6f);
+        prepareSequence(&f, &s);
+        f.motion.yawDeg = (target - 0.05f) * 180 / PI;
+        gyroDps = 0;
+        seek(&f, &s, firstLength + 501);
+        assert(f.motion.mode == MOTIONCONTROLLER_PROFILE);
+        near(f.motion.arcDesiredYawRad, target, 1e-6f);
+        f.motion.yawDeg = (target + 0.01f) * 180 / PI;
+        seek(&f, &s, firstLength + 505);
+        assert(f.motion.mode == MOTIONCONTROLLER_BRAKING);
+        assert(f.motion.terminalYawPredictedReached);
+    }
+    /* Guarded termination records that yaw was not reached. */
+    Fixture f; MotionSequence s;
+    begin(&f, &s);
+    assert(MotionSequence_AddArc(&s, 100, -500, 100, false) == 0);
+    assert(MotionSequence_Execute(&s) == 0);
+    prepareSequence(&f, &s);
+    gyroDps = 0;
+    seek(&f, &s, 101);
+    assert(f.motion.mode == MOTIONCONTROLLER_PROFILE);
+    /* Terminal creep cannot exceed the final segment's requested speed. */
+    near(fabsf(f.motion.targetSpeedCps), 100, 1e-4f);
+    seek(&f, &s, 131);
+    assert(f.motion.mode == MOTIONCONTROLLER_BRAKING);
+    assert(!f.motion.terminalYawPredictedReached);
+    assert(f.motion.terminalDistanceLimitReached);
+    /* Intermediate stopped arcs retain distance completion; only the actual
+     * batch-ending arc opts in, with a new run-relative final heading. */
+    begin(&f, &s);
+    assert(MotionSequence_AddArc(&s, 100, -500, 500, true) == 0);
+    assert(MotionSequence_AddArc(&s, 100, 500, 500, false) == 0);
+    assert(MotionSequence_Execute(&s) == 0);
+    assert(!f.motion.pathProfile.terminalYawPriority);
+    prepareSequence(&f, &s);
+    seek(&f, &s, 101);
+    assert(f.motion.mode == MOTIONCONTROLLER_BRAKING);
+    for (unsigned i = 0; i < f.config.stopStableSampleCount; ++i) sequenceUpdate(&f, &s);
+    assert(f.motion.pathProfile.terminalYawPriority);
+    near(f.motion.pathFinalSample.desiredYawRad, 0.2f, 1e-6f);
+    /* A short final arc's window must follow its incoming blend. */
+    begin(&f, &s);
+    assert(MotionSequence_AddStraight(&s, 300, 2000, false) == 0);
+    assert(MotionSequence_AddArc(&s, 5, -275, 500, false) == 0);
+    assert(MotionSequence_Execute(&s) == 0);
+    near(f.motion.pathProfile.terminalEntryProgressMm, 301.25f, 1e-5f);
+    assert(f.motion.pathProfile.terminalYawPriority);
+    begin(&f, &s);
+    assert(MotionSequence_AddArc(&s, 100, -500, 500, false) == 0);
+    assert(MotionSequence_AddStraight(&s, 100, 500, false) == 0);
+    assert(MotionSequence_Execute(&s) == 0);
+    assert(!f.motion.pathProfile.terminalYawPriority);
+}
+
 static void testStopsReversalsAndCancel(void)
 {
     Fixture f; MotionSequence s;
@@ -324,7 +441,7 @@ static void testValidationAndFaults(void)
     f.config.useLegacyStraightSteering = true;
     assert(MotionSequence_Begin(&s, &f.motion, &motionSequenceConfig) == MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION);
     f.config.useLegacyStraightSteering = false;
-    MotionPathProfile bad = {2, 500, 0, badSample, NULL};
+    MotionPathProfile bad = {.signedDistanceMm=2, .maxSpeedCps=500, .evaluate=badSample};
     assert(MotionController_FollowProfile(&f.motion, &bad) == MOTIONCONTROLLER_STATUS_PROFILE_ERROR);
     /* Valid endpoints, invalid interior, checked after current odometry. */
     bad.signedDistanceMm = 100;
@@ -493,12 +610,13 @@ int main(void)
     testContinuityAndCompletion();
     testFeedforwardAndScheduling();
     testEqualCurvatureAndSignChange();
+    testFinalArcYawPriority();
     testStopsReversalsAndCancel();
     testValidationAndFaults();
     testRandomPlans();
     testRobotHarness();
     puts("PASS: fused geometry/heading area, lookahead, forward/reverse continuity, "
-         "FF bridge, gain scheduling, slew, stops/reversals, cancellation, faults, 150 random plans, robot harness");
+         "FF bridge, gain scheduling, slew, stops/reversals, cancellation, faults, 150 random plans, robot harness, final-arc yaw priority");
     return 0;
 }
 '''

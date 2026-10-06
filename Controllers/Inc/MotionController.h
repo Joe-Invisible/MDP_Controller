@@ -90,6 +90,11 @@ typedef struct
     /* Profile is copied; callback context must outlive execution. */
     MotionPathProfile pathProfile;
     MotionPathSample pathSample;
+    MotionPathSample pathFinalSample;
+    /* Observational termination reasons; the distance guard can stop a turn
+     * before predicted final yaw is attained. Braking drift still applies. */
+    bool terminalYawPredictedReached;
+    bool terminalDistanceLimitReached;
 
 	/*
 	 * Controlled hardware / lower-level controllers
@@ -308,7 +313,8 @@ MotionControllerStatus MotionController_MoveArc(
 /**
  * Experimental continuous, rest-to-rest profile. Callback references are
  * evaluated AFTER current encoder odometry is sampled. One preparation at
- * run start; distance completion (no standalone yaw-priority arc extension).
+ * run start; distance completion by default. A final constant-curvature arc
+ * can opt into the same yaw-priority terminal policy as standalone arcs.
  * Legacy straight steering is rejected. No PI/filter/odometry reset at
  * virtual junctions. Callback must be pure, bounded and nonblocking.
  * Caller must preflight its entire profile; invalid runtime samples stop it.

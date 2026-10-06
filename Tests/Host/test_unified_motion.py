@@ -299,6 +299,41 @@ static void testLegacyAndValidation(void)
     assert(initMotion(&f) == MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION);
 }
 
+static void testStandaloneArcTerminalPolicy(void)
+{
+    for (int direction = -1; direction <= 1; direction += 2) {
+        for (int turn = -1; turn <= 1; turn += 2) {
+            for (unsigned early = 0; early < 2; ++early) {
+                Fixture f;
+                setup(&f, false);
+                f.config.arcConfig = &(MotionControllerArcConfig){
+                    arcMotionConfig.negativePoints, arcMotionConfig.negativePointCount,
+                    arcMotionConfig.positivePoints, arcMotionConfig.positivePointCount, 0
+                };
+                assert(initMotion(&f) == 0);
+                assert(MotionController_MoveArc(&f.motion, direction * 500, turn * 500, 2000) == 0);
+                float mm = PI * kinematics.rearWheelDiameterMm / kinematics.rearEncoderCountsPerRev;
+                int yawDirection = direction * turn;
+                f.motion.yawDeg = yawDirection * (1 - (early ? 0.04f : 0.1f)) * 180 / PI;
+                gyroDps = early ? yawDirection * 40 : 0;
+                int counts = (int)roundf((early ? 490 : 501) / mm);
+                f.leftMotor.state.encCount = f.rightMotor.state.encCount = direction * counts;
+                update(&f, DT);
+                if (early) assert(f.motion.mode == MOTIONCONTROLLER_BRAKING);
+                else {
+                    assert(f.motion.mode == MOTIONCONTROLLER_ARC);
+                    near(fabsf(f.motion.targetSpeedCps), 400, 1e-4f);
+                    near(f.motion.arcDesiredYawRad, yawDirection, 1e-6f);
+                    f.leftMotor.state.encCount = f.rightMotor.state.encCount =
+                        direction * (int)ceilf(531 / mm);
+                    update(&f, DT);
+                    assert(f.motion.mode == MOTIONCONTROLLER_BRAKING);
+                }
+            }
+        }
+    }
+}
+
 static void testCompletionAndFaults(void)
 {
     Fixture f;
@@ -344,6 +379,7 @@ int main(void)
     testArcAndReverse();
     testLowSpeedAndFilter();
     testLegacyAndValidation();
+    testStandaloneArcTerminalPolicy();
     testCompletionAndFaults();
     puts("PASS: unified forward/reverse straight and arcs, curvature limits, "
          "wheel geometry/odometry, preparation, filter, legacy, braking and IMU fault");
