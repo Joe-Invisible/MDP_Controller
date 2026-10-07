@@ -30,7 +30,9 @@ MotionControllerStatus MotionSequence_Begin(
     }
     if (controller->config->useLegacyStraightSteering ||
         !isfinite(config->blendLengthMm) || config->blendLengthMm <= 0.0f ||
-        !isfinite(config->junctionSpeedCps) || config->junctionSpeedCps <= 0.0f)
+        !isfinite(config->junctionSpeedCps) || config->junctionSpeedCps <= 0.0f ||
+        !isfinite(config->steeringCommandRatePerSec) ||
+        config->steeringCommandRatePerSec < 0.0f)
     {
         return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
     }
@@ -196,7 +198,9 @@ static MotionControllerStatus MotionSequence_LaunchRun(
         .terminalYawPriority = terminalYawPriority,
         .terminalEntryProgressMm = fmaxf(
             finalConstantStartMm,
-            runLengthMm - MOTION_PATH_TERMINAL_ENTRY_DISTANCE_MM)};
+            runLengthMm - MOTION_PATH_TERMINAL_ENTRY_DISTANCE_MM),
+        .steeringCommandRatePerSec = sequence->config.steeringCommandRatePerSec,
+    };
     return MotionController_FollowProfile(sequence->controller, &profile);
 }
 

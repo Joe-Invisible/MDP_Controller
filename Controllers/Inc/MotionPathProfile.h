@@ -33,6 +33,8 @@ typedef struct
      * turn direction comes from final curvature, not the sign of net yaw. */
     bool terminalYawPriority;
     float terminalEntryProgressMm;
+    /* Per-run raw slew limit; zero inherits the normal steering limit. */
+    float steeringCommandRatePerSec;
 } MotionPathProfile;
 
 #endif

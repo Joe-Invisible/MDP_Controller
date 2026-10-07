@@ -2,9 +2,13 @@
 #include <math.h>
 #include <stddef.h>
 
-/* Deliberately conservative starting experiment: 200 mm transition at no
- * more than 500 CPS. These are configurable protections, not servo physics. */
-const MotionSequenceConfig motionSequenceConfig = {200.0f, 500.0f};
+/* Deliberately faster fusion experiment. These are configurable software
+ * limits, not measured servo physics. Standalone steering keeps its own rate. */
+const MotionSequenceConfig motionSequenceConfig = {
+    .blendLengthMm = 100.0f,
+    .junctionSpeedCps = 2000.0f,
+    .steeringCommandRatePerSec = 480.0f,
+};
 
 static bool MotionSequencePlan_IsRunBoundary(const MotionSequencePlan *plan, uint32_t i)
 {
@@ -29,6 +33,8 @@ bool MotionSequencePlan_Prepare(
     if (config == NULL || plan->count > MOTION_SEQUENCE_CAPACITY ||
         !isfinite(config->blendLengthMm) || config->blendLengthMm <= 0.0f ||
         !isfinite(config->junctionSpeedCps) || config->junctionSpeedCps <= 0.0f ||
+        !isfinite(config->steeringCommandRatePerSec) ||
+        config->steeringCommandRatePerSec < 0.0f ||
         !isfinite(mmPerCount) || mmPerCount <= 0.0f || !isfinite(decelerationMmps2) ||
         decelerationMmps2 <= 0.0f || !isfinite(rawSlopeBound) || rawSlopeBound < 0.0f ||
         !isfinite(rawRatePerSec) || rawRatePerSec <= 0.0f)
@@ -66,7 +72,11 @@ bool MotionSequencePlan_Prepare(
         return false;
     }
 
-    /* Size each blend and cap its speed using the feedforward slew budget. */
+    float effectiveRawRatePerSec = config->steeringCommandRatePerSec > 0.0f
+                                      ? config->steeringCommandRatePerSec
+                                      : rawRatePerSec;
+
+    /* Size each blend and cap its speed using the same slew budget as execution. */
     for (uint32_t i = 0U; i + 1U < plan->count; ++i)
     {
         if (MotionSequencePlan_IsRunBoundary(plan, i))
@@ -95,7 +105,7 @@ bool MotionSequencePlan_Prepare(
         {
             speedLimitCps = fminf(
                 speedLimitCps,
-                0.5f * rawRatePerSec * (2.0f * halfLengthMm) /
+                0.5f * effectiveRawRatePerSec * (2.0f * halfLengthMm) /
                     (rawSlopeBound * curvatureChangePerMm * mmPerCount));
         }
         if (!isfinite(speedLimitCps) || speedLimitCps <= 0.0f || halfLengthMm <= 0.0f)

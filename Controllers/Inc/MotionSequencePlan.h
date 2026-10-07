@@ -20,6 +20,8 @@ typedef struct
      * the blend so at most half of any segment is consumed by both blends. */
     float blendLengthMm;
     float junctionSpeedCps;
+    /* Raw units/s for this sequence only; zero inherits steering calibration. */
+    float steeringCommandRatePerSec;
 } MotionSequenceConfig;
 
 typedef struct

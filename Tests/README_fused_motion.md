@@ -66,7 +66,10 @@ history and yaw-rate PI state continue across junctions. Gain weights interpolat
 between the straight and arc endpoint regimes over each blend. Integral state
 is rescaled to preserve its output contribution when Ki changes; Ki=0 clears
 that contribution. Opposite-sign arc blends use arc gains throughout. The
-configured raw steering slew limiter remains in effect.
+profile's raw steering slew limiter remains in effect. A per-run rate override
+is copied from the sequence configuration; zero inherits the normal steering
+calibration rate. Standalone motions always retain their normal rate, including
+when issued after a fused run on the same controller.
 
 ## Experimental feedforward bridge and junction speed
 
@@ -82,13 +85,21 @@ Defaults in `Controllers/Src/MotionSequencePlan.c`:
 
 | Setting | Value |
 | --- | ---: |
-| Maximum full blend length | 200 mm |
-| Curvature-changing junction speed ceiling | 500 CPS |
+| Maximum full blend length | 100 mm |
+| Curvature-changing junction speed ceiling | 2000 CPS |
+| Fused-profile raw steering slew limit | 480 raw units/s |
 | Feedforward allocation of configured raw slew rate | 50% |
+
+These deliberately faster defaults replace the initial 200 mm / 500 CPS
+experiment. The sequence's slew override is used by both the planner and the
+steering executor; it does not modify `steeringCalibration` (120 raw units/s).
+Set `steeringCommandRatePerSec=0` to inherit that rate. For the original slow
+profile use `{.blendLengthMm=200, .junctionSpeedCps=500,
+.steeringCommandRatePerSec=0}`. Overrides must be finite and nonnegative.
 
 The planner also limits junction speed using the largest slope of the complete
 piecewise-linear feedforward map (including the centre bridge), curvature ramp
-length, and configured raw slew rate. The remaining slew allowance is reserved
+length, and effective per-sequence raw slew rate. The remaining slew allowance is reserved
 for feedback; it is not a guaranteed physical servo margin. Speed lookahead
 uses the configured deceleration to approach each lower segment/junction speed
 before its boundary. `MotionProfile` supplies acceleration and final stopping.
@@ -149,6 +160,15 @@ Final-arc cases cover early predicted-yaw braking, continued motion after nomina
 arc distance, frozen references on overrun, bounded distance-guard braking,
 forward/reverse travel with both turn signs, zero/opposite-sign net targets,
 short final arcs, low requested speeds and final-only policy selection.
+The faster-profile checks also verify that both default test junctions retain
+2000 CPS, the executor uses the 480 raw units/s override, a subsequent standalone
+motion returns to 120 raw units/s, zero inherits that limit in planner/executor,
+and invalid rate overrides are rejected before motion.
+
+The unchanged default path completes in 4885 ms in the ideal encoder/gyro
+harness, versus 8526 ms with the previous defaults (about 43% less time).
+This measures software speed/preparation/braking scheduling with synthetic
+perfect speed tracking, not physical servo response or robot accuracy.
 
 The real GDB exporter also passed checks against initialized host ELF data:
 plan/config/result fields, all samples, empty/invalid-count guards and the
@@ -174,8 +194,12 @@ UART/RPi integration is outside this first experiment.
 
 The selected path is straight +300 mm, arc +500 mm at R=-500 mm, straight
 +300 mm, all requested at 2000 CPS. Nominal travel is 1100 mm and nominal yaw
-is -1 rad (-57.30 degrees). Each blend is 150 mm long for this path (75 mm
-from each neighbour). The plan records the actual junction speed caps.
+is -1 rad (-57.30 degrees). Each blend is 100 mm long for this path (50 mm
+from each neighbour), and both junction caps are 2000 CPS. At that speed each
+blend takes about 0.38 s, compared with 2.27 s at the previous 150 mm / 500 CPS
+settings. These times exclude approach acceleration/deceleration and tracking
+error. The plan records the actual junction speed caps; short segments and large
+curvature changes can still receive lower caps from the feedforward slew budget.
 
 Edit `fusionTestSteps[]` near the top of `MotionSequenceFusionTest.c` to change
 the path. Each row contains signed distance, radius, speed, and `stopAfter`.

@@ -70,18 +70,18 @@ static void testBlendGeometry(void)
         near(s.plan.nominalFinalYawRad, -direction, 1e-6f);
         assert(s.run.last == 2);
         float half = s.plan.junctionHalfLengthMm[0];
-        near(half, 75, 0);
+        near(half, 50, 0);
         MotionPathSample a, b;
         assert(MotionSequencePlan_Evaluate(&s.run, 300 - half, &a));
         near(a.curvaturePerMm, 0, 1e-8f);
         assert(MotionSequencePlan_Evaluate(&s.run, 300, &a));
         near(a.curvaturePerMm, -0.001f, 1e-8f);
-        near(a.desiredYawRad, direction * -0.0375f, 1e-6f);
+        near(a.desiredYawRad, direction * -0.025f, 1e-6f);
         near(a.straightTuningWeight, 0.5f, 1e-6f);
         assert(a.speedLimitCps <= s.plan.junctionSpeedCps[0] + 1e-4f);
         assert(MotionSequencePlan_Evaluate(&s.run, 300 + half, &b));
         near(b.curvaturePerMm, -0.002f, 1e-8f);
-        near(b.desiredYawRad, direction * -0.15f, 1e-6f);
+        near(b.desiredYawRad, direction * -0.10f, 1e-6f);
         assert(MotionSequencePlan_Evaluate(&s.run, 1100, &a));
         near(a.desiredYawRad, -direction, 1e-6f);
         near(a.curvaturePerMm, 0, 0);
@@ -140,7 +140,7 @@ static void testContinuityAndCompletion(void)
             assert(f.motion.yawDeg * -direction > previousYaw * -direction);
             assert(f.motion.filteredMeasuredCentreSpeedMmps * direction >= previousFilter * direction);
             assert(fabsf(f.steering.command - oldRaw) <=
-                steeringCalibration.maxCommandRatePerSec * DT + 1e-4f);
+                s.config.steeringCommandRatePerSec * DT + 1e-4f);
             near(f.motion.arcDesiredYawRad, f.motion.pathSample.desiredYawRad, 1e-6f);
             near(f.motion.rightBaseTargetCps - f.motion.leftBaseTargetCps,
                  f.motion.targetSpeedCps * kinematics.rearTrackWidthMm *
@@ -229,13 +229,74 @@ static void testEqualCurvatureAndSignChange(void)
         if (i > 0) {
             float rawRate = fabsf(raw - previous) / (2 * half / 1000) *
                 sample.speedLimitCps * mmPerCount();
-            assert(rawRate <= 0.5f * steeringCalibration.maxCommandRatePerSec + 0.1f);
+            assert(rawRate <= 0.5f * s.config.steeringCommandRatePerSec + 0.1f);
         }
         previous = raw;
     }
     assert(MotionSequencePlan_Evaluate(&s.run, 600, &sample));
     near(sample.desiredYawRad, 0, 1e-6f);
     near(sample.curvaturePerMm, -1.0f/275, 1e-8f);
+}
+
+static void testFastJunctionAndRateIsolation(void)
+{
+    Fixture f; MotionSequence s;
+    begin(&f, &s);
+    assert(MotionSequence_AddStraight(&s, 300, 2000, false) == 0);
+    assert(MotionSequence_AddArc(&s, 500, -500, 2000, false) == 0);
+    assert(MotionSequence_AddStraight(&s, 300, 2000, false) == 0);
+    assert(MotionSequence_Execute(&s) == 0);
+    for (unsigned i = 0; i < 2; ++i) {
+        near(s.plan.junctionHalfLengthMm[i], 50, 0);
+        near(s.plan.junctionSpeedCps[i], 2000, 0);
+    }
+    near(f.motion.pathProfile.steeringCommandRatePerSec, 480, 0);
+    prepareSequence(&f, &s);
+    float oldRaw = f.steering.command;
+    gyroDps = 1000; /* Large feedback request exercises the execution limiter. */
+    sequenceUpdate(&f, &s);
+    near(fabsf(f.steering.command - oldRaw), 480 * DT, 1e-4f);
+    near(steeringCalibration.maxCommandRatePerSec, 120, 0);
+    assert(MotionController_Stop(&f.motion) == 0);
+    gyroDps = 0;
+    assert(MotionController_MoveStraight(&f.motion, 300, 2000) == 0);
+    wheelUpdates = 0;
+    prepare(&f, MOTIONCONTROLLER_STRAIGHT_PREPARING, MOTIONCONTROLLER_STRAIGHT);
+    oldRaw = f.steering.command;
+    gyroDps = 1000;
+    assert(MotionController_Update(&f.motion, DT) == 0);
+    near(fabsf(f.steering.command - oldRaw), 120 * DT, 1e-4f);
+    assert(MotionController_Stop(&f.motion) == 0);
+
+    /* Zero explicitly inherits the old rate in both planning and execution. */
+    begin(&f, &s);
+    s.config.steeringCommandRatePerSec = 0;
+    assert(MotionSequence_AddStraight(&s, 300, 2000, false) == 0);
+    assert(MotionSequence_AddArc(&s, 500, -500, 2000, false) == 0);
+    assert(MotionSequence_Execute(&s) == 0);
+    assert(s.plan.junctionSpeedCps[0] > 500 && s.plan.junctionSpeedCps[0] < 800);
+    prepareSequence(&f, &s);
+    oldRaw = f.steering.command;
+    gyroDps = 1000;
+    sequenceUpdate(&f, &s);
+    near(fabsf(f.steering.command - oldRaw), 120 * DT, 1e-4f);
+    assert(MotionController_Stop(&f.motion) == 0);
+
+    const float invalidRates[] = {-1, NAN, INFINITY};
+    for (unsigned i = 0; i < 3; ++i) {
+        begin(&f, &s);
+        MotionSequenceConfig bad = motionSequenceConfig;
+        bad.steeringCommandRatePerSec = invalidRates[i];
+        assert(MotionSequence_Begin(&s, &f.motion, &bad) ==
+               MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION);
+        assert(!MotionSequencePlan_Prepare(&s.plan, &bad, mmPerCount(), 1000, 60000, 120));
+        MotionPathProfile profile = {.signedDistanceMm=100, .maxSpeedCps=2000,
+            .evaluate=MotionSequencePlan_Evaluate, .context=&s.run,
+            .steeringCommandRatePerSec=invalidRates[i]};
+        assert(MotionController_FollowProfile(&f.motion, &profile) ==
+               MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT);
+        assert(f.motion.mode == MOTIONCONTROLLER_IDLE);
+    }
 }
 
 static void testFinalArcYawPriority(void)
@@ -504,7 +565,7 @@ static void testRandomPlans(void)
         near(yaw, p.nominalFinalYawRad, 0.00001f);
     }
     MotionSequencePlan p = {0};
-    MotionSequenceConfig bad = {NAN, 500};
+    MotionSequenceConfig bad = {.blendLengthMm=NAN, .junctionSpeedCps=500};
     assert(!MotionSequencePlan_Prepare(&p, &bad, 1, 1, 1, 1));
     p.count = MOTION_SEQUENCE_CAPACITY + 1;
     assert(!MotionSequencePlan_Prepare(&p, &motionSequenceConfig, 1, 1, 1, 1));
@@ -586,6 +647,8 @@ static void testRobotHarness(void)
             &motionSequenceFusionTestLog[motionSequenceFusionTestLogCount - 1];
         if (scenario == 0) {
             assert(motionSequenceFusionTestPassed);
+            printf("Ideal encoder/gyro harness elapsed: %u ms (software timing only)\n",
+                   final->timeMs);
             assert(!motionSequenceFusionTestCancelled && !motionSequenceFusionTestTimedOut);
             assert(motionSequenceFusionTestSequence.completedRuns == 1);
             near(final->sequenceTravelMm,
@@ -610,6 +673,7 @@ int main(void)
     testContinuityAndCompletion();
     testFeedforwardAndScheduling();
     testEqualCurvatureAndSignChange();
+    testFastJunctionAndRateIsolation();
     testFinalArcYawPriority();
     testStopsReversalsAndCancel();
     testValidationAndFaults();

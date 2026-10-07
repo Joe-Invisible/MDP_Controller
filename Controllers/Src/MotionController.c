@@ -879,7 +879,9 @@ MotionControllerStatus MotionController_FollowProfile(
 {
     if (controller == NULL || profile == NULL || profile->evaluate == NULL ||
         !isfinite(profile->steeringSettlingTimeSec) ||
-        profile->steeringSettlingTimeSec < 0.0f)
+        profile->steeringSettlingTimeSec < 0.0f ||
+        !isfinite(profile->steeringCommandRatePerSec) ||
+        profile->steeringCommandRatePerSec < 0.0f)
     {
         return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
     }
@@ -1350,10 +1352,19 @@ static void MotionController_UpdatePathSteering(
     controller->arcSteeringTargetCommand =
         targetCommand;
 
-    SteeringController_SetRawCommandRateLimited(
+    float steeringCommandRatePerSec =
+        controller->steering->calibration->maxCommandRatePerSec;
+    if (controller->mode == MOTIONCONTROLLER_PROFILE &&
+        controller->pathProfile.steeringCommandRatePerSec > 0.0f)
+    {
+        steeringCommandRatePerSec = controller->pathProfile.steeringCommandRatePerSec;
+    }
+
+    SteeringController_SetRawCommandWithRateLimit(
         controller->steering,
         targetCommand,
-        dt);
+        dt,
+        steeringCommandRatePerSec);
 }
 
 /* Shared terminal policy. targetYawRad is relative to the current motion/run
