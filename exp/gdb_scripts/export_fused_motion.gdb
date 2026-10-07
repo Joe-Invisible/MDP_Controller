@@ -18,6 +18,12 @@ define mctrl-fusion-export
     p motionSequenceFusionTestCancelled
     p motionSequenceFusionTestLogTruncated
     p motionSequenceFusionTestElapsedMs
+    echo === A/B timing comparison (0=fused, 1=stopped) ===\n
+    p motionSequenceFusionTestResultCount
+    p motionSequenceFusionTestResults
+    p motionSequenceFusionTestComparisonValid
+    p motionSequenceFusionTestSavedTimeMs
+    p motionSequenceFusionTestSavedPercent
     echo === Plan and final sequence state ===\n
     p motionSequenceFusionTestSequence
     if motionSequenceFusionTestSequence.controller != 0

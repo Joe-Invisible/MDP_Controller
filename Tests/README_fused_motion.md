@@ -160,13 +160,14 @@ Final-arc cases cover early predicted-yaw braking, continued motion after nomina
 arc distance, frozen references on overrun, bounded distance-guard braking,
 forward/reverse travel with both turn signs, zero/opposite-sign net targets,
 short final arcs, low requested speeds and final-only policy selection.
-The faster-profile checks also verify that both default test junctions retain
+The faster-profile checks also verify that both original straight/arc test junctions retain
 2000 CPS, the executor uses the 480 raw units/s override, a subsequent standalone
 motion returns to 120 raw units/s, zero inherits that limit in planner/executor,
 and invalid rate overrides are rejected before motion.
 
-The unchanged default path completes in 4885 ms in the ideal encoder/gyro
-harness, versus 8526 ms with the previous defaults (about 43% less time).
+The original 300 mm / R=-500 mm arc / 300 mm experiment completed in 4885 ms
+in the ideal encoder/gyro harness, versus 8526 ms with the previous defaults
+(about 43% less time). The current harness uses the longer A/B course below.
 This measures software speed/preparation/braking scheduling with synthetic
 perfect speed tracking, not physical servo response or robot accuracy.
 
@@ -192,44 +193,72 @@ CubeIDE's existing Controllers/Tests source folders include the new `.c` files;
 refresh the project and clean/rebuild before flashing. Existing production
 UART/RPi integration is outside this first experiment.
 
-The selected path is straight +300 mm, arc +500 mm at R=-500 mm, straight
-+300 mm, all requested at 2000 CPS. Nominal travel is 1100 mm and nominal yaw
-is -1 rad (-57.30 degrees). Each blend is 100 mm long for this path (50 mm
-from each neighbour), and both junction caps are 2000 CPS. At that speed each
-blend takes about 0.38 s, compared with 2.27 s at the previous 150 mm / 500 CPS
-settings. These times exclude approach acceleration/deceleration and tracking
-error. The plan records the actual junction speed caps; short segments and large
-curvature changes can still receive lower caps from the feedforward slew budget.
+The harness runs a mixed-turn course twice at **5000 CPS requested for every
+straight and arc**. It contains six forward 500 mm straights and these turns,
+with one straight preceding each turn:
 
-Edit `fusionTestSteps[]` near the top of `MotionSequenceFusionTest.c` to change
-the path. Each row contains signed distance, radius, speed, and `stopAfter`.
-A zero radius selects straight motion; a nonzero radius selects an arc.
-The builder loops over the array and stops at the first API error. Individual
-`stopAfter` flags can mark selected waypoints, while
-`FUSION_STOP_EACH_SEGMENT=true` forces every waypoint to stop.
+| Turn | Radius | Angle |
+| --- | ---: | ---: |
+| 1 | -275 mm | -90 degrees |
+| 2 | +275 mm | +90 degrees |
+| 3 | +275 mm | +180 degrees |
+| 4 | -275 mm | -90 degrees |
+| 5 | +275 mm | +90 degrees |
+| 6 | -275 mm | -180 degrees |
+
+Nominal travel is about 6455.75 mm and nominal net yaw is zero. The course is
+not a closed square and need not return to its starting position. All travel
+is forward: mandatory stops from direction reversals cannot mask the fusion
+comparison. Edit `fusionTestSteps[]` to change the course; zero radius selects
+straight motion. Each row contains signed distance, radius and requested speed.
+
+**A** sets `stopAfter=false` on every segment and executes one continuous run.
+**B** sets `stopAfter=true` on every segment and executes 12 rest-to-rest runs.
+The path, controller configuration and sequence configuration are otherwise
+identical. The configured 2000 CPS junction ceiling and feedforward slew budget
+still apply to A; 5000 CPS is a requested segment ceiling, not a guaranteed speed
+through a transition. Each curvature blend is 100 mm for this course.
+
+Both batches end in an arc and use yaw-priority final termination. B's
+intermediate arcs finish by distance, as discussed above; B is a stopped-profile
+comparison rather than an exact replay of standalone `MoveArc` semantics.
 
 Keep the robot stationary through normal IMU startup. Press/release SW1 to
-start. Press SW1 during execution to cancel and brake. A 20 s watchdog also
-cancels; braking has a further 3 s timeout. The test does not restart itself.
-`Passed` means the sequence completed without an API error, not that its
+start A. After A completes, the robot remains stopped and prompts for B.
+Return it to the same starting pose and press/release SW1 to start B. Each
+button wait and 400 ms hand-clearance delay is excluded from timing. Each run's
+timer starts just before `MotionSequence_Execute()` and ends after completion
+including controller steering preparation and final braking.
+
+Press SW1 during either trace to cancel and brake. Each trace has a 60 s
+watchdog and a further 3 s braking timeout. Failure/cancellation of A prevents B
+from starting; failure of either trace prevents a valid timing comparison.
+`Passed` means both batches completed without an API error, not that their
 physical path/heading met an accuracy criterion.
 
-The log holds 500 samples at 20 ms (about 10 s). A longer run sets
-`motionSequenceFusionTestLogTruncated`; the final slot is replaced with the
-final sample. Inspect the flag before treating a log as a complete time series.
+The final OLED screen shows A's fused time, B's stopped time, milliseconds saved
+(`B-A`) and percentage reduction (`100*(B-A)/B`). A negative saving is retained
+if the fused trace is slower. Incomplete trials show `INVALID` and no savings.
+Debugger-visible `motionSequenceFusionTestResults[0]` and `[1]` retain per-trace
+status, times, run counts, nominal/measured travel and yaw, and truncation flags.
+`motionSequenceFusionTestComparisonValid` guards the saved-time/percentage
+fields. The existing `motionSequenceFusionTestElapsedMs` is the last trace's time.
 
-For a comparison with the same profile endpoint semantics, set
-`FUSION_STOP_EACH_SEGMENT=true` in `MotionSequenceFusionTest.c`, rebuild, and run
-the identical path. This comparison stops/prepares at every junction. To run
-the original standalone/yaw-priority sequence harness instead, restore
+One shared log holds 500 samples at 100 ms (about 50 s of combined running time)
+without duplicating the large sample buffer. Each sample's `comparisonRunIndex`
+is 0 for A or 1 for B; `timeMs` restarts at zero for each trace. Manual waiting is
+not logged. If full, the final slot is replaced with the latest trace's final
+sample and truncation is flagged globally and in that trace's result. Summary
+results remain available even if detailed logging is truncated.
+
+In the ideal encoder/gyro host harness, A takes 18250 ms and B takes 22342 ms:
+4092 ms saved, or about 18.3%. This is a software scheduling check, not a physical
+servo/vehicle performance prediction. The harness also verifies cancellation
+and timeout in either A or B, withholding savings for incomplete comparisons,
+manual-wait exclusion, per-trace logging and OLED text-row coordinates.
+
+To run the original standalone/yaw-priority sequence harness instead, restore
 `MotionControllerSequenceTestRun()` in `TestMain.c`.
-
-To exercise yaw-priority completion specifically, remove the last row from
-`fusionTestSteps[]`: the batch becomes straight
-+300 mm followed by arc +500 mm at R=-500 mm. Nominal travel is then 800 mm,
-final desired yaw is -1 rad, and the terminal window starts at 770 mm. Its actual
-travel may finish earlier or up to 30 mm later according to the yaw predictor.
-The unchanged default straight/arc/straight experiment remains distance-ending.
 
 Set a breakpoint on `MotionSequenceFusionTestFinished` before starting. Once
 the target is suspended there, run these in the GDB console (cwd = project):
@@ -241,14 +270,13 @@ mctrl-fusion-export fusion_run01.txt
 ```
 
 Enter the actual measured voltage. Choose a new output name for each run;
-export appends if the name already exists. The command exports the complete
-plan, inherited tuning, final heading policy/termination flags and available samples. It neither resumes
+export appends if the name already exists. The command exports both A/B results and the timing comparison, the last
+trace's complete plan, inherited tuning, final heading policy/termination flags
+and tagged samples from both traces. It neither resumes
 the target nor initiates motion. The old automatic sequence-export breakpoint
 does not apply to this harness.
 
-First inspect speed and raw-command tracking through both blends, absence of
-intermediate preparation/braking, final travel/yaw, and time versus the stopped
-comparison. Extend to reverse travel, both turning signs, opposite-sign arcs
-and short segments only after the initial path is characterised. Physical
-tracking may require longer blends, lower junction speeds or centre-region
-calibration; the host tests cannot settle those choices.
+Inspect the saved timing comparison together with speed/raw-command tracking,
+absence of intermediate preparation/braking in A, and measured final travel/yaw
+for both traces. Physical tracking may require longer blends, lower junction
+speeds or centre-region calibration; the host tests cannot settle those choices.

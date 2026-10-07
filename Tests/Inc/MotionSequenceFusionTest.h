@@ -3,9 +3,28 @@
 
 #include "MotionSequence.h"
 
+#define MOTION_SEQUENCE_FUSION_TEST_RUN_COUNT 2U
+
+typedef struct
+{
+    bool stopAfterEachSegment;
+    bool passed;
+    bool timedOut;
+    bool cancelled;
+    bool logTruncated;
+    MotionControllerStatus status;
+    uint32_t elapsedMs;
+    uint32_t completedRuns;
+    float measuredTravelMm;
+    float measuredYawRad;
+    float nominalTravelMm;
+    float nominalYawRad;
+} MotionSequenceFusionTestResult;
+
 typedef struct
 {
     uint32_t timeMs;
+    uint32_t comparisonRunIndex; /* 0 = fused, 1 = stop at each segment. */
     uint32_t mode;
     uint32_t sequenceState;
     uint32_t firstSegment;
@@ -36,6 +55,13 @@ typedef struct
     float wheelSyncCorrectionCps;
     float straightTuningWeight;
 } MotionSequenceFusionTestSample;
+
+extern MotionSequenceFusionTestResult
+    motionSequenceFusionTestResults[MOTION_SEQUENCE_FUSION_TEST_RUN_COUNT];
+extern uint32_t motionSequenceFusionTestResultCount;
+extern bool motionSequenceFusionTestComparisonValid;
+extern int32_t motionSequenceFusionTestSavedTimeMs; /* stopped minus fused */
+extern float motionSequenceFusionTestSavedPercent; /* relative to stopped */
 
 void MotionSequenceFusionTestRun(void);
 /* Debugger breakpoint: result globals and final log sample are ready. */

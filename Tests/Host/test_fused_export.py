@@ -20,9 +20,17 @@ bool motionSequenceFusionTestCancelled = true;
 bool motionSequenceFusionTestLogTruncated = true;
 uint32_t motionSequenceFusionTestElapsedMs = 3456;
 uint32_t motionSequenceFusionTestLogCount = SAMPLE_COUNT;
+uint32_t motionSequenceFusionTestResultCount = 2;
+bool motionSequenceFusionTestComparisonValid = true;
+int32_t motionSequenceFusionTestSavedTimeMs = 1000;
+float motionSequenceFusionTestSavedPercent = 25;
+MotionSequenceFusionTestResult motionSequenceFusionTestResults[2] = {
+    {.stopAfterEachSegment = false, .passed = true, .elapsedMs = 3000, .completedRuns = 1},
+    {.stopAfterEachSegment = true, .passed = true, .elapsedMs = 4000, .completedRuns = 12}
+};
 MotionSequenceFusionTestSample motionSequenceFusionTestLog[2] = {
-    {.timeMs = 20, .steeringCommand = 12, .sequenceTravelMm = 123},
-    {.timeMs = 40, .steeringCommand = 13, .sequenceTravelMm = 234}
+    {.timeMs = 20, .comparisonRunIndex = 0, .steeringCommand = 12, .sequenceTravelMm = 123},
+    {.timeMs = 40, .comparisonRunIndex = 1, .steeringCommand = 13, .sequenceTravelMm = 234}
 };
 static const SteeringControllerCalibration calibration = {.maxCommandRatePerSec = 120};
 static SteeringController steering = {.calibration = &calibration};
@@ -67,8 +75,12 @@ def main():
             assert log.rstrip().endswith("=== EXPORT COMPLETE ==="), log
             assert "totalTravelMm = 1234" in log and "maxCommandRatePerSec = 120" in log
             assert "MOTIONCONTROLLER_STATUS_PROFILE_ERROR" in log
+            assert "A/B timing comparison" in log
+            assert "elapsedMs = 3000" in log and "elapsedMs = 4000" in log
+            assert "completedRuns = 1" in log and "completedRuns = 12" in log
             if count == 2:
                 assert "steeringCommand = 12" in log and "steeringCommand = 13" in log
+                assert "comparisonRunIndex = 0" in log and "comparisonRunIndex = 1" in log
                 assert "No samples, or invalid count" not in log
             else:
                 assert "No samples, or invalid count" in log

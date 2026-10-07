@@ -579,6 +579,7 @@ static void testRandomPlans(void)
 #include "MotionSequenceFusionTest.h"
 #include "RobotTestFixture.h"
 #include <stdarg.h>
+#include <string.h>
 extern MotionSequence motionSequenceFusionTestSequence;
 extern uint32_t motionSequenceFusionTestLogCount;
 extern MotionSequenceFusionTestSample motionSequenceFusionTestLog[];
@@ -588,6 +589,9 @@ extern MotionControllerStatus motionSequenceFusionTestStatus;
 static RobotTestFixture *hardwareFixture;
 static uint32_t fakeTick;
 static unsigned hardwareScenario;
+static unsigned hardwareStartCount;
+static uint32_t hardwareTrialStartTick;
+static char oledRows[8][64];
 static float leftCountFraction, rightCountFraction;
 
 bool RobotTestFixture_InitMotionController(RobotTestFixture *rf,
@@ -608,7 +612,9 @@ bool RobotTestFixture_InitMotionController(RobotTestFixture *rf,
 uint32_t HAL_GetTick(void)
 {
     ++fakeTick;
-    if (hardwareFixture && hardwareScenario == 0) {
+    bool trackMotion = hardwareScenario == 0 || hardwareScenario == 1 ||
+        hardwareScenario == 3 || (hardwareScenario == 4 && hardwareStartCount == 1);
+    if (hardwareFixture && trackMotion) {
         WheelSpeedController *l = &hardwareFixture->leftWheelController;
         WheelSpeedController *r = &hardwareFixture->rightWheelController;
         leftCountFraction += l->targetSpeedCps * 0.001f;
@@ -626,17 +632,36 @@ uint32_t HAL_GetTick(void)
 }
 void HAL_Delay(uint32_t ms)
 { for (uint32_t i = 0; i < ms; ++i) (void)HAL_GetTick(); }
-void SW1_WaitForPressAndRelease(void) { }
-int SW1_ReadState(void) { return hardwareScenario == 1 && fakeTick > 250 ? 1 : 0; }
-void OLED_Clear(void) { }
+void SW1_WaitForPressAndRelease(void)
+{
+    ++hardwareStartCount;
+    hardwareTrialStartTick = fakeTick;
+    /* A deliberate manual-start delay proves that waiting is not timed. */
+    HAL_Delay(1000U);
+}
+int SW1_ReadState(void)
+{
+    return (hardwareScenario == 1 || (hardwareScenario == 3 && hardwareStartCount == 2)) &&
+        fakeTick - hardwareTrialStartTick > 2000U ? 1 : 0;
+}
+void OLED_Clear(void) { memset(oledRows, 0, sizeof(oledRows)); }
 void OLED_Refresh_Gram(void) { }
 void OLED_Printf(uint8_t x, uint8_t y, const char *format, ...)
-{ (void)x; (void)y; (void)format; }
+{
+    (void)x;
+    assert(y < 8); /* OLED_Printf takes a text row, not a pixel y coordinate. */
+    va_list args;
+    va_start(args, format);
+    vsnprintf(oledRows[y], sizeof(oledRows[y]), format, args);
+    va_end(args);
+}
 
 static void testRobotHarness(void)
 {
-    for (unsigned scenario = 0; scenario < 3; ++scenario) {
+    for (unsigned scenario = 0; scenario < 5; ++scenario) {
         hardwareScenario = scenario;
+        hardwareStartCount = 0;
+        hardwareTrialStartTick = 0;
         fakeTick = 0;
         leftCountFraction = rightCountFraction = 0;
         hardwareFixture = NULL;
@@ -645,21 +670,71 @@ static void testRobotHarness(void)
         assert(motionSequenceFusionTestStatus == 0);
         MotionSequenceFusionTestSample *final =
             &motionSequenceFusionTestLog[motionSequenceFusionTestLogCount - 1];
+        MotionSequenceFusionTestResult *a = &motionSequenceFusionTestResults[0];
+        MotionSequenceFusionTestResult *b = &motionSequenceFusionTestResults[1];
         if (scenario == 0) {
-            assert(motionSequenceFusionTestPassed);
-            printf("Ideal encoder/gyro harness elapsed: %u ms (software timing only)\n",
-                   final->timeMs);
-            assert(!motionSequenceFusionTestCancelled && !motionSequenceFusionTestTimedOut);
-            assert(motionSequenceFusionTestSequence.completedRuns == 1);
-            near(final->sequenceTravelMm,
-                 motionSequenceFusionTestSequence.completedMeasuredTravelMm, 0);
+            assert(motionSequenceFusionTestPassed && motionSequenceFusionTestComparisonValid);
+            assert(motionSequenceFusionTestResultCount == 2 && hardwareStartCount == 2);
+            assert(a->passed && b->passed);
+            assert(!a->stopAfterEachSegment && b->stopAfterEachSegment);
+            assert(a->completedRuns == 1 && b->completedRuns == 12);
+            assert(motionSequenceFusionTestSequence.plan.count == 12);
+            for (unsigned i = 0; i < 12; ++i) {
+                const MotionSequenceSegment *seg = &motionSequenceFusionTestSequence.plan.segments[i];
+                near(seg->speedCps, 5000, 0);
+                assert(seg->stopAfter && seg->signedDistanceMm > 0);
+                if (i % 2 == 0) near(seg->signedDistanceMm, 500, 0);
+                else near(fabsf(seg->curvaturePerMm), 1.0f / 275.0f, 1e-8f);
+            }
+            near(a->nominalTravelMm, 3000 + 2200 * PI / 2, 0.01f);
+            near(a->nominalTravelMm, b->nominalTravelMm, 0);
+            near(a->nominalYawRad, 0, 1e-6f);
+            near(b->nominalYawRad, 0, 1e-6f);
+            assert(a->elapsedMs < b->elapsedMs);
+            assert(motionSequenceFusionTestSavedTimeMs ==
+                   (int32_t)b->elapsedMs - (int32_t)a->elapsedMs);
+            near(motionSequenceFusionTestSavedPercent,
+                 100.0f * motionSequenceFusionTestSavedTimeMs / b->elapsedMs, 1e-5f);
+            assert(!a->logTruncated && !b->logTruncated);
+            assert(!motionSequenceFusionTestLogTruncated);
+            assert(strstr(oledRows[0], "DONE") && strstr(oledRows[1], "A fused") &&
+                   strstr(oledRows[2], "B stopped") && strstr(oledRows[3], "Saved") &&
+                   strstr(oledRows[4], "Reduction"));
+            unsigned taggedSamples[2] = {0};
+            for (unsigned i = 0; i < motionSequenceFusionTestLogCount; ++i) {
+                MotionSequenceFusionTestSample *sample = &motionSequenceFusionTestLog[i];
+                assert(sample->comparisonRunIndex < 2);
+                ++taggedSamples[sample->comparisonRunIndex];
+                if (i > 0 && sample->comparisonRunIndex ==
+                    motionSequenceFusionTestLog[i - 1].comparisonRunIndex)
+                    assert(sample->timeMs >= motionSequenceFusionTestLog[i - 1].timeMs);
+            }
+            assert(taggedSamples[0] > 1 && taggedSamples[1] > 1);
+            assert(fakeTick >= a->elapsedMs + b->elapsedMs + 2800U);
+            near(final->sequenceTravelMm, b->measuredTravelMm, 0);
+            printf("Ideal mixed-turn A/B harness: fused %u ms, stopped %u ms, "
+                   "saved %d ms (%.1f%%); software timing only\n",
+                   a->elapsedMs, b->elapsedMs, motionSequenceFusionTestSavedTimeMs,
+                   motionSequenceFusionTestSavedPercent);
         } else {
-            assert(!motionSequenceFusionTestPassed);
+            bool second = scenario >= 3;
+            bool timeout = scenario == 2 || scenario == 4;
+            assert(!motionSequenceFusionTestPassed && !motionSequenceFusionTestComparisonValid);
+            assert(motionSequenceFusionTestSavedTimeMs == 0);
+            near(motionSequenceFusionTestSavedPercent, 0, 0);
+            assert(motionSequenceFusionTestResultCount == (second ? 2U : 1U));
+            assert(hardwareStartCount == (second ? 2U : 1U));
+            MotionSequenceFusionTestResult *failed = second ? b : a;
+            assert(!failed->passed);
+            assert(failed->timedOut == timeout && failed->cancelled == !timeout);
+            if (second) assert(a->passed);
             assert(motionSequenceFusionTestSequence.state == MOTION_SEQUENCE_ABORTED);
-            assert(scenario == 1 ? motionSequenceFusionTestCancelled : motionSequenceFusionTestTimedOut);
-            assert(scenario != 2 || motionSequenceFusionTestLogTruncated);
+            assert(strstr(oledRows[0], "INVALID"));
+            assert(!strstr(oledRows[3], "Saved"));
+            assert(!timeout || motionSequenceFusionTestLogTruncated);
         }
         assert(final->mode == MOTIONCONTROLLER_IDLE);
+        assert(final->comparisonRunIndex == (scenario >= 3 || scenario == 0 ? 1U : 0U));
     }
 }
 
