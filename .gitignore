@@ -36,6 +36,9 @@ Build/
 # Workspace metadata - do NOT confuse this with project settings
 .metadata/
 
+# Local CDT compiler/indexer state; shared provider defaults live in the template
+/.settings/language.settings.xml
+
 # Eclipse temporary files
 *.tmp
 *.bak
