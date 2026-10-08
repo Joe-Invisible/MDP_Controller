@@ -26,8 +26,8 @@
  */
 #define WHEEL_DIAMETER_MM           65.5f
 
-#define STRAIGHT_STEERING_SETTLING_TIME_SEC  (0.5f)
-#define ARC_STEERING_SETTLING_TIME_SEC       (0.5f)
+#define STRAIGHT_STEERING_SETTLING_TIME_SEC  (0.15f)
+#define ARC_STEERING_SETTLING_TIME_SEC       (0.15f)
 
 const RobotKinematics kinematics =
 {
@@ -115,15 +115,15 @@ const MotionControllerConfig motionControllerConfig =
      * curvature arcs are feedforward-dominant and were stable with the
      * lower PI gains below.
      */
-    .straightYawRateKp = 370.0f,
-    .straightYawRateKi = 450.0f,
+    .straightYawRateKp = 100.0f,
+    .straightYawRateKi = 50.0f,
     .straightYawRateKd = 0.0f,
-    .straightHeadingKpPerSec = 2.0f,
+    .straightHeadingKpPerSec = 0.5f,
 
-    .arcYawRateKp = 270.0f,
-    .arcYawRateKi = 150.0f,
+    .arcYawRateKp = 100.0f,
+    .arcYawRateKi = 50.0f,
     .arcYawRateKd = 0.0f,
-    .arcHeadingKpPerSec = 0.0f,
+    .arcHeadingKpPerSec = 0.5f,
 
     .maxArcSteeringCommandCorrection = 30.0f,
 

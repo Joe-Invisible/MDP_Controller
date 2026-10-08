@@ -5,8 +5,8 @@
 /* Deliberately faster fusion experiment. These are configurable software
  * limits, not measured servo physics. Standalone steering keeps its own rate. */
 const MotionSequenceConfig motionSequenceConfig = {
-    .blendLengthMm = 100.0f,
-    .junctionSpeedCps = 2000.0f,
+    .blendLengthMm = 200.0f,
+    .junctionSpeedCps = 8000.0f,
     .steeringCommandRatePerSec = 480.0f,
 };
 
