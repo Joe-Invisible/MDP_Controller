@@ -37,6 +37,9 @@ compile_commands.json
 # Workspace metadata - do NOT confuse this with project settings
 .metadata/
 
+# Local CDT compiler/indexer state; shared provider defaults live in the template
+/.settings/language.settings.xml
+
 # Eclipse temporary files
 *.tmp
 *.bak
@@ -67,6 +70,9 @@ Desktop.ini
 
 # JetBrains
 .idea/
+<<<<<<< HEAD
 
 # Automatically exported experiment logs and generated GDB commands
 exp/logs/
+=======
+>>>>>>> origin/main
