@@ -14,6 +14,7 @@
 #include "HCSR04Test.h"
 #include "OLEDTest.h"
 #include "WheelSpeedControllerTest.h"
+#include "WheelPerformanceTest.h"
 #include "SteeringControllerTest.h"
 #include "DynamicBrakeMapTest.h"
 #include "MotionProfileTest.h"
@@ -32,7 +33,7 @@ void InvokeTest() {
 
 	LED_On();
 
-	MotionControllerArcTestRun();
+	WheelPerformanceTestRun();
 
 	while (1) {
 		// Test ended. Loop forever.
