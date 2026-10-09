@@ -134,7 +134,7 @@ const MotionControllerConfig motionControllerConfig =
     .maxWheelSyncCorrectionCps = 100.0f,
 
     /* Current production-candidate profile from the terminal-arc campaign. */
-    .motionAccelerationMmps2 = 1500.0f,
+    .motionAccelerationMmps2 = 2500.0f,
     .motionDecelerationMmps2 = 1000.0f,
     .motionCompletionToleranceMm = 0.5f,
 
