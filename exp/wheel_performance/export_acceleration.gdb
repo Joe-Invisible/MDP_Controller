@@ -5,7 +5,7 @@ set print pretty off
 set print elements unlimited
 set print repeats 0
 set max-value-size unlimited
-set logging file wheel_acceleration.txt
+set logging file wheel_acceleration_1500_trials.txt
 set logging overwrite on
 set logging enabled on
 printf "WHEEL_PERFORMANCE_V1\n"
