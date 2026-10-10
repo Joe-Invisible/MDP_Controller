@@ -6,6 +6,7 @@
 
 #define WHEEL_PERFORMANCE_TOP_SPEED 1U
 #define WHEEL_PERFORMANCE_ACCELERATION 2U
+#define WHEEL_PERFORMANCE_DECELERATION 3U
 #define WHEEL_PERFORMANCE_TRACE_CAPACITY 3000U
 #define WHEEL_PERFORMANCE_TRIAL_CAPACITY 64U
 
@@ -20,14 +21,19 @@ typedef enum {
     WHEEL_TEST_INVALID_CONFIG,
     WHEEL_TEST_INIT_FAILED,
     WHEEL_TEST_TIMING_FAULT,
-    WHEEL_TEST_TELEMETRY_RANGE
+    WHEEL_TEST_TELEMETRY_RANGE,
+    WHEEL_TEST_SPEED_NOT_SETTLED
 } WheelPerformanceStatus;
 
 typedef enum {
     WHEEL_TEST_DRIVE = 1,
     WHEEL_TEST_RAMP,
     WHEEL_TEST_HOLD,
-    WHEEL_TEST_BRAKE
+    WHEEL_TEST_BRAKE,
+    WHEEL_TEST_PREP_ACCEL,
+    WHEEL_TEST_PREP_HOLD,
+    WHEEL_TEST_DECEL,
+    WHEEL_TEST_ZERO_SETTLE
 } WheelPerformancePhase;
 
 /* Edit defaults in .c, or change this object in GDB before the FIRST SW1 press.
@@ -46,6 +52,12 @@ typedef struct {
     float accelerationTargetCps;
     uint32_t accelerationHoldMs;
     uint32_t brakeTimeoutMs;
+    float decelerationStartCps;
+    float preparationAccelerationMmps2;
+    uint32_t preparationHoldMs;
+    uint32_t preparationTimeoutMs;
+    float wheelKp;
+    float wheelKi;
 } WheelPerformanceConfig;
 
 /* 20 bytes/sample, 60,000 bytes for the whole sweep, in CPU-accessible CCM RAM.
@@ -73,7 +85,7 @@ typedef struct {
     float pwmPercent;
     float accelerationMmps2;
     float targetCps;
-    float estimatedDriveDistanceMm; /* Model/ideal ramp estimate; excludes braking. */
+    float estimatedDriveDistanceMm; /* Nominal controlled travel; excludes unprofiled stopping. */
     uint32_t firstSample;
     uint32_t sampleCount;
     uint32_t driveMs;
@@ -82,6 +94,14 @@ typedef struct {
     float leftFinalDistanceMm;
     float rightFinalDistanceMm;
     uint32_t status;
+    float decelerationMmps2;
+    float estimatedSlowdownDistanceMm;
+    uint32_t decelerationStartMs;
+    uint32_t zeroTargetMs;
+    float leftDecelerationStartCps;
+    float rightDecelerationStartCps;
+    float leftDecelerationStartDistanceMm;
+    float rightDecelerationStartDistanceMm;
 } WheelPerformanceTrial;
 
 extern volatile WheelPerformanceConfig wheelPerformanceConfig;

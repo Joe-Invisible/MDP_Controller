@@ -12,6 +12,7 @@ static uint32_t abortAt;
 static bool refuseInit;
 static bool preventStop;
 static bool injectTimingGap;
+static bool limitSpeed;
 static uint32_t buttons;
 static uint32_t rawFullTrials;
 static uint32_t preparedScreens;
@@ -25,6 +26,7 @@ static void Advance(void)
         DCMotor *m = motors[i];
         float magnitude = fmaxf(0.0f, fabsf(m->command) - 53.0f);
         float desired = copysignf(magnitude * (i == 0 ? 200.0f : 190.0f), m->command);
+        if (limitSpeed) desired = copysignf(fminf(fabsf(desired), 4000.0f), desired);
         float tau = m->state.mode == DCMOTOR_MODE_BRAKE ? 0.025f : 0.08f;
         if (m->state.mode == DCMOTOR_MODE_BRAKE)
             desired = preventStop ? 1500.0f : 0.0f;
@@ -117,13 +119,16 @@ void OLED_Refresh_Gram(void)
 static void Reset(uint32_t kind)
 {
     tick = abortAt = buttons = rawFullTrials = preparedScreens = 0;
-    refuseInit = preventStop = injectTimingGap = false;
+    refuseInit = preventStop = injectTimingGap = limitSpeed = false;
     wheelPerformanceConfig = (WheelPerformanceConfig) {
-        .experiment = kind, .repetitions = 2, .waitBetweenTrials = true,
+        .experiment = kind, .repetitions = kind == 3 ? 1 : 2, .waitBetweenTrials = true,
         .batteryVoltage = 11.3f, .steeringRawCommand = 0,
         .maxDriveDistanceMm = 2000, .speedDriveMs = 1500,
         .steadyWindowMs = 500, .accelerationTargetCps = 5000,
-        .accelerationHoldMs = 200, .brakeTimeoutMs = 1000
+        .accelerationHoldMs = 200, .brakeTimeoutMs = 1000,
+        .decelerationStartCps = 7800, .preparationAccelerationMmps2 = 3000,
+        .preparationHoldMs = 500, .preparationTimeoutMs = 1500,
+        .wheelKp = WHEELSPEEDCONTROLLER_KP, .wheelKi = WHEELSPEEDCONTROLLER_KI
     };
 }
 
@@ -145,7 +150,8 @@ static void CheckCompleted(uint32_t trials)
         assert(t->estimatedDriveDistanceMm > 0);
         end += t->sampleCount;
         WheelPerformanceSample *last = &wheelPerformanceTrace[end - 1];
-        assert(last->phase == WHEEL_TEST_BRAKE);
+        assert(last->phase == (wheelPerformanceRunConfig.experiment == 3
+            ? WHEEL_TEST_ZERO_SETTLE : WHEEL_TEST_BRAKE));
         assert(abs(last->leftCps) < 100 && abs(last->rightCps) < 100);
         for (uint32_t j = t->firstSample; j < end; ++j) {
             WheelPerformanceSample *s = &wheelPerformanceTrace[j];
@@ -153,9 +159,9 @@ static void CheckCompleted(uint32_t trials)
             assert(abs(s->leftCps) < 15000 && abs(s->rightCps) < 15000);
             if (j > t->firstSample)
                 assert(s->timeMs > wheelPerformanceTrace[j - 1].timeMs);
-            if (s->phase != WHEEL_TEST_BRAKE && s->timeMs > 200) {
-                if (t->direction == 1) { assert(s->leftCps > 0); forward = true; }
-                else { assert(s->leftCps < 0); reverse = true; }
+            if (s->phase != WHEEL_TEST_BRAKE && s->phase != WHEEL_TEST_ZERO_SETTLE && s->timeMs > 200) {
+                if (t->direction == 1) { assert(s->leftCps >= 0); forward = true; }
+                else { assert(s->leftCps <= 0); reverse = true; }
             }
         }
     }
@@ -171,7 +177,7 @@ int main(int argc, char **argv)
         uint32_t kind = (uint32_t)atoi(argv[1]);
         Reset(kind);
         WheelPerformanceTestRun();
-        CheckCompleted(kind == 1 ? 12 : 24);
+        CheckCompleted(2U * wheelPerformanceRunConfig.repetitions * TableCount());
         return 0;
     }
     Reset(1); WheelPerformanceTestRun(); CheckCompleted(12);
@@ -179,10 +185,58 @@ int main(int argc, char **argv)
     assert(fabsf(EstimateDriveDistanceMm(1, 100) - 1894.77f) < 1.0f);
     assert(EstimateDriveDistanceMm(1, 100) > EstimateDriveDistanceMm(1, 80));
     assert(EstimateDriveDistanceMm(1, 100) != EstimateDriveDistanceMm(-1, 100));
-    Reset(2); WheelPerformanceTestRun(); CheckCompleted(24);
+    Reset(2); WheelPerformanceTestRun();
+    CheckCompleted(2U * wheelPerformanceRunConfig.repetitions * TableCount());
     assert(fabsf(EstimateDriveDistanceMm(1, 500) - 567.0f) < 1.0f);
     assert(fabsf(EstimateDriveDistanceMm(1, 10000) - 154.0f) < 1.0f);
     assert(EstimateDriveDistanceMm(1, 500) > EstimateDriveDistanceMm(1, 10000));
+    Reset(3); wheelPerformanceConfig.wheelKp = 0.02f;
+    WheelPerformanceTestRun(); CheckCompleted(6);
+    assert(fixture.leftWheelController.pid.kp == 0.02f);
+    assert(fabsf(EstimateDriveDistanceMm(1, 1000) - 1220.3f) < 1.0f);
+    assert(EstimateSlowdownDistanceMm(1000) > EstimateSlowdownDistanceMm(3000));
+    for (uint32_t i = 0; i < wheelPerformanceTrialCount; ++i) {
+        WheelPerformanceTrial *tr = &wheelPerformanceTrials[i];
+        assert(tr->decelerationStartMs >= 840U);
+        assert(tr->zeroTargetMs > tr->decelerationStartMs);
+        assert(tr->driveMs >= tr->zeroTargetMs + STATIONARY_SAMPLES * CONTROL_PERIOD_MS);
+        assert(tr->estimatedSlowdownDistanceMm > 0);
+        bool ramp = false, tail = false, activeBrake = false;
+        int sign = tr->direction == 1 ? 1 : -1;
+        int lastTarget = 30000;
+        for (uint32_t j = tr->firstSample; j < tr->firstSample + tr->sampleCount; ++j) {
+            WheelPerformanceSample *s = &wheelPerformanceTrace[j];
+            assert(s->phase != WHEEL_TEST_BRAKE); /* no extra forced endpoint brake */
+            if (s->phase == WHEEL_TEST_DECEL) {
+                ramp = true;
+                assert(sign * s->targetCps <= lastTarget);
+                lastTarget = sign * s->targetCps;
+                activeBrake |= s->leftMode == DCMOTOR_MODE_BRAKE || s->rightMode == DCMOTOR_MODE_BRAKE;
+            }
+            if (s->phase == WHEEL_TEST_ZERO_SETTLE) {
+                tail = true;
+                assert(s->targetCps == 0);
+                assert(s->leftMode == DCMOTOR_MODE_BRAKE && s->leftPwmX100 == 10000);
+            }
+        }
+        assert(ramp && tail && activeBrake);
+    }
+    Reset(3); wheelPerformanceConfig.repetitions = 4;
+    WheelPerformanceTestRun(); assert(wheelPerformanceStatus == WHEEL_TEST_INVALID_CONFIG);
+    assert(wheelPerformanceTrialCount == 0);
+    Reset(3); limitSpeed = true;
+    WheelPerformanceTestRun(); assert(wheelPerformanceStatus == WHEEL_TEST_SPEED_NOT_SETTLED);
+    assert(wheelPerformanceTrials[0].decelerationStartMs == 0);
+    Reset(3); abortAt = 1750;
+    WheelPerformanceTestRun(); assert(wheelPerformanceStatus == WHEEL_TEST_BUTTON_ABORT);
+    assert(wheelPerformanceTrials[0].decelerationStartMs > 0);
+    assert(wheelPerformanceTrace[wheelPerformanceTraceCount - 1].phase == WHEEL_TEST_BRAKE);
+    Reset(3); wheelPerformanceConfig.maxDriveDistanceMm = 1000;
+    WheelPerformanceTestRun(); assert(wheelPerformanceStatus == WHEEL_TEST_DISTANCE_LIMIT);
+    assert(wheelPerformanceTrials[0].decelerationStartMs > 0);
+    Reset(3); preventStop = true;
+    WheelPerformanceTestRun(); assert(wheelPerformanceStatus == WHEEL_TEST_STOP_TIMEOUT);
+    assert(fixture.leftRearWheel.state.mode == DCMOTOR_MODE_BRAKE);
     Reset(1); wheelPerformanceConfig.waitBetweenTrials = false;
     WheelPerformanceTestRun(); CheckCompleted(12);
     Reset(1); wheelPerformanceConfig.repetitions = 4;

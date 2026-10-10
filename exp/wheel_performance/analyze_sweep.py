@@ -108,7 +108,7 @@ def analyze(config, mm_per_count, trials, trace):
                 summary[prefix + "Plateau"] = bool(trial["status"] == 2 and covered and
                     mean and mean > 0 and rate is not None and
                     abs(rate) * window / 1000 <= 0.05 * mean)
-            else:
+            elif config["experiment"] == 2:
                 ramp = [s for s in samples if s["phase"] == 2 and s["timeMs"] > 0]
                 rate = slope(ramp, wheel)
                 summary[prefix + "RampAccelMmps2"] = (
@@ -121,6 +121,39 @@ def analyze(config, mm_per_count, trials, trace):
                 summary[prefix + "RampSaturationFraction"] = (
                     statistics.mean(abs(s[pwm]) >= 9990 and s[prefix + "Mode"] == 1
                                     for s in ramp) if ramp else None)
+            else:
+                ramp = [s for s in samples if s["phase"] == 7]
+                rate = slope(ramp, wheel)
+                errors = [sign * (s[wheel] - s["targetCps"]) for s in ramp]
+                summary[prefix + "RampDecelMmps2"] = (
+                    -sign * rate * mm_per_count if rate is not None else None)
+                summary[prefix + "RampMeanAbsErrorCps"] = (
+                    statistics.mean(abs(e) for e in errors) if errors else None)
+                summary[prefix + "RampMaxOverspeedCps"] = max([0, *errors]) if errors else None
+                summary[prefix + "RampMaxUnderspeedCps"] = max([0, *(-e for e in errors)]) if errors else None
+                summary[prefix + "RampBrakeFraction"] = (
+                    statistics.mean(s[prefix + "Mode"] == 2 for s in ramp) if ramp else None)
+                summary[prefix + "RampFullBrakeFraction"] = (
+                    statistics.mean(s[prefix + "Mode"] == 2 and abs(s[pwm]) >= 9990
+                                    for s in ramp) if ramp else None)
+                began = trial.get("decelerationStartMs", 0) > 0
+                summary[prefix + "EncoderStopDistanceMm"] = (
+                    sign * (trial[prefix + "FinalDistanceMm"] -
+                            trial[prefix + "DecelerationStartDistanceMm"]) if began else None)
+                tail = [s for s in samples if s["phase"] == 8]
+                summary[prefix + "ZeroTailEncoderDistanceMm"] = (
+                    sum(sign * s[wheel] * mm_per_count * s["dtMs"] / 1000 for s in tail)
+                    if tail else None)
+        if config["experiment"] == 3:
+            began = trial.get("decelerationStartMs", 0) > 0
+            zero = trial.get("zeroTargetMs", 0)
+            tail = [s for s in samples if s["phase"] == 8]
+            summary["ControlledStopComplete"] = bool(trial["status"] == 2 and began and zero and
+                samples and samples[-1]["phase"] == 8 and len(tail) >= 5 and
+                all(abs(s["leftCps"]) < 100 and abs(s["rightCps"]) < 100 for s in tail[-5:]))
+            summary["EncoderStopTimeMs"] = (
+                trial["driveMs"] - trial["decelerationStartMs"] if began else None)
+            summary["ZeroTargetTailMs"] = trial["driveMs"] - zero if zero else None
         summaries.append(summary)
     return summaries
 
@@ -148,6 +181,9 @@ def main():
         print("Battery voltage was not entered.")
     if status != 2:
         print("Sweep did not complete; inspect the status and retained partial trials.")
+    if config["experiment"] == 3:
+        print("Deceleration summaries separate the descending ramp from zero-target braking. "
+              "Encoder stopping distance does not measure chassis skid; compare ground/video measurements.")
     if config["experiment"] == 1:
         for direction, label in ((1, "forward"), (2, "reverse")):
             full = [s for s in summaries if s["direction"] == direction and
@@ -159,7 +195,7 @@ def main():
             right = min(s["rightSteadyMeanCps"] for s in full)
             print(f"{label}: minimum repeated 100% means: left={left:.0f}, "
                   f"right={right:.0f}, shared={min(left, right):.0f} CPS")
-    else:
+    elif config["experiment"] == 2:
         print("Acceleration CSV includes ramp fits, tracking error and saturation.")
         print("A passing highest point only establishes a tested value, not the upper limit.")
     print(f"CSV files: {args.export.with_suffix('.trace.csv')}, "
