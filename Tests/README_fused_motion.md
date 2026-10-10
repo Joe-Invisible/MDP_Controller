@@ -8,14 +8,18 @@ The separate production UART and IMU-hardening changes are not included.
 
 ## Current default: single tuning run
 
-`MotionSequenceFusionTestRun()` runs the short fused accuracy path once. There
+`MotionSequenceFusionTestRun()` runs the longer transition accuracy path once. There
 is no P100 baseline, second button prompt, or A/B comparison in this mode.
 The default selector is `MOTION_SEQUENCE_FUSION_TEST_SINGLE_TUNING`.
 
 | Regime | Yaw-rate P / I / D | Heading gain (s⁻¹) |
 | --- | --- | ---: |
-| Straight | 150 / 0 / 0 | 0 |
-| Arc | 150 / 0 / 0 | 0 |
+| Straight | 150 / 50 / 0 | 0.5 |
+| Arc | 150 / 100 / 0 | 0.5 |
+
+These are the measured run 12–14 settings. This experiment changes the path
+and blend length to investigate transition lag/ringing with that tuning fixed;
+it does not establish that the tuning is stable.
 
 Edit `motionSequenceFusionTestStraightTuning` and
 `motionSequenceFusionTestArcTuning` at the top of `MotionSequenceFusionTest.c`
@@ -31,22 +35,33 @@ Nominal raw steering feedforward always uses current curvature.
 
 | Segment | Distance | Radius | Requested speed |
 | --- | ---: | ---: | ---: |
-| Entry straight | 300 mm | Straight | 5000 CPS |
+| Entry straight | 1000 mm | Straight | 5000 CPS |
 | Left semicircle | 1649.34 mm (180°) | +525 mm | 5000 CPS |
-| Exit straight | 600 mm | Straight | 5000 CPS |
+| Exit straight | 1000 mm | Straight | 5000 CPS |
 
-Total commanded travel is **2549.34 mm**, displayed before starting. Wheel
+Total commanded travel is **3649.34 mm**, displayed before starting. Wheel
 Kp=0.03, Ki=Kd=0; straight A/D is 3000/3000 mm/s²; arc/blend A/D is
-2000/2000 mm/s². Blend length is 200 mm, junction ceiling 8000 CPS and
+2000/2000 mm/s². Test-local blend length is **500 mm**, junction ceiling 8000 CPS and
 steering slew 480 raw/s. Feedforward, wheel synchronization and correction
 limits retain the preceding experiment's settings.
 
+The existing quarter-segment bound is unchanged. Both neighbouring straights
+are 1000 mm, so each junction gets its full 500 mm blend (250 mm from each
+side). Entry blending covers progress 750–1250 mm; exit blending covers
+2399.34–2899.34 mm. At 5000 CPS (~660 mm/s), each nominal blend takes about
+0.76 s. Feedback may still demand command changes up to the existing 480 raw/s
+slew limit; this experiment does not lower that limit. Production sequence
+defaults remain unchanged, including their 200 mm blend.
+
 Mark the rear-axle midpoint at `(0,0)`, heading `+x`. The unblended centreline
-reaches `(300,0)`, then `(300,1050)` heading `-x`, then `(-300,1050)`. It extends
-behind the starting line during the final straight. The nominal swept area is
-approximately **1.6 m along x × 1.5 m along y**, allowing an assumed centred
-300×200 mm chassis; leave room for tracking error and actual chassis offsets.
-The blends preserve total nominal distance/yaw but slightly change XY.
+reaches `(1000,0)`, then `(1000,1050)` heading `-x`, then `(0,1050)`.
+Integrating the actual 500 mm linear-curvature blends gives an endpoint near
+**(0,1089.36) mm**, yaw 180°; the extra 39.36 mm in y is nominal geometry, not
+tracking error. The blended centreline reaches x≈1523.12 mm. Reserve approximately
+**2.0 m along x × 1.6 m along y**, for example x=-200…1800 and y=-200…1400 mm,
+allowing an assumed centred 300×200 mm chassis. Leave additional room for
+tracking error and actual chassis offsets. The blends preserve total nominal
+distance/yaw but change XY.
 
 1. Build/flash and set a breakpoint at `MotionSequenceFusionTestFinished`.
 2. Place the robot at the marked start. OLED shows `Tuning ready`, estimated
@@ -77,6 +92,8 @@ Inspect raw/filtered gyro rates, geometric yaw references, steering-correction
 saturation/ringing at the blends, sustained arc yaw-rate bias, and heading error
 entering/leaving the final straight. Record physical endpoint displacement
 separately; successful execution does not establish Task 2 parking accuracy.
+Compare transition and immediate recovery behaviour with runs 12–14, rather
+than final yaw alone: the longer straights provide additional settling time.
 
 The host checks cover one start/result, dynamic gains and ready-screen values,
 matched references, completion, cancellation, timeout, full log capacity and
@@ -92,7 +109,8 @@ Previous A/B experiments remain available by changing the selector before the ru
 - `MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING`: original long course, original
   yaw/heading tuning, 100 ms logging and fused-versus-stopped time savings.
 
-The two short A/B modes reserve 325 samples per run and require a pose reset
+The two short A/B modes retain the original 300 mm / R525 semicircle / 600 mm
+path and the shared 200 mm blend. They reserve 325 samples per run and require a pose reset
 between runs. The remaining course description applies to the optional timing mode.
 
 ## Wheel-performance settings

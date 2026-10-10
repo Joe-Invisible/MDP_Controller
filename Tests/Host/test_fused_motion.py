@@ -965,10 +965,14 @@ void SW1_WaitForPressAndRelease(void)
         bool restored = gains && hardwareStartCount == 1;
         assert(config->useMatchedYawRateReferenceFilter == (single || gains || hardwareStartCount == 1));
         near(hardwareFixture->motionController.arcYawRatePID.kp, single ? 150 : restored ? 270 : 100, 0);
-        near(hardwareFixture->motionController.arcYawRatePID.ki, restored ? 150 : 0, 0);
-        assert(strstr(oledRows[6], single ? "S P150 I0 D0 H0" : restored ? "S P270 I150 D0 H0" : "S P100 I0 D0 H0"));
-        assert(strstr(oledRows[7], single ? "C P150 I0 D0 H0" : restored ? "C P270 I150 D0 H0" : "C P100 I0 D0 H0"));
-        assert(strstr(oledRows[1], "R525 180: 2.55m"));
+        near(hardwareFixture->motionController.arcYawRatePID.ki, single ? 100 : restored ? 150 : 0, 0);
+        assert(strstr(oledRows[6], single ? "S P150 I50 D0 H0.5" : restored ? "S P270 I150 D0 H0" : "S P100 I0 D0 H0"));
+        assert(strstr(oledRows[7], single ? "C P150 I100 D0 H0.5" : restored ? "C P270 I150 D0 H0" : "C P100 I0 D0 H0"));
+        assert(strstr(oledRows[1], single ? "R525 180: 3.65m" : "R525 180: 2.55m"));
+        if (single) {
+            assert(strstr(oledRows[2], "B:500mm"));
+            assert(strstr(oledRows[3], "2.0 x 1.6m"));
+        }
         assert(strstr(oledRows[4], "Reset +x"));
     } else if (hardwareScenario == 0) {
         assert(strstr(oledRows[1], "Task2 S: 7.73m"));
@@ -1215,24 +1219,48 @@ static void testSingleTuningHarness(void)
         assert(result->useMatchedYawRateReferenceFilter && !result->stopAfterEachSegment);
         near(result->straightTuning.yawRateKp, 150, 0);
         near(result->arcTuning.yawRateKp, 150, 0);
-        near(result->straightTuning.yawRateKi, 0, 0);
-        near(result->arcTuning.headingKpPerSec, 0, 0);
+        near(result->straightTuning.yawRateKi, 50, 0);
+        near(result->arcTuning.yawRateKi, 100, 0);
+        near(result->straightTuning.headingKpPerSec, 0.5f, 0);
+        near(result->arcTuning.headingKpPerSec, 0.5f, 0);
+        near(hardwareFixture->motionController.config->arcYawRateFilterTauSec, 0.1f, 0);
+        near(motionSequenceFusionTestSequence.config.blendLengthMm, 500, 0);
+        near(motionSequenceConfig.blendLengthMm, 200, 0);
         assert(!motionSequenceFusionTestResults[1].passed);
         assert(motionSequenceFusionTestResults[1].elapsedMs == 0);
         assert(motionSequenceFusionTestSequence.plan.count == 3);
-        near(result->nominalTravelMm, 900 + 525 * PI, 0.001f);
+        near(result->nominalTravelMm, 2000 + 525 * PI, 0.001f);
         near(result->nominalYawRad, PI, 0.000001f);
         for (unsigned i = 0; i < motionSequenceFusionTestLogCount; ++i) {
             const MotionSequenceFusionTestSample *sample = &motionSequenceFusionTestLog[i];
             assert(sample->comparisonRunIndex == 0);
             if (sample->mode == MOTIONCONTROLLER_PROFILE)
-                near(sample->targetYawRateRadPerSec, sample->filteredGeometricYawRateRadPerSec, 0.000001f);
+                near(sample->targetYawRateRadPerSec,
+                     sample->filteredGeometricYawRateRadPerSec + 0.5f * sample->headingErrorRad, 0.000001f);
         }
         assert(motionSequenceFusionTestLog[motionSequenceFusionTestLogCount-1].mode == MOTIONCONTROLLER_IDLE);
         assert(strstr(oledRows[0], "Tuning") && !strstr(oledRows[0], "A/B"));
         if (scenario == 0 || scenario == 5) {
             assert(motionSequenceFusionTestPassed && result->passed && !result->logTruncated);
             assert(strstr(oledRows[0], "DONE") && strstr(oledRows[2], "Yaw"));
+            if (scenario == 0) {
+                const MotionSequenceRun *run = &motionSequenceFusionTestSequence.run;
+                near(run->plan->junctionHalfLengthMm[0], 250, 0);
+                near(run->plan->junctionHalfLengthMm[1], 250, 0);
+                near(motionSequenceFusionTestSequence.config.steeringCommandRatePerSec, 480, 0);
+                double x = 0, y = 0;
+                for (unsigned j = 0; j < 20000; ++j) {
+                    MotionPathSample path;
+                    float ds = run->plan->totalTravelMm / 20000;
+                    assert(MotionSequencePlan_Evaluate(run, (j + 0.5f) * ds, &path));
+                    x += ds * cos(path.desiredYawRad);
+                    y += ds * sin(path.desiredYawRad);
+                    assert(x - 181 > -200 && x + 181 < 1800);
+                    assert(y - 181 > -200 && y + 181 < 1400);
+                }
+                near(x, 0, 0.1f);
+                near(y, 1089.36f, 0.1f);
+            }
             if (scenario == 5) assert(motionSequenceFusionTestLogCount > 325);
             else printf("Ideal single tuning harness: %u ms, %u samples; not a physical accuracy result\n",
                         result->elapsedMs, motionSequenceFusionTestLogCount);
@@ -1260,8 +1288,8 @@ static void testSingleTuningHarness(void)
     near(motionSequenceFusionTestResults[0].arcTuning.headingKpPerSec, 0.3f, 0);
     near(hardwareFixture->motionController.config->straightYawRateKp, 160, 0);
     near(hardwareFixture->motionController.config->arcHeadingKpPerSec, 0.3f, 0);
-    motionSequenceFusionTestStraightTuning = motionSequenceFusionTestArcTuning =
-        (MotionSequenceFusionTestTuning){150, 0, 0, 0};
+    motionSequenceFusionTestStraightTuning = (MotionSequenceFusionTestTuning){150, 50, 0, 0.5f};
+    motionSequenceFusionTestArcTuning = (MotionSequenceFusionTestTuning){150, 100, 0, 0.5f};
 }
 
 int main(void)
