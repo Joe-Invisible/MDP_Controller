@@ -16,19 +16,19 @@
  */
 static const float speedPwmTable[] = {80.0f, 90.0f, 100.0f};
 static const float accelerationTable[] = {
-    500.0f, 1000.0f, 1500.0f, 3000.0f, 6000.0f, 10000.0f
+    1500.0f,
 };
 
 volatile WheelPerformanceConfig wheelPerformanceConfig = {
-    .experiment = WHEEL_PERFORMANCE_TOP_SPEED,
-    .repetitions = 2U,
+    .experiment = WHEEL_PERFORMANCE_ACCELERATION,
+    .repetitions = 1U,
     .waitBetweenTrials = true,
     .batteryVoltage = 0.0f,
     .steeringRawCommand = 0.0f,
     .maxDriveDistanceMm = 2000.0f,
     .speedDriveMs = 1500U,
     .steadyWindowMs = 500U,
-    .accelerationTargetCps = 5000.0f,
+    .accelerationTargetCps = 7800.0f,
     .accelerationHoldMs = 200U,
     .brakeTimeoutMs = 1000U
 };
