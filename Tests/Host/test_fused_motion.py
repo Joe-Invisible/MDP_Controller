@@ -774,10 +774,11 @@ static void testTask2RouteGeometry(void)
             yaw = initialYaw + sample.desiredYawRad;
             double previousX = x;
             x += step * cos(yaw); y += step * sin(yaw);
-            assert(fabs(y) + 181 < 1000); /* Assumed arena side boundaries. */
+            assert(fabs(y) + 181 < 800); /* Compact 1600 mm clear width. */
+            assert(x + 181 < 3300); /* 3800 mm length including park depth. */
             for (unsigned obstacle = 0; obstacle < 2; ++obstacle) {
                 double ox = obstacle == 0 ? 1100 : 2250;
-                double halfHeight = obstacle == 0 ? 50 : 325;
+                double halfHeight = obstacle == 0 ? 50 : 250;
                 double dx = fmax(fabs(x - ox) - 50, 0);
                 double dy = fmax(fabs(y) - halfHeight, 0);
                 assert(hypot(dx, dy) > 201);
@@ -822,7 +823,7 @@ static void testTask2RouteGeometry(void)
     }
     if (trace) fclose(trace);
     for (unsigned i = 0; i < 2; ++i) assert(passes[i][0] && passes[i][1]);
-    float expectedYaw = PI + atan2f(50, 2850) + asinf(600 / hypotf(2850, 50));
+    float expectedYaw = PI + atan2f(50, 2775) + asinf(525 / hypotf(2775, 50));
     near((float)yaw, expectedYaw, 1e-5f);
     for (unsigned j = 0; j < 4; ++j) {
         int front = j < 2 ? 1 : -1;
@@ -865,7 +866,7 @@ void HAL_Delay(uint32_t ms)
 void SW1_WaitForPressAndRelease(void)
 {
     if (hardwareScenario == 0) {
-        assert(strstr(oledRows[1], "Task2 S: 8.18m"));
+        assert(strstr(oledRows[1], "Task2 S: 7.73m"));
         assert(strstr(oledRows[4], "Park +x"));
         testTask2RouteGeometry();
     }
@@ -925,9 +926,9 @@ static void testRobotHarness(void)
                 near(seg->speedCps, 5000, 0);
                 assert(seg->stopAfter && seg->signedDistanceMm > 0);
             }
-            near(a->nominalTravelMm, 8176.1359f, 0.02f);
+            near(a->nominalTravelMm, 7732.5795f, 0.02f);
             near(a->nominalTravelMm, b->nominalTravelMm, 0);
-            near(a->nominalYawRad, PI + atan2f(50, 2850) + asinf(600 / hypotf(2850, 50)), 1e-6f);
+            near(a->nominalYawRad, PI + atan2f(50, 2775) + asinf(525 / hypotf(2775, 50)), 1e-6f);
             near(b->nominalYawRad, a->nominalYawRad, 1e-6f);
             assert(a->elapsedMs < b->elapsedMs);
             assert(motionSequenceFusionTestSavedTimeMs ==

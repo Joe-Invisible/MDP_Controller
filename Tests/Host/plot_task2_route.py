@@ -37,7 +37,7 @@ def plot(csv_path, output):
     ):
         x, y = zip(*paths[stopped])
         ax.plot(x, y, color=color, linewidth=width, label=label)
-    for x, half_height, label in ((1100, 50, "1: 100 × 100"), (2250, 325, "2: 100 × 650")):
+    for x, half_height, label in ((1100, 50, "1: 100 × 100"), (2250, 250, "2: 100 × 500")):
         ax.add_patch(Rectangle((x - 50, -half_height), 100, 2 * half_height,
                                facecolor="#495567", zorder=5))
         ax.text(x, -half_height - 95, label, ha="center", fontsize=9,
@@ -49,8 +49,8 @@ def plot(csv_path, output):
     ax.text(-250, 365, "Park: 500 deep\n× 600 wide", ha="center", fontsize=9)
     for point, offset, text in (
         ((1100, 275), (0, 145), "1 · first left →"),
-        ((2250, -550), (0, -135), "2 · second right →"),
-        ((1800, 480), (0, 125), "3 · one straight return ↙"),
+        ((2250, -475), (0, -135), "2 · second right →"),
+        ((1800, 433), (0, 125), "3 · one straight return ↙"),
     ):
         ax.text(point[0] + offset[0], point[1] + offset[1], text, ha="center", fontsize=9)
     # The assumed centred footprint at the fused finish is entirely parked.
@@ -65,12 +65,12 @@ def plot(csv_path, output):
         ax.annotate("", xy=(end, y), xytext=(start, y),
                     arrowprops={"arrowstyle": "<->", "color": "#687487"})
         ax.text((start + end) / 2, y + 25, "1050 face-to-face", ha="center", fontsize=8)
-    ax.axhline(1000, color="#687487", linestyle=":", linewidth=1)
-    ax.axhline(-1000, color="#687487", linestyle=":", linewidth=1)
-    ax.set(xlim=(-600, 3400), ylim=(-1050, 1050), aspect="equal",
+    ax.axhline(800, color="#687487", linestyle=":", linewidth=1)
+    ax.axhline(-800, color="#687487", linestyle=":", linewidth=1)
+    ax.set(xlim=(-600, 3300), ylim=(-850, 850), aspect="equal",
            xlabel="x [mm] — car-park mouth at 0; initial heading +x",
            ylabel="y [mm] — positive to the left",
-           title="Task 2 outward S + straight return · 8.18 m · 10 forward segments")
+           title="Task 2 outward S + straight return · 7.73 m · 10 forward segments")
     ax.legend(loc="upper right", fontsize=8, framealpha=1)
     ax.grid(alpha=0.12)
     fused_x, fused_y = paths[0][-1]
@@ -78,7 +78,7 @@ def plot(csv_path, output):
     if abs(stopped_y) < 0.0005:
         stopped_y = 0.0
     ax.text(0.5, -0.19,
-            "Assumed clear width: 2000 mm. Second obstacle: midpoint of 300–1000 mm under this assumption.\n"
+            "Compact layout: 500 mm second obstacle, 1600 mm clear width; both face-to-face gaps remain 1050 mm.\n"
             f"Nominal endpoints: stopped ({stopped_x:.0f}, {stopped_y:.0f}); "
             f"fused ({fused_x:.1f}, {fused_y:+.1f}) mm, heading {math.degrees(heading):.1f}°. Physical parking requires a trial.",
             transform=ax.transAxes, ha="center", va="top", fontsize=9)

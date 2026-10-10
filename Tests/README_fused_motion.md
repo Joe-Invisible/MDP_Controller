@@ -257,26 +257,28 @@ side along x (depth), and 600 mm across y (width)**. Set up these test assumptio
 | Park mouth to first obstacle near face | 1050, midpoint of 600…1500 |
 | First obstacle | centre (1100, 0), 100 × 100 |
 | First far face to second near face | 1050, midpoint of 600…1500 |
-| Second obstacle | centre (2250, 0), 100 along x × 650 along y |
-| Assumed arena clear width | 2000, boundaries y=±1000 |
-| Outbound lanes | first y=+275; second y=-550 |
-| Far turnaround | starts at (2600, -550), R=600 |
+| Second obstacle | centre (2250, 0), 100 along x × 500 along y |
+| Assumed arena clear width | 1600, boundaries y=±800 |
+| Outbound lanes | first y=+275; second y=-475 |
+| Far turnaround | starts at (2525, -475), R=525 |
 
-The task rules specify a 300 mm minimum second-obstacle length, with a maximum
-that leaves at least 500 mm at each end. They do **not** specify a numerical
-maximum or a fixed Task 2 arena width. The assumed 2000 mm clear width gives
-1000 mm maximum length; 650 mm is the midpoint of 300…1000 under that assumption.
-Distances between obstacles are between their faces, not their centres.
+The second obstacle is a **500 mm compact-trial choice**. The two longitudinal
+gaps keep their 1050 mm midpoint values and are measured between faces, not
+centres. The 1600 mm assumed clear width leaves 550 mm between each end of the
+second obstacle and the side boundary, exceeding the task's 500 mm minimum.
+The task does not specify a fixed numerical maximum obstacle length or arena
+width; this is the chosen test layout.
 
-The first outbound lane is now **275 mm from the centreline**, half the earlier
-550 mm offset. For the assumed centred 200 mm-wide body, this leaves 125 mm
-between the body's side and obstacle 1 on the constant straight. The wider
-second obstacle retains the -550 mm lane.
+The first outbound lane remains 275 mm from the centreline; the second is now
+475 mm from it. On both constant straights, the assumed centred 200 mm-wide
+body has 125 mm between its side and the respective obstacle. The smaller
+return radius and closer turnaround reduce the path's extent as well as the
+obstacle's size.
 
-The centre path reaches approximately x=3200 and y=+650/-550. Allow clear floor
-out to about x=3400 for the assumed footprint; including the park, the setup
-needs roughly **4 m length × 2 m width**. A different arena width/obstacle length
-requires rechecking clearances rather than treating 650 mm as an official value.
+The centre path reaches approximately x=3050 and y=+575/-475. Both planner
+modes pass the assumed footprint checks within x=-500…3300 and y=±800,
+including the car park: approximately **3.8 m length × 1.6 m width** of clear
+space. Physical tracking and actual chassis offsets still need checking.
 
 ### Sequence
 
@@ -289,25 +291,25 @@ file top and calculates the return tangent from the park's target position.
 | ---: | --- | ---: | --- |
 | 1 | Exit parking stem | 350 | straight |
 | 2–3 | Move to first left lane | 287.98 each | +275 / +60°, then -275 / -60° |
-| 4 | Pass first obstacle left | 701.76 | straight |
+| 4 | Pass first obstacle left | 723.41 | straight |
 | 5 | Begin outbound crossover | 287.98 | -275 / -60° |
-| 6 | Diagonal between obstacles | 635.09 | straight |
+| 6 | Diagonal between obstacles | 548.48 | straight |
 | 7 | End outbound crossover | 287.98 | +275 / +60° |
-| 8 | Pass second obstacle right | 528.07 | straight |
-| 9 | Turn onto return tangent | 2022.73 | +600 / +193.16° |
-| 10 | Straight diagonal into park and stop | 2786.57 | straight |
+| 8 | Pass second obstacle right | 474.72 | straight |
+| 9 | Turn onto return tangent | 1758.70 | +525 / +191.94° |
+| 10 | Straight diagonal into park and stop | 2725.34 | straight |
 
-The far-turn circle is centred at (2600, +50). Its upper tangent through the
-park centre gives a turnaround angle of 193.156° and tangent distance of
-2786.575 mm. The stopped tangent starts at approximately (2463.43, +634.25)
+The far-turn circle is centred at (2525, +50). Its upper tangent through the
+park centre gives a turnaround angle of 191.936° and tangent distance of
+2725.344 mm. The stopped tangent starts at approximately (2416.42, +563.65)
 and ends at (-250, 0). This avoids aiming a return line through either obstacle.
-The robot enters the park **about 13.16° oblique to the inward axis**; there is
+The robot enters the park **about 11.94° oblique to the inward axis**; there is
 no final alignment turn. The goal here is parking the whole robot inside.
 
-Nominal travel is **8176.14 mm**, with net yaw **+193.156°**. The stopped centre
+Nominal travel is **7732.58 mm**, with net yaw **+191.936°**. The stopped centre
 path returns to (-250, 0); the fused planner ends at approximately
-(-240.95, +5.23), a 10.5 mm displacement from that target. Both have the same
-nominal final heading. The final 2.79 m straight includes deceleration and
+(-240.97, +6.03), a 10.9 mm displacement from that target. Both have the same
+nominal final heading. The final 2.73 m straight includes deceleration and
 braking inside the park; both batches therefore finish by distance, rather
 than final-arc yaw-priority termination. B's intermediate arcs also finish by
 distance, as discussed above.
@@ -339,7 +341,7 @@ python3 Tests/Host/plot_task2_route.py
 Keep the robot stationary through normal IMU startup. Press/release SW1 to
 start A. After A completes, the robot remains stopped and prompts for B.
 Check that A parked, then reset it to (-250, 0) facing +x and press/release SW1
-to start B. A finishes at about 193.16°, so rotate it for the identical B starting pose.
+to start B. A finishes at about 191.94°, so rotate it for the identical B starting pose.
 Each button wait and 400 ms hand-clearance delay is excluded from timing. Each run's
 timer starts just before `MotionSequence_Execute()` and ends after completion
 including controller steering preparation and final braking.
@@ -365,8 +367,8 @@ not logged. If full, the final slot is replaced with the latest trace's final
 sample and truncation is flagged globally and in that trace's result. Summary
 results remain available even if detailed logging is truncated.
 
-In the ideal encoder/gyro host harness, A takes 16303 ms and B takes 16655 ms:
-352 ms saved, or about 2.1%. This is a software scheduling check, not a physical
+In the ideal encoder/gyro host harness, A takes 15632 ms and B takes 15995 ms:
+363 ms saved, or about 2.3%. This is a software scheduling check, not a physical
 servo/vehicle performance prediction. The harness also verifies cancellation
 and timeout in either A or B, withholding savings for incomplete comparisons,
 manual-wait exclusion, per-trace logging and OLED text-row coordinates.
