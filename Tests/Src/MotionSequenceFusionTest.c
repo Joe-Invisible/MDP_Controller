@@ -7,14 +7,38 @@
 
 #define FUSION_CONTROL_PERIOD_MS 10U
 #define FUSION_LOG_PERIOD_MS 100U
-#define FUSION_LOG_CAPACITY 500U
+#define FUSION_LOG_CAPACITY 650U
 #define FUSION_TIMEOUT_MS 60000U
 #define FUSION_BRAKE_TIMEOUT_MS 3000U
 #define FUSION_INITIAL_CLEARANCE_MS 400U
 #define FUSION_SPEED_CPS 5000.0f
-#define FUSION_STRAIGHT_DISTANCE_MM 500.0f
 #define FUSION_PI 3.14159265358979323846f
-#define FUSION_TURN_DISTANCE_MM (275.0f * FUSION_PI / 2.0f)
+#define FUSION_RADIUS_MM 275.0f
+#define FUSION_QUARTER_TURN_MM (FUSION_RADIUS_MM * FUSION_PI / 2.0f)
+#define FUSION_CROSS_TURN_MM (FUSION_RADIUS_MM * FUSION_PI / 3.0f)
+/* Two 60-degree arcs and a diagonal join +550 to -550 mm. The outbound
+ * and inbound diagonals cross, rather than retracing a shared vertical leg. */
+#define FUSION_SQRT_3 1.73205080756887729353f
+#define FUSION_CROSS_DIAGONAL_MM (6.0f * FUSION_RADIUS_MM / FUSION_SQRT_3)
+#define FUSION_CROSS_ADVANCE_MM FUSION_CROSS_DIAGONAL_MM
+/* Coordinates: car-park mouth x=0, start (-300,0), initial heading +x.
+ * Gap midpoints are measured between faces, not obstacle centres.
+ * The 650 mm second obstacle assumes 2000 mm arena width: midpoint of
+ * 300 mm minimum and 1000 mm maximum after two 500 mm side clearances. */
+#define FUSION_FACE_GAP_MM 1050.0f
+#define FUSION_OBSTACLE_THICKNESS_MM 100.0f
+#define FUSION_OBSTACLE_1_X_MM (FUSION_FACE_GAP_MM + 50.0f)
+#define FUSION_OBSTACLE_2_X_MM \
+    (FUSION_OBSTACLE_1_X_MM + FUSION_OBSTACLE_THICKNESS_MM + FUSION_FACE_GAP_MM)
+#define FUSION_PARK_STEM_MM 400.0f
+#define FUSION_LANE_Y_MM (2.0f * FUSION_RADIUS_MM)
+#define FUSION_ENTRY_END_X_MM 650.0f
+#define FUSION_CROSS_START_X_MM \
+    ((FUSION_OBSTACLE_1_X_MM + FUSION_OBSTACLE_2_X_MM) / 2.0f - FUSION_CROSS_ADVANCE_MM / 2.0f)
+#define FUSION_CROSS_END_X_MM (FUSION_CROSS_START_X_MM + FUSION_CROSS_ADVANCE_MM)
+#define FUSION_FAR_TURN_X_MM (FUSION_OBSTACLE_2_X_MM + 350.0f)
+#define FUSION_FIRST_LANE_MM (FUSION_CROSS_START_X_MM - FUSION_ENTRY_END_X_MM)
+#define FUSION_SECOND_LANE_MM (FUSION_FAR_TURN_X_MM - FUSION_CROSS_END_X_MM)
 
 typedef struct
 {
@@ -23,25 +47,32 @@ typedef struct
     float speedCps;
 } MotionSequenceFusionTestStep;
 
-/* Mixed-turn course: six 500 mm straights, four 90-degree turns and two
- * 180-degree turns. All travel is forward, so direction reversals do not
- * introduce mandatory stops into the fused case. Nominal net yaw is zero.
- * Only stopAfter differs between the two runs. Edit this table for new paths. */
+/* Task 2 figure eight: first obstacle left, second right, return on their
+ * opposite sides and drive forward into the car park facing inward.
+ * Only stopAfter differs between A and B; no reversing or vision/IR stops.
+ * Blends preserve distance/yaw, not exact XY closure: see the route checks. */
 static const MotionSequenceFusionTestStep fusionTestSteps[] = {
     /* Distance [mm], radius [mm], speed [CPS] */
-    {FUSION_STRAIGHT_DISTANCE_MM, 0.0f, FUSION_SPEED_CPS},
-    {FUSION_TURN_DISTANCE_MM, -275.0f, FUSION_SPEED_CPS},
-    {FUSION_STRAIGHT_DISTANCE_MM, 0.0f, FUSION_SPEED_CPS},
-    {FUSION_TURN_DISTANCE_MM, +275.0f, FUSION_SPEED_CPS},
-    {FUSION_STRAIGHT_DISTANCE_MM, 0.0f, FUSION_SPEED_CPS},
-    {2.0f * FUSION_TURN_DISTANCE_MM, +275.0f, FUSION_SPEED_CPS},
-    {FUSION_STRAIGHT_DISTANCE_MM, 0.0f, FUSION_SPEED_CPS},
-    {FUSION_TURN_DISTANCE_MM, -275.0f, FUSION_SPEED_CPS},
-    {FUSION_STRAIGHT_DISTANCE_MM, 0.0f, FUSION_SPEED_CPS},
-    {FUSION_TURN_DISTANCE_MM, +275.0f, FUSION_SPEED_CPS},
-    {FUSION_STRAIGHT_DISTANCE_MM, 0.0f, FUSION_SPEED_CPS},
-    {2.0f * FUSION_TURN_DISTANCE_MM, -275.0f, FUSION_SPEED_CPS},
+    {FUSION_PARK_STEM_MM, 0.0f, FUSION_SPEED_CPS},
+    {FUSION_QUARTER_TURN_MM, +FUSION_RADIUS_MM, FUSION_SPEED_CPS},
+    {FUSION_QUARTER_TURN_MM, -FUSION_RADIUS_MM, FUSION_SPEED_CPS},
+    {FUSION_FIRST_LANE_MM, 0.0f, FUSION_SPEED_CPS},
+    {FUSION_CROSS_TURN_MM, -FUSION_RADIUS_MM, FUSION_SPEED_CPS},
+    {FUSION_CROSS_DIAGONAL_MM, 0.0f, FUSION_SPEED_CPS},
+    {FUSION_CROSS_TURN_MM, +FUSION_RADIUS_MM, FUSION_SPEED_CPS},
+    {FUSION_SECOND_LANE_MM, 0.0f, FUSION_SPEED_CPS},
+    {FUSION_LANE_Y_MM * FUSION_PI, +FUSION_LANE_Y_MM, FUSION_SPEED_CPS},
+    {FUSION_SECOND_LANE_MM, 0.0f, FUSION_SPEED_CPS},
+    {FUSION_CROSS_TURN_MM, +FUSION_RADIUS_MM, FUSION_SPEED_CPS},
+    {FUSION_CROSS_DIAGONAL_MM, 0.0f, FUSION_SPEED_CPS},
+    {FUSION_CROSS_TURN_MM, -FUSION_RADIUS_MM, FUSION_SPEED_CPS},
+    {FUSION_FIRST_LANE_MM, 0.0f, FUSION_SPEED_CPS},
+    {FUSION_QUARTER_TURN_MM, -FUSION_RADIUS_MM, FUSION_SPEED_CPS},
+    {FUSION_QUARTER_TURN_MM, +FUSION_RADIUS_MM, FUSION_SPEED_CPS},
+    {FUSION_PARK_STEM_MM, 0.0f, FUSION_SPEED_CPS},
 };
+_Static_assert(sizeof(fusionTestSteps) / sizeof(fusionTestSteps[0]) <=
+                   MOTION_SEQUENCE_CAPACITY, "Task 2 course exceeds sequence capacity");
 
 static RobotTestFixture fixture;
 /* Experiment-local settings: leave the reusable production defaults intact. */
@@ -191,10 +222,14 @@ static bool MotionSequenceFusionTest_RunPattern(bool stopAfter)
 
     OLED_Clear();
     OLED_Printf(0, 0, "%s pattern ready", stopAfter ? "B stopped" : "A fused");
-    OLED_Printf(0, 1, "500mm / R=+/-275");
+    OLED_Printf(0, 1, "Task2 eight: %.2fm",
+                (double)((2.0f * (FUSION_PARK_STEM_MM + FUSION_FIRST_LANE_MM +
+                                  FUSION_SECOND_LANE_MM + FUSION_CROSS_DIAGONAL_MM) +
+                          4.0f * (FUSION_QUARTER_TURN_MM + FUSION_CROSS_TURN_MM) +
+                          FUSION_LANE_Y_MM * FUSION_PI) / 1000.0f));
     OLED_Printf(0, 2, "5000 CPS requested");
     OLED_Printf(0, 3, "A/D S:3000 C:2000");
-    OLED_Printf(0, 4, "Reset pose; SW1 start");
+    OLED_Printf(0, 4, "Park +x; SW1 start");
     OLED_Printf(0, 5, "SW1 running: cancel");
     OLED_Refresh_Gram();
     SW1_WaitForPressAndRelease();

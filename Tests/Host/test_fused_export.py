@@ -26,7 +26,7 @@ int32_t motionSequenceFusionTestSavedTimeMs = 1000;
 float motionSequenceFusionTestSavedPercent = 25;
 MotionSequenceFusionTestResult motionSequenceFusionTestResults[2] = {
     {.stopAfterEachSegment = false, .passed = true, .elapsedMs = 3000, .completedRuns = 1},
-    {.stopAfterEachSegment = true, .passed = true, .elapsedMs = 4000, .completedRuns = 12}
+    {.stopAfterEachSegment = true, .passed = true, .elapsedMs = 4000, .completedRuns = 17}
 };
 MotionSequenceFusionTestSample motionSequenceFusionTestLog[2] = {
     {.timeMs = 20, .comparisonRunIndex = 0, .steeringCommand = 12, .sequenceTravelMm = 123, .accelerationLimitMmps2=3000, .decelerationLimitMmps2=3000},
@@ -89,7 +89,7 @@ def main():
             assert log.count("kp = 0.0299999993") == 2
             assert "A/B timing comparison" in log
             assert "elapsedMs = 3000" in log and "elapsedMs = 4000" in log
-            assert "completedRuns = 1" in log and "completedRuns = 12" in log
+            assert "completedRuns = 1" in log and "completedRuns = 17" in log
             if count == 2:
                 assert "steeringCommand = 12" in log and "steeringCommand = 13" in log
                 assert "comparisonRunIndex = 0" in log and "comparisonRunIndex = 1" in log

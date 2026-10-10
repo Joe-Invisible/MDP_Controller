@@ -8,8 +8,8 @@ The separate production UART and IMU-hardening changes are not included.
 
 ## Wheel-performance settings
 
-The selected A/B harness keeps 5000 CPS requested on the existing mixed-turn
-course. Both traces use one experiment-local configuration:
+The selected A/B harness requests 5000 CPS on a Task 2 figure-eight course
+that returns to the car park. Both traces use one experiment-local configuration:
 
 | Motion | Acceleration (mm/s²) | Deceleration (mm/s²) |
 | --- | ---: | ---: |
@@ -45,7 +45,7 @@ actual controller configuration and both wheel PID configurations.
 `MotionSequence` owns the batch, lookahead, blend/stop policy and completion.
 It uses the new `MotionController_FollowProfile()` capability for each continuous
 run. The original straight/arc APIs and their tuning/terminal behaviour are
-retained. No heap allocation; capacity is 16 nonzero segments.
+retained. No heap allocation; capacity is 20 nonzero segments (the Task 2 course needs 17).
 
 Each curvature change gets a symmetric linear curvature ramp. Its full length
 is at most `blendLengthMm`; each neighbour supplies at most one quarter of its
@@ -223,7 +223,7 @@ mode selection, opposite-turn zero crossing and the experiment's actual gains.
 The full ARM Debug firmware builds and links with the configured source
 exclusions and the unchanged STM32 FLASH linker script. Changed firmware sources
 also pass `-Wall -Wextra -Werror`. The final image uses approximately 96 KiB FLASH
-code/constants and 93 KiB RAM (including the shared sample buffer, heap and stack
+code/constants and approximately 113 KiB RAM (including the shared sample buffer, heap and stack
 reservations), within the STM32F407's configured memory. Control-period timing
 and physical robot trials still require hardware validation.
 
@@ -234,40 +234,104 @@ CubeIDE's existing Controllers/Tests source folders include the new `.c` files;
 refresh the project and clean/rebuild before flashing. Existing production
 UART/RPi integration is outside this first experiment.
 
-The harness runs a mixed-turn course twice at **5000 CPS requested for every
-straight and arc**. It contains six forward 500 mm straights and these turns,
-with one straight preceding each turn:
+The harness runs the same **Task 2 figure eight** twice at **5000 CPS requested
+for every straight and arc**. Assume the first arrow points left and the second
+points right. It leaves the car park, passes the first obstacle on its left and
+the second on its right, turns around beyond the second, passes both on their
+opposite sides, and drives forward back into the park facing inward. The two
+diagonal legs cross between the obstacles. All travel is forward.
 
-| Turn | Radius | Angle |
-| --- | ---: | ---: |
-| 1 | -275 mm | -90 degrees |
-| 2 | +275 mm | +90 degrees |
-| 3 | +275 mm | +180 degrees |
-| 4 | -275 mm | -90 degrees |
-| 5 | +275 mm | +90 degrees |
-| 6 | -275 mm | -180 degrees |
+![Task 2 figure-eight route](task2_figure_eight.svg)
 
-Nominal travel is about 6455.75 mm and nominal net yaw is zero. The course is
-not a closed square and need not return to its starting position. All travel
-is forward: mandatory stops from direction reversals cannot mask the fusion
-comparison. Edit `fusionTestSteps[]` to change the course; zero radius selects
-straight motion. Each row contains signed distance, radius and requested speed.
+### Midpoint layout and starting pose
+
+The layout follows the Task 2 diagram on page 5 of
+`Rules for the Task 1 and Task 2.pdf`. Use millimetres, x along the initial
+forward direction and positive y to the left. The car-park mouth is x=0. Set up the following **test assumptions**:
+
+| Item | Placement / dimension |
+| --- | --- |
+| Park interior | x=-600…0, y=-250…250; open at x=0 |
+| Initial rear-axle reference pose | (-300, 0), heading +x |
+| Park mouth to first obstacle near face | 1050, midpoint of 600…1500 |
+| First obstacle | centre (1100, 0), 100 × 100 |
+| First far face to second near face | 1050, midpoint of 600…1500 |
+| Second obstacle | centre (2250, 0), 100 along x × 650 along y |
+| Assumed arena clear width | 2000, boundaries y=±1000 |
+| Side lanes / far turnaround | y=±550 / x=2600, R=550 |
+
+The task rules specify a 300 mm minimum second-obstacle length, with a maximum
+that leaves at least 500 mm at each end. They do **not** specify a numerical
+maximum or a fixed Task 2 arena width. The assumed 2000 mm clear width gives
+1000 mm maximum length; 650 mm is the midpoint of 300…1000 under that assumption.
+The park's 600 × 500 mm dimensions follow the stated *inside* dimensions.
+Distances between obstacles are between their faces, not their centres.
+
+The centre path reaches approximately x=3150, y=±550. Allow clear floor out to
+about x=3350 for the assumed footprint; including the park, the setup needs
+roughly **4 m length × 2 m width**. This layout must not be compressed into the
+Task 1 arena. A different arena width/obstacle length requires rechecking the
+lane clearances rather than treating 650 mm as an official task value.
+
+### Sequence
+
+The stopped route has these 17 segments; positive radius turns left. Distances
+below are rounded; the firmware computes them from the constants at the top of
+`Tests/Src/MotionSequenceFusionTest.c`.
+
+| Segment | Motion | Distance (mm) | Radius / heading change |
+| ---: | --- | ---: | --- |
+| 1 | Exit parking stem | 400 | straight |
+| 2–3 | Move to first left lane | 431.97 each | +275 / +90°, then -275 / -90° |
+| 4 | Pass first obstacle left | 548.69 | straight |
+| 5 | Begin outbound crossover | 287.98 | -275 / -60° |
+| 6 | Diagonal between obstacles | 952.63 | straight |
+| 7 | End outbound crossover | 287.98 | +275 / +60° |
+| 8 | Pass second obstacle right | 448.69 | straight |
+| 9 | Turn around beyond second | 1727.88 | +550 / +180° |
+| 10 | Pass second obstacle left | 448.69 | straight |
+| 11 | Begin return crossover | 287.98 | +275 / +60° |
+| 12 | Return diagonal | 952.63 | straight |
+| 13 | End return crossover | 287.98 | -275 / -60° |
+| 14 | Pass first obstacle right | 548.69 | straight |
+| 15–16 | Align with parking mouth | 431.97 each | -275 / -90°, then +275 / +90° |
+| 17 | Drive into park and stop | 400 | straight |
+
+Nominal travel is **9307.67 mm**, with net yaw **+180°**. The stopped centre path
+returns to (-300, 0); the fused planner ends at approximately (-300, +20.97).
+Both finish facing -x. The **400 mm final straight is part of both traces**;
+completion includes deceleration and braking inside the park. Both batches
+therefore finish by distance, rather than using final-arc yaw-priority termination.
+B's intermediate arcs also finish by distance, as discussed above.
+
+The host check integrates the actual production planner at at most 1 mm spacing
+for both modes. It checks obstacle sides in both directions, obstacle clearance,
+arena side bounds and park-wall clearance during departure/entry, including
+body intersections with the mouth. Its footprint is an **assumed centred
+300 × 200 mm rectangle**, enclosed by a 181 mm radius circle with an additional
+20 mm obstacle margin. Both final rectangles are wholly inside the park.
+This verifies nominal geometry, not the actual chassis footprint or tracking;
+check the robot's rear-axle-to-body offsets and physical parking in the trial.
 
 **A** sets `stopAfter=false` on every segment and executes one continuous run.
-**B** sets `stopAfter=true` on every segment and executes 12 rest-to-rest runs.
-The path, controller configuration and sequence configuration are otherwise
-identical. The configured 2000 CPS junction ceiling and feedforward slew budget
-still apply to A; 5000 CPS is a requested segment ceiling, not a guaranteed speed
-through a transition. Each curvature blend is 100 mm for this course.
+**B** sets `stopAfter=true` on every segment and executes 17 rest-to-rest runs.
+The segment table, controller configuration and sequence configuration are
+otherwise identical. A keeps the 8000 CPS junction ceiling, bounded by the
+5000 CPS requests and feedforward slew budget. Full curvature blends are
+200 mm; B has no junction blending. This fixed-route experiment does not yet
+implement arrow recognition, obstacle measurements or vision/IR approach stops.
 
-Both batches end in an arc and use yaw-priority final termination. B's
-intermediate arcs finish by distance, as discussed above; B is a stopped-profile
-comparison rather than an exact replay of standalone `MoveArc` semantics.
+To regenerate the diagram from the production planner (requires matplotlib):
+
+```sh
+python3 Tests/Host/plot_task2_route.py
+```
 
 Keep the robot stationary through normal IMU startup. Press/release SW1 to
 start A. After A completes, the robot remains stopped and prompts for B.
-Return it to the same starting pose and press/release SW1 to start B. Each
-button wait and 400 ms hand-clearance delay is excluded from timing. Each run's
+Check that A parked, then reset it to (-300, 0) facing +x and press/release SW1
+to start B. A finishes facing -x, so rotate it for the identical B starting pose.
+Each button wait and 400 ms hand-clearance delay is excluded from timing. Each run's
 timer starts just before `MotionSequence_Execute()` and ends after completion
 including controller steering preparation and final braking.
 
@@ -285,15 +349,15 @@ status, times, run counts, nominal/measured travel and yaw, and truncation flags
 `motionSequenceFusionTestComparisonValid` guards the saved-time/percentage
 fields. The existing `motionSequenceFusionTestElapsedMs` is the last trace's time.
 
-One shared log holds 500 samples at 100 ms (about 50 s of combined running time)
+One shared log holds 650 samples at 100 ms (about 65 s of combined running time)
 without duplicating the large sample buffer. Each sample's `comparisonRunIndex`
 is 0 for A or 1 for B; `timeMs` restarts at zero for each trace. Manual waiting is
 not logged. If full, the final slot is replaced with the latest trace's final
 sample and truncation is flagged globally and in that trace's result. Summary
 results remain available even if detailed logging is truncated.
 
-In the ideal encoder/gyro host harness, A takes 13531 ms and B takes 15060 ms:
-1529 ms saved, or about 10.2%. This is a software scheduling check, not a physical
+In the ideal encoder/gyro host harness, A takes 20813 ms and B takes 21407 ms:
+594 ms saved, or about 2.8%. This is a software scheduling check, not a physical
 servo/vehicle performance prediction. The harness also verifies cancellation
 and timeout in either A or B, withholding savings for incomplete comparisons,
 manual-wait exclusion, per-trace logging and OLED text-row coordinates.
@@ -318,6 +382,8 @@ the target nor initiates motion. The old automatic sequence-export breakpoint
 does not apply to this harness.
 
 Inspect the saved timing comparison together with speed/raw-command tracking,
-absence of intermediate preparation/braking in A, and measured final travel/yaw
-for both traces. Physical tracking may require longer blends, lower junction
+absence of intermediate preparation/braking in A, measured final travel/yaw
+for both traces, and whether the entire robot parked without touching a wall.
+Record physical final x/y/heading error separately: this harness logs travel/yaw,
+not absolute XY pose, and successful API completion does not establish parking. Physical tracking may require longer blends, lower junction
 speeds or centre-region calibration; the host tests cannot settle those choices.

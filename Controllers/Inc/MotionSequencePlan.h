@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include "MotionPathProfile.h"
 
-#define MOTION_SEQUENCE_CAPACITY 16U
+#define MOTION_SEQUENCE_CAPACITY 20U
 
 typedef struct
 {

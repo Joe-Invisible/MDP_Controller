@@ -715,6 +715,7 @@ static void testRandomPlans(void)
 #include "RobotTestFixture.h"
 #include <stdarg.h>
 #include <string.h>
+#include <stdlib.h>
 extern MotionSequence motionSequenceFusionTestSequence;
 extern uint32_t motionSequenceFusionTestLogCount;
 extern MotionSequenceFusionTestSample motionSequenceFusionTestLog[];
@@ -744,6 +745,87 @@ bool RobotTestFixture_InitMotionController(RobotTestFixture *rf,
         &rf->steeringController, &rf->imu, config) == 0;
 }
 
+/* Integrate the actual on-target course using production blend evaluation.
+ * A 300 x 200 mm centred rectangle is an assumed test footprint, not a
+ * measured chassis specification. A circumscribing 181 mm circle plus a
+ * 20 mm margin checks obstacle clearance; corners check car-park walls. */
+static void testTask2RouteGeometry(void)
+{
+    MotionSequencePlan plan = motionSequenceFusionTestSequence.plan;
+    assert(plan.count == 17);
+    assert(MotionSequencePlan_Prepare(&plan, &motionSequenceFusionTestSequence.config,
+        mmPerCount(), 3000, 3000, 2000, 2000, 0, 480));
+    bool stopped = plan.segments[0].stopAfter;
+    double x = -300, y = 0, yaw = 0;
+    bool passes[2][2] = {{false, false}, {false, false}};
+    const char *output = getenv("TASK2_ROUTE_CSV");
+    FILE *trace = output ? fopen(output, "a") : NULL;
+    if (output) assert(trace);
+    for (unsigned first = 0; first < plan.count;) {
+        MotionSequenceRun run = {&plan, first, MotionSequencePlan_RunEnd(&plan, first)};
+        double length = 0;
+        for (unsigned i = first; i <= run.last; ++i)
+            length += fabsf(plan.segments[i].signedDistanceMm);
+        double initialYaw = yaw;
+        for (double d = 0; d < length;) {
+            double step = fmin(1.0, length - d);
+            MotionPathSample sample;
+            assert(MotionSequencePlan_Evaluate(&run, (float)(d + 0.5 * step), &sample));
+            yaw = initialYaw + sample.desiredYawRad;
+            double previousX = x;
+            x += step * cos(yaw); y += step * sin(yaw);
+            assert(fabs(y) + 181 < 1000); /* Assumed arena side boundaries. */
+            for (unsigned obstacle = 0; obstacle < 2; ++obstacle) {
+                double ox = obstacle == 0 ? 1100 : 2250;
+                double halfHeight = obstacle == 0 ? 50 : 325;
+                double dx = fmax(fabs(x - ox) - 50, 0);
+                double dy = fmax(fabs(y) - halfHeight, 0);
+                assert(hypot(dx, dy) > 201);
+                if ((previousX < ox && x >= ox) || (previousX > ox && x <= ox)) {
+                    unsigned returning = cos(yaw) < 0;
+                    assert(fabs(cos(yaw)) > 0.9);
+                    assert(!passes[obstacle][returning]);
+                    passes[obstacle][returning] = true;
+                    /* First left/second right outbound; opposite sides back. */
+                    assert(y * ((obstacle == returning) ? 1 : -1) > halfHeight + 201);
+                }
+            }
+            /* Check corners and the body's intersections with x=0: an
+             * angled body can cross a park-wall tip without a corner inside. */
+            double cornerX[4], cornerY[4];
+            const int front[4] = {1, 1, -1, -1};
+            const int side[4] = {1, -1, -1, 1};
+            for (unsigned j = 0; j < 4; ++j) {
+                cornerX[j] = x + front[j]*150*cos(yaw) - side[j]*100*sin(yaw);
+                cornerY[j] = y + front[j]*150*sin(yaw) + side[j]*100*cos(yaw);
+                if (cornerX[j] < 0)
+                    assert(cornerX[j] > -600 && fabs(cornerY[j]) < 250);
+            }
+            for (unsigned j = 0; j < 4; ++j) {
+                unsigned next = (j + 1) % 4;
+                if ((cornerX[j] < 0) != (cornerX[next] < 0)) {
+                    double fraction = -cornerX[j] / (cornerX[next] - cornerX[j]);
+                    double mouthY = cornerY[j] + fraction*(cornerY[next] - cornerY[j]);
+                    assert(fabs(mouthY) < 250);
+                }
+            }
+            if (trace) fprintf(trace, "%u,%.6f,%.6f,%.6f\n", stopped, x, y, yaw);
+            d += step;
+        }
+        MotionPathSample end;
+        assert(MotionSequencePlan_Evaluate(&run, (float)length, &end));
+        yaw = initialYaw + end.desiredYawRad;
+        first = run.last + 1;
+    }
+    if (trace) fclose(trace);
+    for (unsigned i = 0; i < 2; ++i) assert(passes[i][0] && passes[i][1]);
+    near((float)yaw, PI, 1e-5f);
+    assert(x > -450 && x < -150 && fabs(y) < 150); /* Entire footprint parked. */
+    if (stopped) { near((float)x, -300, 0.01f); near((float)y, 0, 0.01f); }
+    printf("Task 2 %s nominal endpoint: x=%.2f y=%.2f mm, heading=%.2f deg\n",
+           stopped ? "stopped" : "fused", x, y, yaw * 180 / PI);
+}
+
 uint32_t HAL_GetTick(void)
 {
     ++fakeTick;
@@ -769,6 +851,11 @@ void HAL_Delay(uint32_t ms)
 { for (uint32_t i = 0; i < ms; ++i) (void)HAL_GetTick(); }
 void SW1_WaitForPressAndRelease(void)
 {
+    if (hardwareScenario == 0) {
+        assert(strstr(oledRows[1], "Task2 eight: 9.31m"));
+        assert(strstr(oledRows[4], "Park +x"));
+        testTask2RouteGeometry();
+    }
     ++hardwareStartCount;
     hardwareTrialStartTick = fakeTick;
     /* A deliberate manual-start delay proves that waiting is not timed. */
@@ -818,19 +905,17 @@ static void testRobotHarness(void)
             near(hardwareFixture->leftWheelController.pid.kp, 0.03f, 0);
             near(hardwareFixture->rightWheelController.pid.kp, 0.03f, 0);
             assert(!a->stopAfterEachSegment && b->stopAfterEachSegment);
-            assert(a->completedRuns == 1 && b->completedRuns == 12);
-            assert(motionSequenceFusionTestSequence.plan.count == 12);
-            for (unsigned i = 0; i < 12; ++i) {
+            assert(a->completedRuns == 1 && b->completedRuns == 17);
+            assert(motionSequenceFusionTestSequence.plan.count == 17);
+            for (unsigned i = 0; i < 17; ++i) {
                 const MotionSequenceSegment *seg = &motionSequenceFusionTestSequence.plan.segments[i];
                 near(seg->speedCps, 5000, 0);
                 assert(seg->stopAfter && seg->signedDistanceMm > 0);
-                if (i % 2 == 0) near(seg->signedDistanceMm, 500, 0);
-                else near(fabsf(seg->curvaturePerMm), 1.0f / 275.0f, 1e-8f);
             }
-            near(a->nominalTravelMm, 3000 + 2200 * PI / 2, 0.01f);
+            near(a->nominalTravelMm, 4700 + (4400.0f / 3.0f) * PI, 0.02f);
             near(a->nominalTravelMm, b->nominalTravelMm, 0);
-            near(a->nominalYawRad, 0, 1e-6f);
-            near(b->nominalYawRad, 0, 1e-6f);
+            near(a->nominalYawRad, PI, 1e-6f);
+            near(b->nominalYawRad, PI, 1e-6f);
             assert(a->elapsedMs < b->elapsedMs);
             assert(motionSequenceFusionTestSavedTimeMs ==
                    (int32_t)b->elapsedMs - (int32_t)a->elapsedMs);
@@ -856,7 +941,7 @@ static void testRobotHarness(void)
             assert(taggedSamples[0] > 1 && taggedSamples[1] > 1);
             assert(fakeTick >= a->elapsedMs + b->elapsedMs + 2800U);
             near(final->sequenceTravelMm, b->measuredTravelMm, 0);
-            printf("Ideal mixed-turn A/B harness: fused %u ms, stopped %u ms, "
+            printf("Ideal Task 2 figure-eight A/B harness: fused %u ms, stopped %u ms, "
                    "saved %d ms (%.1f%%); software timing only\n",
                    a->elapsedMs, b->elapsedMs, motionSequenceFusionTestSavedTimeMs,
                    motionSequenceFusionTestSavedPercent);
@@ -875,7 +960,7 @@ static void testRobotHarness(void)
             assert(motionSequenceFusionTestSequence.state == MOTION_SEQUENCE_ABORTED);
             assert(strstr(oledRows[0], "INVALID"));
             assert(!strstr(oledRows[3], "Saved"));
-            assert(!timeout || motionSequenceFusionTestLogTruncated);
+            if (timeout) assert(motionSequenceFusionTestLogTruncated == second);
         }
         assert(final->mode == MOTIONCONTROLLER_IDLE);
         assert(final->comparisonRunIndex == (scenario >= 3 || scenario == 0 ? 1U : 0U));
@@ -900,7 +985,7 @@ int main(void)
     testRandomPlans();
     testRobotHarness();
     puts("PASS: fused geometry/heading area, lookahead, forward/reverse continuity, "
-         "FF bridge, separate limits/stopping envelopes, gain scheduling, slew, stops/reversals, cancellation, faults, 150 random plans, robot harness, final-arc yaw priority");
+         "Task 2 obstacle/park geometry, FF bridge, separate limits/stopping envelopes, gain scheduling, slew, stops/reversals, cancellation, faults, 150 random plans, robot harness, final-arc yaw priority");
     return 0;
 }
 '''

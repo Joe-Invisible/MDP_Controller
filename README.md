@@ -18,7 +18,9 @@ interpolation and physical transition tracking are experimental.
 `TestMain.c` selects the new fusion harness. See
 [the fusion experiment guide](Tests/README_fused_motion.md) for API usage,
 software-only tests, endpoint policy, logging and the stopped comparison.
-The fused A/B harness uses straight acceleration/deceleration of 3000 mm/s²,
+The fused A/B harness follows a 9.31 m Task 2 figure eight around two obstacles
+and returns to the car park, comparing continuous motion against 17 stopped
+segments. It uses straight acceleration/deceleration of 3000 mm/s²,
 arc acceleration/deceleration of 2000 mm/s², and wheel Kp = 0.03. Host checks
 and an ARM Debug build/link pass; physical sequence validation remains pending.
 
