@@ -120,8 +120,10 @@ static const MotionControllerConfig testMotionConfig =
     .wheelSyncKpCpsPerMm = TEST_SYNC_KP_CPS_PER_MM,
     .maxWheelSyncCorrectionCps = TEST_SYNC_MAX_CORRECTION_CPS,
 
-    .motionAccelerationMmps2 = TEST_ACCELERATION_MMPS2,
-    .motionDecelerationMmps2 = TEST_DECELERATION_MMPS2,
+    .straightAccelerationMmps2 = TEST_ACCELERATION_MMPS2,
+    .straightDecelerationMmps2 = TEST_DECELERATION_MMPS2,
+    .arcAccelerationMmps2 = TEST_ACCELERATION_MMPS2,
+    .arcDecelerationMmps2 = TEST_DECELERATION_MMPS2,
     .motionCompletionToleranceMm = 0.5f,
 
     .arcYawRateFilterTauSec = 0.10f,

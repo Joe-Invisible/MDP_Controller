@@ -288,8 +288,9 @@ static const char *MotionTask_Start(const Command *cmd) {
     if (!CommandMotion_Resolve(cmd, &motion))
         return "REJECTED";
     /* Called only while idle. Configure the existing profile through its API;
-     * the shared controller/calibration files remain unchanged. Reapply on
-     * every command so an arc following a straight restores shared tolerance.
+     * preserve the current limits here; MotionController selects the requested
+     * primitive's limits at start. Reapply on every command so an arc following
+     * a straight restores shared tolerance.
      * Profile completion still enters the controller's normal braking state.
      */
     float completionToleranceMm = motion.radiusMm == 0.0f
@@ -298,8 +299,8 @@ static const char *MotionTask_Start(const Command *cmd) {
     if (cmd->type == COMMAND_ULTRASONIC)
         completionToleranceMm = ULTRASONIC_APPROACH_STOP_MARGIN_MM;
     if (!MotionProfile_Init(&motionController.motionProfile,
-                            runtimeMotionConfig.motionAccelerationMmps2,
-                            runtimeMotionConfig.motionDecelerationMmps2,
+                            motionController.motionProfile.accelerationMmps2,
+                            motionController.motionProfile.decelerationMmps2,
                             completionToleranceMm))
         return "REJECTED";
     float mmPerCount = 3.14159265358979323846f *
