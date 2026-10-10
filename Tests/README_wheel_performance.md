@@ -42,7 +42,8 @@ gains and feedforward calibration are reused without modifications.
    second sweep. The two experiments share one buffer; a reset clears it.
 
 The format uses standard GDB print/logging commands; no embedded GDB Python is
-required. Offline conversion uses only Python's standard library:
+required. The analyzer accepts plain GDB text and CubeIDE's GDB/MI console-stream
+wrapping (`~"..."`). Offline conversion uses only Python's standard library:
 
 ```sh
 python exp/wheel_performance/analyze_sweep.py wheel_top_speed.txt

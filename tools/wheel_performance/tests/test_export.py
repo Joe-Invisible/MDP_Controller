@@ -1,5 +1,6 @@
 """Checks whole-sweep parser, plateau rejection and acceleration measurements."""
 import importlib.util
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -90,6 +91,16 @@ class ExportChecks(unittest.TestCase):
             self.load(export().replace("TRACE_END", ""))
         with self.assertRaises(ValueError):
             self.load(export().replace("$5 = 152", "$5 = 153"))
+
+    def test_cubeide_mi_console_export(self):
+        plain = export()
+        wrapped = '=cmd-param-changed,param="logging enabled",value="on"\n' + "\n".join(
+            "~" + json.dumps(line + "\n") for line in plain.splitlines())
+        self.assertEqual(self.load(wrapped), self.load(plain))
+
+    def test_invalid_mi_console_record_rejected(self):
+        with self.assertRaisesRegex(ValueError, "Malformed GDB/MI"):
+            self.load('~"WHEEL_PERFORMANCE_V1\\q"')
 
 
 if __name__ == "__main__":

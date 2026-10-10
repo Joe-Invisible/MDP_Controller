@@ -6,6 +6,7 @@ measured wheel-speed response, not an automatically certified operating limit.
 """
 import argparse
 import csv
+import json
 import math
 from pathlib import Path
 import re
@@ -51,6 +52,16 @@ def slope(samples, wheel):
 
 def load_export(path):
     text = Path(path).read_text(encoding="utf-8")
+    # CubeIDE can log MI console-stream records rather than plain GDB text.
+    # Decode the outer C/JSON string first; retain escaped character annotations
+    # inside records (e.g. phase = 1 '\\001'). Other MI notifications are ignored.
+    console_records = [line.strip()[1:] for line in text.splitlines()
+                       if line.strip().startswith('~"')]
+    if console_records:
+        try:
+            text = "".join(json.loads(record) for record in console_records)
+        except json.JSONDecodeError as error:
+            raise ValueError("Malformed GDB/MI console record") from error
     if "WHEEL_PERFORMANCE_V1" not in text:
         raise ValueError("Not a wheel-performance export")
     configs = records(text, "CONFIG")
