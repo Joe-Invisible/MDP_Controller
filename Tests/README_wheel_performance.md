@@ -14,7 +14,8 @@ gains and feedforward calibration are reused without modifications.
    debugger if required. Enter measured `batteryVoltage`; zero means unrecorded.
 3. Choose `experiment=1` for top speed or `experiment=2` for acceleration. Press
    and release SW1 to freeze the configuration for the entire sweep.
-4. By default, each trial displays its direction and requested PWM/acceleration.
+4. Each trial displays its direction, requested PWM/acceleration, estimated
+   **drive distance**, and the drive-distance guard before movement begins.
    Reposition the robot at the start of the runway and press/release SW1.
    These pauses do not clear the cumulative log. No export is needed between
    trials. The motor outputs are neutral after verified standstill, so the robot
@@ -62,6 +63,17 @@ Both wheels are driven together; their responses are logged separately. No
 automatic direction reversal occurs until both wheels have stopped. Steering
 is fixed at raw zero by default; `steeringRawCommand` permits a known straight
 setting without changing the experiment's motor commands.
+
+The preparation screen's `Drive ~... mm` excludes braking. In the speed sweep,
+it uses the faster wheel's existing direction-specific speed/PWM calibration
+and assumes that steady speed for the full drive duration. In the acceleration
+sweep, it integrates the requested ramp plus hold: `v²/(2a) + v * holdTime`.
+These are planning estimates; unknown top-speed behaviour, tracking error and
+slip can change actual travel. The screen explicitly says `Plus stopping space`.
+The guard is shown separately, with `Guard may cut run` when the estimate reaches
+or exceeds it. Estimates are retained in each trial's exported metadata.
+The same screen is refreshed before automatic trials when button pauses are
+disabled; the existing 500 ms inter-trial delay and 300 ms steering delay follow.
 
 Top speed applies each PWM step for 1500 ms and retains the startup response.
 The last 500 ms is the proposed steady window. The analyzer checks that the

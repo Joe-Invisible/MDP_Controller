@@ -4,6 +4,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include "../../../Tests/Src/WheelPerformanceTest.c"
 
 static uint32_t tick;
@@ -13,6 +14,8 @@ static bool preventStop;
 static bool injectTimingGap;
 static uint32_t buttons;
 static uint32_t rawFullTrials;
+static uint32_t preparedScreens;
+static char oledRows[8][32];
 
 static void Advance(void)
 {
@@ -90,14 +93,30 @@ void SW1_WaitForPressAndRelease(void)
     fixture.rightRearWheel.position -= 7000;
     HAL_Delay(250);
 }
-void OLED_Clear(void) {}
+void OLED_Clear(void) { memset(oledRows, 0, sizeof(oledRows)); }
 void OLED_Printf(uint8_t x, uint8_t y, const char *fmt, ...)
-{ (void)x; (void)y; (void)fmt; }
-void OLED_Refresh_Gram(void) {}
+{
+    assert(x == 0 && y < 8);
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(oledRows[y], sizeof(oledRows[y]), fmt, args);
+    va_end(args);
+    assert(strlen(oledRows[y]) <= 21); /* 128 px / 6 px per font cell */
+}
+void OLED_Refresh_Gram(void)
+{
+    if (strncmp(oledRows[2], "Drive ~", 7) == 0) {
+        ++preparedScreens;
+        assert(strncmp(oledRows[4], "Guard ", 6) == 0);
+        assert(strcmp(oledRows[5], "Plus stopping space") == 0);
+        assert(strcmp(oledRows[7], wheelPerformanceRunConfig.waitBetweenTrials
+            ? "Reposition; SW1" : "Auto start") == 0);
+    }
+}
 
 static void Reset(uint32_t kind)
 {
-    tick = abortAt = buttons = rawFullTrials = 0;
+    tick = abortAt = buttons = rawFullTrials = preparedScreens = 0;
     refuseInit = preventStop = injectTimingGap = false;
     wheelPerformanceConfig = (WheelPerformanceConfig) {
         .experiment = kind, .repetitions = 2, .waitBetweenTrials = true,
@@ -114,7 +133,8 @@ static void CheckCompleted(uint32_t trials)
     assert(wheelPerformanceTrialCount == trials);
     assert(wheelPerformanceTraceCount > 0);
     assert(wheelPerformanceTraceCount < WHEEL_PERFORMANCE_TRACE_CAPACITY);
-    assert(buttons == trials + 1);
+    assert(buttons == (wheelPerformanceRunConfig.waitBetweenTrials ? trials + 1 : 1));
+    assert(preparedScreens == trials);
     uint32_t end = 0;
     bool forward = false, reverse = false;
     for (uint32_t i = 0; i < trials; ++i) {
@@ -122,6 +142,7 @@ static void CheckCompleted(uint32_t trials)
         assert(t->status == WHEEL_TEST_COMPLETE);
         assert(t->firstSample == end);
         assert(t->sampleCount > 0);
+        assert(t->estimatedDriveDistanceMm > 0);
         end += t->sampleCount;
         WheelPerformanceSample *last = &wheelPerformanceTrace[end - 1];
         assert(last->phase == WHEEL_TEST_BRAKE);
@@ -155,7 +176,15 @@ int main(int argc, char **argv)
     }
     Reset(1); WheelPerformanceTestRun(); CheckCompleted(12);
     assert(rawFullTrials == 4);
+    assert(fabsf(EstimateDriveDistanceMm(1, 100) - 1894.77f) < 1.0f);
+    assert(EstimateDriveDistanceMm(1, 100) > EstimateDriveDistanceMm(1, 80));
+    assert(EstimateDriveDistanceMm(1, 100) != EstimateDriveDistanceMm(-1, 100));
     Reset(2); WheelPerformanceTestRun(); CheckCompleted(24);
+    assert(fabsf(EstimateDriveDistanceMm(1, 500) - 567.0f) < 1.0f);
+    assert(fabsf(EstimateDriveDistanceMm(1, 10000) - 154.0f) < 1.0f);
+    assert(EstimateDriveDistanceMm(1, 500) > EstimateDriveDistanceMm(1, 10000));
+    Reset(1); wheelPerformanceConfig.waitBetweenTrials = false;
+    WheelPerformanceTestRun(); CheckCompleted(12);
     Reset(1); wheelPerformanceConfig.repetitions = 4;
     wheelPerformanceConfig.speedDriveMs = 10000;
     WheelPerformanceTestRun();
@@ -166,6 +195,7 @@ int main(int argc, char **argv)
     assert(wheelPerformanceStatus == WHEEL_TEST_DISTANCE_LIMIT);
     assert(wheelPerformanceTrialCount == 1);
     assert(wheelPerformanceTrials[0].sampleCount > 0);
+    assert(preparedScreens == 1);
     Reset(1); abortAt = 1500; WheelPerformanceTestRun();
     assert(wheelPerformanceStatus == WHEEL_TEST_BUTTON_ABORT);
     assert(wheelPerformanceTrialCount == 1);

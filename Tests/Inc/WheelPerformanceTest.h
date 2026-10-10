@@ -73,6 +73,7 @@ typedef struct {
     float pwmPercent;
     float accelerationMmps2;
     float targetCps;
+    float estimatedDriveDistanceMm; /* Model/ideal ramp estimate; excludes braking. */
     uint32_t firstSample;
     uint32_t sampleCount;
     uint32_t driveMs;

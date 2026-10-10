@@ -191,17 +191,58 @@ static bool InitWheelControllers(void)
         WheelSpeedController_ConfigureBrake(&fixture.rightWheelController, &brakeConfig);
 }
 
-static void WaitForTrial(uint32_t trialIndex, int direction, float value)
+static float EstimateDriveDistanceMm(int direction, float value)
+{
+    if (wheelPerformanceRunConfig.experiment == WHEEL_PERFORMANCE_TOP_SPEED) {
+        /* Existing steady-speed model, applied for the full drive duration.
+         * Startup acceleration is deliberately not subtracted. This is a
+         * model estimate, not a bound on an as-yet unmeasured maximum speed.
+         * Use the faster wheel so runway planning covers either wheel's travel.
+         */
+        float leftSlope = direction > 0 ? leftCalibration.forwardSlope
+                                        : leftCalibration.reverseSlope;
+        float leftOffset = direction > 0 ? leftCalibration.forwardOffset
+                                         : leftCalibration.reverseOffset;
+        float rightSlope = direction > 0 ? rightCalibration.forwardSlope
+                                         : rightCalibration.reverseSlope;
+        float rightOffset = direction > 0 ? rightCalibration.forwardOffset
+                                          : rightCalibration.reverseOffset;
+        float leftCps = fmaxf(0.0f, leftSlope * (value - leftOffset));
+        float rightCps = fmaxf(0.0f, rightSlope * (value - rightOffset));
+        return fmaxf(leftCps, rightCps) * wheelPerformanceMmPerCount *
+            (wheelPerformanceRunConfig.speedDriveMs / 1000.0f);
+    }
+
+    float speedMmps = wheelPerformanceRunConfig.accelerationTargetCps *
+        wheelPerformanceMmPerCount;
+    float rampTimeSec = speedMmps / value;
+    float holdTimeSec = DriveDurationMs(value) / 1000.0f - rampTimeSec;
+    return 0.5f * speedMmps * rampTimeSec +
+        speedMmps * fmaxf(0.0f, holdTimeSec);
+}
+
+static void PrepareTrial(uint32_t trialIndex, int direction, float value,
+                         float estimatedDriveMm)
 {
     OLED_Clear();
-    OLED_Printf(0, 0, "Trial %lu/%lu", (unsigned long)(trialIndex + 1U),
-        (unsigned long)(2U * wheelPerformanceRunConfig.repetitions * TableCount()));
-    OLED_Printf(0, 1, "%s", direction > 0 ? "Forward" : "Reverse");
-    OLED_Printf(0, 2, "%s %.0f", wheelPerformanceRunConfig.experiment ==
-        WHEEL_PERFORMANCE_TOP_SPEED ? "PWM %" : "Accel mm/s2", value);
-    OLED_Printf(0, 3, "Reposition; SW1");
+    OLED_Printf(0, 0, "Trial %lu/%lu %s", (unsigned long)(trialIndex + 1U),
+        (unsigned long)(2U * wheelPerformanceRunConfig.repetitions * TableCount()),
+        direction > 0 ? "FWD" : "REV");
+    bool rawPwm = wheelPerformanceRunConfig.experiment == WHEEL_PERFORMANCE_TOP_SPEED;
+    OLED_Printf(0, 1, rawPwm ? "PWM %.0f%%" : "Accel %.0f mm/s2", value);
+    OLED_Printf(0, 2, "Drive ~%.0f mm", estimatedDriveMm);
+    OLED_Printf(0, 3, "%s", rawPwm ? "Model estimate" : "Ramp + hold estimate");
+    OLED_Printf(0, 4, "Guard %.0f mm", wheelPerformanceRunConfig.maxDriveDistanceMm);
+    OLED_Printf(0, 5, "Plus stopping space");
+    if (estimatedDriveMm >= wheelPerformanceRunConfig.maxDriveDistanceMm)
+        OLED_Printf(0, 6, "Guard may cut run");
+    OLED_Printf(0, 7, "%s", wheelPerformanceRunConfig.waitBetweenTrials
+        ? "Reposition; SW1" : "Auto start");
     OLED_Refresh_Gram();
-    SW1_WaitForPressAndRelease();
+    if (wheelPerformanceRunConfig.waitBetweenTrials)
+        SW1_WaitForPressAndRelease();
+    else
+        HAL_Delay(500U);
     /* No controller updates across a repositioning gap; counts reset afterward. */
 }
 
@@ -245,10 +286,8 @@ static bool RunTrial(int direction, uint32_t repetition, uint32_t tableIndex)
     uint32_t index = wheelPerformanceTrialCount;
     bool rawPwm = wheelPerformanceRunConfig.experiment == WHEEL_PERFORMANCE_TOP_SPEED;
     float value = rawPwm ? speedPwmTable[tableIndex] : accelerationTable[tableIndex];
-    if (wheelPerformanceRunConfig.waitBetweenTrials)
-        WaitForTrial(index, direction, value);
-    else
-        HAL_Delay(500U);
+    float estimatedDriveMm = EstimateDriveDistanceMm(direction, value);
+    PrepareTrial(index, direction, value, estimatedDriveMm);
 
     Servo_SetSteering(&fixture.steeringServo, wheelPerformanceRunConfig.steeringRawCommand);
     HAL_Delay(300U);
@@ -268,6 +307,7 @@ static bool RunTrial(int direction, uint32_t repetition, uint32_t tableIndex)
         .pwmPercent = rawPwm ? direction * value : 0.0f,
         .accelerationMmps2 = rawPwm ? 0.0f : value,
         .targetCps = rawPwm ? 0.0f : direction * wheelPerformanceRunConfig.accelerationTargetCps,
+        .estimatedDriveDistanceMm = estimatedDriveMm,
         .firstSample = wheelPerformanceTraceCount, .status = WHEEL_TEST_RUNNING
     };
     ++wheelPerformanceTrialCount;
