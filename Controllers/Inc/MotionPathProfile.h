@@ -16,6 +16,15 @@ typedef struct
     float desiredYawRad;
     float speedLimitCps;
     float straightTuningWeight;
+    /* Optional distance-aware speed profile. When supplied, both local limits
+     * must be positive and brakingSpeedLimitCps is sqrt(2*integral(d ds)) from
+     * this point to the run end. Blends use arc limits, including zero curvature
+     * inside an opposite-turn blend. Zero-initialised custom paths inherit the
+     * controller's straight/arc limits and its ordinary stopping envelope. */
+    bool profileLimitsProvided;
+    float accelerationMmps2;
+    float decelerationMmps2;
+    float brakingSpeedLimitCps;
 } MotionPathSample;
 
 typedef bool (*MotionPathEvaluate)(

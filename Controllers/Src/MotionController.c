@@ -290,7 +290,25 @@ static bool MotionController_ValidPathSample(const MotionPathSample *sample)
     return isfinite(sample->curvaturePerMm) && isfinite(sample->desiredYawRad) &&
            isfinite(sample->speedLimitCps) && sample->speedLimitCps > 0.0f &&
            isfinite(sample->straightTuningWeight) &&
-           sample->straightTuningWeight >= 0.0f && sample->straightTuningWeight <= 1.0f;
+           sample->straightTuningWeight >= 0.0f && sample->straightTuningWeight <= 1.0f &&
+           (!sample->profileLimitsProvided ||
+            (isfinite(sample->accelerationMmps2) && sample->accelerationMmps2 > 0.0f &&
+             isfinite(sample->decelerationMmps2) && sample->decelerationMmps2 > 0.0f &&
+             isfinite(sample->brakingSpeedLimitCps) && sample->brakingSpeedLimitCps >= 0.0f));
+}
+
+static void MotionController_SelectPathLimits(
+    MotionController *controller, const MotionPathSample *sample)
+{
+    bool straight = sample->straightTuningWeight == 1.0f;
+    controller->motionProfile.accelerationMmps2 = sample->profileLimitsProvided
+        ? sample->accelerationMmps2
+        : straight ? controller->config->straightAccelerationMmps2
+                   : controller->config->arcAccelerationMmps2;
+    controller->motionProfile.decelerationMmps2 = sample->profileLimitsProvided
+        ? sample->decelerationMmps2
+        : straight ? controller->config->straightDecelerationMmps2
+                   : controller->config->arcDecelerationMmps2;
 }
 
 static void MotionController_ResetOdometry(
@@ -442,8 +460,10 @@ MotionControllerStatus MotionController_Init(
         !isfinite(config->maxPathCorrectionCurvaturePerMm) ||
         !isfinite(config->wheelSyncKpCpsPerMm) ||
         !isfinite(config->maxWheelSyncCorrectionCps) ||
-        !isfinite(config->motionAccelerationMmps2) ||
-        !isfinite(config->motionDecelerationMmps2) ||
+        !isfinite(config->straightAccelerationMmps2) ||
+        !isfinite(config->straightDecelerationMmps2) ||
+        !isfinite(config->arcAccelerationMmps2) ||
+        !isfinite(config->arcDecelerationMmps2) ||
         !isfinite(config->motionCompletionToleranceMm) ||
         !isfinite(config->arcYawRateFilterTauSec))
     {
@@ -507,6 +527,10 @@ MotionControllerStatus MotionController_Init(
     }
 
     if (config->straightSteeringSettlingTimeSec < 0.0f ||
+        config->straightAccelerationMmps2 <= 0.0f ||
+        config->straightDecelerationMmps2 <= 0.0f ||
+        config->arcAccelerationMmps2 <= 0.0f ||
+        config->arcDecelerationMmps2 <= 0.0f ||
         config->straightHeadingKpPerSec < 0.0f ||
         config->arcHeadingKpPerSec < 0.0f ||
         config->maxPathCorrectionCurvaturePerMm < 0.0f ||
@@ -534,8 +558,8 @@ MotionControllerStatus MotionController_Init(
 
     if (!MotionProfile_Init(
             &controller->motionProfile,
-            config->motionAccelerationMmps2,
-            config->motionDecelerationMmps2,
+            config->straightAccelerationMmps2,
+            config->straightDecelerationMmps2,
             config->motionCompletionToleranceMm))
     {
         return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
@@ -600,7 +624,8 @@ static MotionControllerStatus MotionController_ValidateMotionRequest(
 static MotionControllerStatus MotionController_StartMotion(
     MotionController *controller,
     float distanceMm,
-    float speedCps)
+    float speedCps,
+    MotionControllerMode mode)
 {
     float mmPerCount =
         MotionController_GetMmPerCount(controller);
@@ -610,6 +635,17 @@ static MotionControllerStatus MotionController_StartMotion(
 
     float maxSpeedMmps =
         speedCps * mmPerCount;
+
+    /* Select before profile start/preparation. Preserve any idle-time
+     * completion-tolerance override made by the command application. */
+    controller->motionProfile.accelerationMmps2 =
+        mode == MOTIONCONTROLLER_STRAIGHT
+            ? controller->config->straightAccelerationMmps2
+            : controller->config->arcAccelerationMmps2;
+    controller->motionProfile.decelerationMmps2 =
+        mode == MOTIONCONTROLLER_STRAIGHT
+            ? controller->config->straightDecelerationMmps2
+            : controller->config->arcDecelerationMmps2;
 
     if (!MotionProfile_Start(
             &controller->motionProfile,
@@ -727,7 +763,8 @@ MotionControllerStatus MotionController_MoveStraight(
     status = MotionController_StartMotion(
         controller,
         distanceMm,
-        speedCps);
+        speedCps,
+        MOTIONCONTROLLER_STRAIGHT);
 
     if (status != MOTIONCONTROLLER_STATUS_OK)
     {
@@ -839,7 +876,8 @@ MotionControllerStatus MotionController_MoveArc(
     status = MotionController_StartMotion(
         controller,
         distanceMm,
-        speedCps);
+        speedCps,
+        MOTIONCONTROLLER_ARC);
 
     if (status != MOTIONCONTROLLER_STATUS_OK)
     {
@@ -935,7 +973,9 @@ MotionControllerStatus MotionController_FollowProfile(
     }
 
     status = MotionController_StartMotion(
-        controller, profile->signedDistanceMm, profile->maxSpeedCps);
+        controller, profile->signedDistanceMm, profile->maxSpeedCps,
+        initialSample.straightTuningWeight == 1.0f
+            ? MOTIONCONTROLLER_STRAIGHT : MOTIONCONTROLLER_ARC);
     if (status != MOTIONCONTROLLER_STATUS_OK)
     {
         return status;
@@ -943,6 +983,7 @@ MotionControllerStatus MotionController_FollowProfile(
 
     controller->pathProfile = *profile;
     controller->pathSample = initialSample;
+    MotionController_SelectPathLimits(controller, &initialSample);
     controller->pathFinalSample = finalSample;
     controller->targetCurvaturePerMm = initialSample.curvaturePerMm;
     controller->arcSteeringFeedforwardCommand = initialRawCommand;
@@ -1376,14 +1417,14 @@ static float MotionController_ApplyArcTerminalPolicy(
     float targetYawRad,
     float yawDirection,
     float terminalSpeedMmps,
+    float approachDecelerationIntegral,
     float targetSpeedMmps)
 {
     float approachSpeedMmps = MOTIONCONTROLLER_ARC_TERMINAL_APPROACH_SPEED_CPS *
                               MotionController_GetMmPerCount(controller);
-    float distanceToEntryMm = fmaxf(0.0f, terminalEntryProgressMm - progressMm);
     float approachLimitMmps = sqrtf(
         approachSpeedMmps * approachSpeedMmps +
-        2.0f * controller->config->motionDecelerationMmps2 * distanceToEntryMm);
+        2.0f * approachDecelerationIntegral);
 
     if (targetSpeedMmps > approachLimitMmps)
     {
@@ -1470,13 +1511,17 @@ static MotionControllerStatus MotionController_UpdateProfile(
     /* Apply the local speed ceiling before the terminal yaw policy. */
     float mmPerCount = MotionController_GetMmPerCount(controller);
     controller->pathSample = sample;
+    MotionController_SelectPathLimits(controller, &sample);
     controller->targetCurvaturePerMm = sample.curvaturePerMm;
     controller->arcSteeringFeedforwardCommand = rawSteeringCommand;
     controller->motionProfile.maxSpeedMmps =
         fminf(controller->maxSpeedCps, sample.speedLimitCps) * mmPerCount;
 
-    float targetSpeedMmps =
-        MotionProfile_Update(&controller->motionProfile, progressMm, dt);
+    float targetSpeedMmps = sample.profileLimitsProvided
+        ? MotionProfile_UpdateWithBrakingLimit(
+              &controller->motionProfile, progressMm, dt,
+              sample.brakingSpeedLimitCps * mmPerCount)
+        : MotionProfile_Update(&controller->motionProfile, progressMm, dt);
 
     if (controller->pathProfile.terminalYawPriority)
     {
@@ -1489,6 +1534,21 @@ static MotionControllerStatus MotionController_UpdateProfile(
                 MOTIONCONTROLLER_ARC_TERMINAL_SPEED_CPS,
                 fminf(controller->maxSpeedCps, sample.speedLimitCps)) *
             mmPerCount;
+        float distanceToEntryMm = fmaxf(
+            0.0f, controller->pathProfile.terminalEntryProgressMm - progressMm);
+        float approachIntegral = controller->motionProfile.decelerationMmps2 *
+                                 distanceToEntryMm;
+        if (sample.profileLimitsProvided)
+        {
+            /* Terminal entry lies in the final constant arc. Subtract its
+             * remaining budget from the planner's exact run-end envelope. */
+            float brakingSpeedMmps = sample.brakingSpeedLimitCps * mmPerCount;
+            float finalArcBudget = controller->pathFinalSample.decelerationMmps2 *
+                (controller->targetDistanceMm -
+                 controller->pathProfile.terminalEntryProgressMm);
+            approachIntegral = fmaxf(
+                0.0f, 0.5f * brakingSpeedMmps * brakingSpeedMmps - finalArcBudget);
+        }
         targetSpeedMmps = MotionController_ApplyArcTerminalPolicy(
             controller,
             progressMm,
@@ -1496,6 +1556,7 @@ static MotionControllerStatus MotionController_UpdateProfile(
             controller->pathFinalSample.desiredYawRad,
             yawDirection,
             terminalSpeedMmps,
+            approachIntegral,
             targetSpeedMmps);
     }
 
@@ -1552,6 +1613,9 @@ static MotionControllerStatus MotionController_UpdateActiveMotion(
                     MOTIONCONTROLLER_ARC_TERMINAL_ENTRY_DISTANCE_MM),
                 targetYawRad, targetYawRad >= 0.0f ? 1.0f : -1.0f,
                 MOTIONCONTROLLER_ARC_TERMINAL_SPEED_CPS * MotionController_GetMmPerCount(controller),
+                controller->motionProfile.decelerationMmps2 *
+                    fmaxf(0.0f, controller->targetDistanceMm -
+                        MOTIONCONTROLLER_ARC_TERMINAL_ENTRY_DISTANCE_MM - progressMm),
                 targetSpeedMmps);
         }
     }

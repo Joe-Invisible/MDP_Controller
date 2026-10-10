@@ -44,6 +44,9 @@ static const MotionSequenceFusionTestStep fusionTestSteps[] = {
 };
 
 static RobotTestFixture fixture;
+/* Experiment-local settings: leave the reusable production defaults intact. */
+static MotionControllerConfig fusionMotionConfig;
+#define FUSION_WHEEL_KP 0.03f
 MotionSequence motionSequenceFusionTestSequence;
 MotionSequenceFusionTestSample motionSequenceFusionTestLog[FUSION_LOG_CAPACITY];
 uint32_t motionSequenceFusionTestLogCount;
@@ -116,6 +119,9 @@ static void MotionSequenceFusionTest_LogSample(uint32_t elapsedMs)
     sample->wheelSyncErrorMm = controller->wheelSyncErrorMm;
     sample->wheelSyncCorrectionCps = controller->wheelSyncCorrectionCps;
     sample->straightTuningWeight = controller->pathSample.straightTuningWeight;
+    sample->accelerationLimitMmps2 = controller->motionProfile.accelerationMmps2;
+    sample->decelerationLimitMmps2 = controller->motionProfile.decelerationMmps2;
+    sample->brakingSpeedLimitCps = controller->pathSample.brakingSpeedLimitCps;
 }
 
 __attribute__((noinline)) void MotionSequenceFusionTestFinished(void)
@@ -187,6 +193,7 @@ static bool MotionSequenceFusionTest_RunPattern(bool stopAfter)
     OLED_Printf(0, 0, "%s pattern ready", stopAfter ? "B stopped" : "A fused");
     OLED_Printf(0, 1, "500mm / R=+/-275");
     OLED_Printf(0, 2, "5000 CPS requested");
+    OLED_Printf(0, 3, "A/D S:3000 C:2000");
     OLED_Printf(0, 4, "Reset pose; SW1 start");
     OLED_Printf(0, 5, "SW1 running: cancel");
     OLED_Refresh_Gram();
@@ -291,11 +298,18 @@ void MotionSequenceFusionTestRun(void)
         motionSequenceFusionTestResults[i] = (MotionSequenceFusionTestResult){0};
     }
     motionSequenceFusionTestStatus = MOTIONCONTROLLER_STATUS_NOT_INITIALIZED;
-    if (!RobotTestFixture_InitMotionController(&fixture, &motionControllerConfig))
+    fusionMotionConfig = motionControllerConfig;
+    fusionMotionConfig.straightAccelerationMmps2 = 3000.0f;
+    fusionMotionConfig.straightDecelerationMmps2 = 3000.0f;
+    fusionMotionConfig.arcAccelerationMmps2 = 2000.0f;
+    fusionMotionConfig.arcDecelerationMmps2 = 2000.0f;
+    if (!RobotTestFixture_InitMotionController(&fixture, &fusionMotionConfig))
     {
         MotionSequenceFusionTestFinished();
         return;
     }
+    fixture.leftWheelController.pid.kp = FUSION_WHEEL_KP;
+    fixture.rightWheelController.pid.kp = FUSION_WHEEL_KP;
 
     for (comparisonRunIndex = 0U;
          comparisonRunIndex < MOTION_SEQUENCE_FUSION_TEST_RUN_COUNT; ++comparisonRunIndex)

@@ -54,6 +54,9 @@ typedef struct
     float wheelSyncErrorMm;
     float wheelSyncCorrectionCps;
     float straightTuningWeight;
+    float accelerationLimitMmps2;
+    float decelerationLimitMmps2;
+    float brakingSpeedLimitCps;
 } MotionSequenceFusionTestSample;
 
 extern MotionSequenceFusionTestResult

@@ -33,7 +33,10 @@ typedef struct
     float totalTravelMm;
     float nominalFinalYawRad;
     float mmPerCount;
-    float decelerationMmps2;
+    float straightAccelerationMmps2;
+    float straightDecelerationMmps2;
+    float arcAccelerationMmps2;
+    float arcDecelerationMmps2;
     bool prepared;
 } MotionSequencePlan;
 
@@ -50,7 +53,10 @@ bool MotionSequencePlan_Prepare(
     MotionSequencePlan *plan,
     const MotionSequenceConfig *config,
     float mmPerCount,
-    float decelerationMmps2,
+    float straightAccelerationMmps2,
+    float straightDecelerationMmps2,
+    float arcAccelerationMmps2,
+    float arcDecelerationMmps2,
     float rawSlopeBound,
     float rawRatePerSec);
 bool MotionSequencePlan_Evaluate(

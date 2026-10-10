@@ -1,9 +1,44 @@
 # Experimental fused motion sequence
 
-Branch: `experiment/fused-motion-sequence`.
-Base: `69a661ea8536fc8ef161897878dcdc8f21c5b057` on
-`feature/unified-calibration-free-motion` (latest unified control at creation).
-The separate IMU-initialisation-hardening branch is not included.
+Branch: `experiment/fused-motion-limits`.
+Base: `90fa9d3b4d37080a7bf035abe1c3439fd2361ffb` on
+`experiment/fused-motion-sequence`, with the separate-limits change adapted from
+`feature/motion-profile-limits` commit `df2fc280541868bff87ff8813cf36dc48462deb0`.
+The separate production UART and IMU-hardening changes are not included.
+
+## Wheel-performance settings
+
+The selected A/B harness keeps 5000 CPS requested on the existing mixed-turn
+course. Both traces use one experiment-local configuration:
+
+| Motion | Acceleration (mm/s²) | Deceleration (mm/s²) |
+| --- | ---: | ---: |
+| Straight | 3000 | 3000 |
+| Arc / curvature-changing blend | 2000 | 2000 |
+
+Both wheel PID gains are Kp = 0.03, Ki = 0. These are candidates from the wheel
+campaign, pending validation with steering, heading and synchronisation active.
+Shared controller defaults remain 1500/1000 for both modes and wheel Kp = 0.02.
+
+Constant straight sections use straight limits. Any curvature-changing blend
+uses arc limits throughout, including opposite-turn blends as curvature crosses
+zero. Gain interpolation remains independent of this limit selection. Joined
+straight segments keep straight limits even within their nominal blend interval.
+The same selection applies to the stopped comparison's `FollowProfile` runs.
+
+Lookahead integrates deceleration over each section ahead: the squared speed
+budget is `2 * integral(deceleration * distance)`. Thus a straight can exploit
+its stronger limit while approaching a weaker arc, and final stopping accounts
+for later sections instead of extending the current section's limit to the end.
+The final yaw-priority approach uses that budget up to its terminal window too.
+Existing yaw-priority completion, stationary confirmation and fault handling
+are preserved. These are centre-speed limits: curvature changes and feedback
+can still add wheel acceleration/deceleration demand; hardware tracking must be
+checked. This change does not establish a wheel-acceleration guarantee.
+
+Each sample logs active acceleration/deceleration limits and the planned
+stopping-speed ceiling. The one final GDB export includes both traces, their
+actual controller configuration and both wheel PID configurations.
 
 ## First implementation
 
@@ -85,13 +120,13 @@ Defaults in `Controllers/Src/MotionSequencePlan.c`:
 
 | Setting | Value |
 | --- | ---: |
-| Maximum full blend length | 100 mm |
-| Curvature-changing junction speed ceiling | 2000 CPS |
+| Maximum full blend length | 200 mm |
+| Curvature-changing junction speed ceiling | 8000 CPS |
 | Fused-profile raw steering slew limit | 480 raw units/s |
 | Feedforward allocation of configured raw slew rate | 50% |
 
-These deliberately faster defaults replace the initial 200 mm / 500 CPS
-experiment. The sequence's slew override is used by both the planner and the
+These retain the latest fusion branch settings. The 8000 CPS ceiling is
+still bounded by each segment's requested speed and the steering slew budget. The sequence's slew override is used by both the planner and the
 steering executor; it does not modify `steeringCalibration` (120 raw units/s).
 Set `steeringCommandRatePerSec=0` to inherit that rate. For the original slow
 profile use `{.blendLengthMm=200, .junctionSpeedCps=500,
@@ -101,8 +136,9 @@ The planner also limits junction speed using the largest slope of the complete
 piecewise-linear feedforward map (including the centre bridge), curvature ramp
 length, and effective per-sequence raw slew rate. The remaining slew allowance is reserved
 for feedback; it is not a guaranteed physical servo margin. Speed lookahead
-uses the configured deceleration to approach each lower segment/junction speed
-before its boundary. `MotionProfile` supplies acceleration and final stopping.
+uses the integrated straight/arc deceleration to approach each lower
+segment/junction speed before its boundary. `MotionProfile` supplies the active
+section's acceleration and consumes the planner's final stopping envelope.
 These are configurable software protections, not a measured servo speed limit.
 
 ## API example
@@ -140,6 +176,7 @@ Run with Python 3 and GCC on Linux/WSL:
 ```sh
 python3 Tests/Host/test_unified_motion.py
 python3 Tests/Host/test_fused_motion.py
+python3 Tests/Host/test_motion_profile_limits.py
 # Optional: exporter check using installed host GDB
 python3 Tests/Host/test_fused_export.py --gdb /path/to/gdb
 ```
@@ -175,16 +212,20 @@ The real GDB exporter also passed checks against initialized host ELF data:
 plan/config/result fields, all samples, empty/invalid-count guards and the
 complete marker. It did not require a running process or a probe.
 
-The standalone suite was brought up to date for the base's explicit raw-zero
-straight FF, regime-specific gains and measured-speed FF. The updated suite
-also passes against the untouched base `MotionController.c`.
+The standalone suite sets explicit preparation times and a heading gain for
+its heading-bound checks, so those checks do not depend on experiment defaults.
+The separate-limits checks cover all four limits, forward/reverse mode changes,
+completion-tolerance preservation, invalid inputs and arc terminal approach.
+Fusion checks additionally cover local limit changes, independent integration
+of the stopping envelope, stronger straight approach to a weaker arc, stopped
+mode selection, opposite-turn zero crossing and the experiment's actual gains.
 
-Changed firmware sources passed host syntax checks against the real STM32 HAL
-headers, suppressing only 64-bit-host versus 32-bit-HAL cast/overflow warnings.
-There is no ARM toolchain/CubeIDE here; a full target build, link/RAM check,
-control-period timing and physical robot trials remain local. Stubbed samples
-are software checks, not an identified servo/vehicle model or evidence of
-hardware tracking performance.
+The full ARM Debug firmware builds and links with the configured source
+exclusions and the unchanged STM32 FLASH linker script. Changed firmware sources
+also pass `-Wall -Wextra -Werror`. The final image uses approximately 96 KiB FLASH
+code/constants and 93 KiB RAM (including the shared sample buffer, heap and stack
+reservations), within the STM32F407's configured memory. Control-period timing
+and physical robot trials still require hardware validation.
 
 ## Robot experiment
 
@@ -251,8 +292,8 @@ not logged. If full, the final slot is replaced with the latest trace's final
 sample and truncation is flagged globally and in that trace's result. Summary
 results remain available even if detailed logging is truncated.
 
-In the ideal encoder/gyro host harness, A takes 18250 ms and B takes 22342 ms:
-4092 ms saved, or about 18.3%. This is a software scheduling check, not a physical
+In the ideal encoder/gyro host harness, A takes 13531 ms and B takes 15060 ms:
+1529 ms saved, or about 10.2%. This is a software scheduling check, not a physical
 servo/vehicle performance prediction. The harness also verifies cancellation
 and timeout in either A or B, withholding savings for incomplete comparisons,
 manual-wait exclusion, per-trace logging and OLED text-row coordinates.
@@ -271,7 +312,7 @@ mctrl-fusion-export fusion_run01.txt
 
 Enter the actual measured voltage. Choose a new output name for each run;
 export appends if the name already exists. The command exports both A/B results and the timing comparison, the last
-trace's complete plan, inherited tuning, final heading policy/termination flags
+trace's complete plan, actual experiment tuning and wheel PID gains, final heading policy/termination flags
 and tagged samples from both traces. It neither resumes
 the target nor initiates motion. The old automatic sequence-export breakpoint
 does not apply to this harness.

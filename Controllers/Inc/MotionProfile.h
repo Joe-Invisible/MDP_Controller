@@ -71,6 +71,14 @@ float MotionProfile_Update(
     float travelledDistanceMm,
     float dt);
 
+/* Same acceleration/completion rules, with a stopping-speed envelope computed
+ * by a path planner for varying deceleration along the remaining distance. */
+float MotionProfile_UpdateWithBrakingLimit(
+    MotionProfile *profile,
+    float travelledDistanceMm,
+    float dt,
+    float brakingSpeedLimitMmps);
+
 /**
  * @brief Stops profile generation and resets the
  * 		target speed to zero.

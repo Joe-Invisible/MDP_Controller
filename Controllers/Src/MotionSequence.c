@@ -229,7 +229,10 @@ MotionControllerStatus MotionSequence_Execute(MotionSequence *sequence)
             &sequence->plan,
             &sequence->config,
             mmPerCount,
-            config->motionDecelerationMmps2,
+            config->straightAccelerationMmps2,
+            config->straightDecelerationMmps2,
+            config->arcAccelerationMmps2,
+            config->arcDecelerationMmps2,
             MotionSequence_GetRawSlopeBound(config),
             sequence->controller->steering->calibration->maxCommandRatePerSec))
     {

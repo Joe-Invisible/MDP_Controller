@@ -108,8 +108,10 @@ static const MotionControllerConfig straightFeedforwardTestMotionConfig =
     .wheelSyncKpCpsPerMm = STRAIGHT_FF_TEST_SYNC_KP_CPS_PER_MM,
     .maxWheelSyncCorrectionCps = STRAIGHT_FF_TEST_SYNC_MAX_CORRECTION_CPS,
 
-    .motionAccelerationMmps2 = STRAIGHT_FF_TEST_ACCELERATION_MMPS2,
-    .motionDecelerationMmps2 = STRAIGHT_FF_TEST_DECELERATION_MMPS2,
+    .straightAccelerationMmps2 = STRAIGHT_FF_TEST_ACCELERATION_MMPS2,
+    .straightDecelerationMmps2 = STRAIGHT_FF_TEST_DECELERATION_MMPS2,
+    .arcAccelerationMmps2 = STRAIGHT_FF_TEST_ACCELERATION_MMPS2,
+    .arcDecelerationMmps2 = STRAIGHT_FF_TEST_DECELERATION_MMPS2,
     .motionCompletionToleranceMm = 0.5f,
 
     .arcYawRateFilterTauSec = 0.10f,

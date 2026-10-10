@@ -19,7 +19,7 @@ typedef struct { uint32_t unused; } TIM_HandleTypeDef;
 typedef struct { uint32_t unused; } I2C_HandleTypeDef;
 #endif
 """
-HARNESS = r'''
+FIXTURE_HARNESS = r'''
 #include "MotionController.h"
 #include "SteeringControllerConfig.h"
 #include <assert.h>
@@ -80,11 +80,18 @@ static MotionControllerStatus initMotion(Fixture *f)
                                 &f->steering, &f->imu, &f->config);
 }
 
+static MotionControllerArcConfig fixtureArcConfig;
+
 static void setup(Fixture *f, bool legacy)
 {
     *f = (Fixture){0};
     f->config = motionControllerConfig;
     f->config.useLegacyStraightSteering = legacy;
+    /* Preparation assertions use fixed times, independent of experiment tuning. */
+    f->config.straightSteeringSettlingTimeSec = 0.5f;
+    fixtureArcConfig = *f->config.arcConfig;
+    fixtureArcConfig.steeringSettlingTimeSec = 0.5f;
+    f->config.arcConfig = &fixtureArcConfig;
     f->config.arcYawRateFilterTauSec = 0.0f;
     f->left.motor = &f->leftMotor;
     f->right.motor = &f->rightMotor;
@@ -122,12 +129,17 @@ static void prepare(Fixture *f, MotionControllerMode preparing,
     near(f->motion.yawDeg, 0.0f, 0.0f);
 }
 
+'''
+HARNESS = FIXTURE_HARNESS + r'''
 static void testStraightSignsAndGeometry(void)
 {
     for (int direction = -1; direction <= 1; direction += 2) {
         for (int yawSign = -1; yawSign <= 1; yawSign += 2) {
             Fixture f;
             setup(&f, false);
+            /* Exercise the heading bound independently of production gain tuning. */
+            f.config.straightHeadingKpPerSec = 2.0f;
+            assert(initMotion(&f) == 0);
             /* Exercise both return directions from a raw arc command. */
             SteeringController_SetRawCommand(&f.steering, yawSign * 60.0f);
             assert(MotionController_MoveStraight(&f.motion, direction * 500.0f,
@@ -388,14 +400,14 @@ int main(void)
 '''
 
 
-def main():
+def run_harness(harness):
     sources = ["MotionController", "MotionControllerConfig", "SteeringController",
                "SteeringControllerConfig", "PIDController", "MotionProfile",
                "RobotKinematics"]
     with tempfile.TemporaryDirectory(prefix="mdp-motion-test-") as directory:
         work = Path(directory)
         (work / "stm32f4xx_hal.h").write_text(HAL_STUB)
-        (work / "test.c").write_text(HARNESS)
+        (work / "test.c").write_text(harness)
         command = shlex.split(os.environ.get("CC", "gcc")) + [
             "-std=c11", "-Wall", "-Wextra", "-Werror", "-pedantic", "-O1",
             "-fsanitize=undefined", "-fno-sanitize-recover=all",
@@ -406,6 +418,10 @@ def main():
         command += ["-lm", "-o", str(work / "test")]
         subprocess.run(command, check=True)
         subprocess.run([str(work / "test")], check=True)
+
+
+def main():
+    run_harness(HARNESS)
 
 
 if __name__ == "__main__":

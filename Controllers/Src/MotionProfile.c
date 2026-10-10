@@ -84,6 +84,22 @@ float MotionProfile_Update(
     if (profile == NULL || !profile->active)
         return 0.0f;
 
+    float remainingDistanceMm = fmaxf(
+        0.0f, profile->targetDistanceMm - fmaxf(0.0f, travelledDistanceMm));
+    return MotionProfile_UpdateWithBrakingLimit(
+        profile, travelledDistanceMm, dt,
+        sqrtf(2.0f * profile->decelerationMmps2 * remainingDistanceMm));
+}
+
+float MotionProfile_UpdateWithBrakingLimit(
+    MotionProfile *profile,
+    float travelledDistanceMm,
+    float dt,
+    float brakingSpeedLimitMmps)
+{
+    if (profile == NULL || !profile->active)
+        return 0.0f;
+
     if (dt <= 0.0f)
         return profile->targetSpeedMmps;
 
@@ -110,17 +126,15 @@ float MotionProfile_Update(
         profile->accelerationMmps2 * dt;
 
     /*
-     * Maximum speed from which zero speed can still be reached
-     * over the remaining distance using the configured
-     * deceleration magnitude:
-     *
-     *     v^2 = 2 a s
+     * Maximum speed from which zero can still be reached over the remaining
+     * distance. The ordinary update supplies sqrt(2*d*s); a variable-limit
+     * path supplies sqrt(2*integral(d ds)) instead.
      */
-    float brakingLimitedSpeedMmps =
-        sqrtf(
-            2.0f *
-            profile->decelerationMmps2 *
-            remainingDistanceMm);
+    if (!isfinite(brakingSpeedLimitMmps) || brakingSpeedLimitMmps < 0.0f)
+    {
+        MotionProfile_Stop(profile);
+        return 0.0f;
+    }
 
     /*
      * This automatically generates a triangular profile
@@ -130,7 +144,7 @@ float MotionProfile_Update(
     profile->targetSpeedMmps = MotionProfile_Min3(
         profile->maxSpeedMmps,
         accelerationLimitedSpeedMmps,
-        brakingLimitedSpeedMmps);
+        brakingSpeedLimitMmps);
 
     return profile->targetSpeedMmps;
 }

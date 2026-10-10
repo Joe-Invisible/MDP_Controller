@@ -103,8 +103,15 @@ typedef struct
     float wheelSyncKpCpsPerMm;
     float maxWheelSyncCorrectionCps;
 
-    float motionAccelerationMmps2;
-    float motionDecelerationMmps2;
+    /*
+     * Positive rear-axle-centre acceleration/deceleration magnitudes [mm/s^2].
+     * Selected per primitive, for both forward and reverse motion. These
+     * are centre-speed limits; the outer wheel on an arc demands more.
+     */
+    float straightAccelerationMmps2;
+    float straightDecelerationMmps2;
+    float arcAccelerationMmps2;
+    float arcDecelerationMmps2;
     float motionCompletionToleranceMm;
 
     /* Shared measured-speed / yaw-rate feedback filter time constant. */

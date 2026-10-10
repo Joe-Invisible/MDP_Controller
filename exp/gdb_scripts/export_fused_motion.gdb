@@ -29,6 +29,12 @@ define mctrl-fusion-export
     if motionSequenceFusionTestSequence.controller != 0
         p *motionSequenceFusionTestSequence.controller->config
         p *motionSequenceFusionTestSequence.controller->steering->calibration
+        if motionSequenceFusionTestSequence.controller->leftWheel != 0
+            p motionSequenceFusionTestSequence.controller->leftWheel->pid
+        end
+        if motionSequenceFusionTestSequence.controller->rightWheel != 0
+            p motionSequenceFusionTestSequence.controller->rightWheel->pid
+        end
         echo === Terminal heading policy and result ===\n
         p motionSequenceFusionTestSequence.controller->pathProfile
         p motionSequenceFusionTestSequence.controller->pathFinalSample

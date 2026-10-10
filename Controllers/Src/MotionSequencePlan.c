@@ -21,7 +21,10 @@ bool MotionSequencePlan_Prepare(
     MotionSequencePlan *plan,
     const MotionSequenceConfig *config,
     float mmPerCount,
-    float decelerationMmps2,
+    float straightAccelerationMmps2,
+    float straightDecelerationMmps2,
+    float arcAccelerationMmps2,
+    float arcDecelerationMmps2,
     float rawSlopeBound,
     float rawRatePerSec)
 {
@@ -35,8 +38,12 @@ bool MotionSequencePlan_Prepare(
         !isfinite(config->junctionSpeedCps) || config->junctionSpeedCps <= 0.0f ||
         !isfinite(config->steeringCommandRatePerSec) ||
         config->steeringCommandRatePerSec < 0.0f ||
-        !isfinite(mmPerCount) || mmPerCount <= 0.0f || !isfinite(decelerationMmps2) ||
-        decelerationMmps2 <= 0.0f || !isfinite(rawSlopeBound) || rawSlopeBound < 0.0f ||
+        !isfinite(mmPerCount) || mmPerCount <= 0.0f ||
+        !isfinite(straightAccelerationMmps2) || straightAccelerationMmps2 <= 0.0f ||
+        !isfinite(straightDecelerationMmps2) || straightDecelerationMmps2 <= 0.0f ||
+        !isfinite(arcAccelerationMmps2) || arcAccelerationMmps2 <= 0.0f ||
+        !isfinite(arcDecelerationMmps2) || arcDecelerationMmps2 <= 0.0f ||
+        !isfinite(rawSlopeBound) || rawSlopeBound < 0.0f ||
         !isfinite(rawRatePerSec) || rawRatePerSec <= 0.0f)
     {
         return false;
@@ -46,7 +53,10 @@ bool MotionSequencePlan_Prepare(
     plan->totalTravelMm = 0.0f;
     plan->nominalFinalYawRad = 0.0f;
     plan->mmPerCount = mmPerCount;
-    plan->decelerationMmps2 = decelerationMmps2;
+    plan->straightAccelerationMmps2 = straightAccelerationMmps2;
+    plan->straightDecelerationMmps2 = straightDecelerationMmps2;
+    plan->arcAccelerationMmps2 = arcAccelerationMmps2;
+    plan->arcDecelerationMmps2 = arcDecelerationMmps2;
     for (uint32_t i = 0U; i < plan->count; ++i)
     {
         const MotionSequenceSegment *segment = &plan->segments[i];
@@ -62,7 +72,9 @@ bool MotionSequencePlan_Prepare(
         plan->junctionSpeedCps[i] = 0.0f;
         float speedMmps = segment->speedCps * mmPerCount;
         if (!isfinite(
-                speedMmps * speedMmps + 2.0f * decelerationMmps2 * plan->totalTravelMm))
+                speedMmps * speedMmps +
+                2.0f * fmaxf(straightDecelerationMmps2, arcDecelerationMmps2) *
+                    plan->totalTravelMm))
         {
             return false;
         }
@@ -134,11 +146,46 @@ uint32_t MotionSequencePlan_RunEnd(const MotionSequencePlan *plan, uint32_t firs
     return last;
 }
 
-static float MotionSequencePlan_GetApproachSpeedCps(
-    const MotionSequencePlan *plan, float capCps, float distanceMm)
+/* Integrate deceleration over the actual constant sections and blends. Run
+ * coordinates exclude earlier stopped/reversed runs; their blends are zero. */
+static float MotionSequencePlan_DecelerationIntegral(
+    const MotionSequenceRun *run, float fromMm, float toMm)
 {
+    const MotionSequencePlan *plan = run->plan;
+    float positionMm = 0.0f;
+    float integral = 0.0f;
+    for (uint32_t i = run->first; i <= run->last; ++i)
+    {
+        float incomingMm = i > run->first ? plan->junctionHalfLengthMm[i - 1U] : 0.0f;
+        float outgoingMm = i < run->last ? plan->junctionHalfLengthMm[i] : 0.0f;
+        float constantEndMm = positionMm +
+            fabsf(plan->segments[i].signedDistanceMm) - incomingMm - outgoingMm;
+        float constantDeceleration = plan->segments[i].curvaturePerMm == 0.0f
+                                         ? plan->straightDecelerationMmps2
+                                         : plan->arcDecelerationMmps2;
+        integral += constantDeceleration * fmaxf(
+            0.0f, fminf(toMm, constantEndMm) - fmaxf(fromMm, positionMm));
+        positionMm = constantEndMm;
+        float blendEndMm = positionMm + 2.0f * outgoingMm;
+        /* Equal straight curvature needs no arc dynamics in the blend. */
+        float blendDeceleration = i < run->last &&
+            plan->segments[i].curvaturePerMm == 0.0f &&
+            plan->segments[i + 1U].curvaturePerMm == 0.0f
+                ? plan->straightDecelerationMmps2 : plan->arcDecelerationMmps2;
+        integral += blendDeceleration * fmaxf(
+            0.0f, fminf(toMm, blendEndMm) - fmaxf(fromMm, positionMm));
+        positionMm = blendEndMm;
+    }
+    return integral;
+}
+
+static float MotionSequencePlan_GetApproachSpeedCps(
+    const MotionSequenceRun *run, float capCps, float fromMm, float toMm)
+{
+    const MotionSequencePlan *plan = run->plan;
     float speedMmps = capCps * plan->mmPerCount;
-    return sqrtf(speedMmps * speedMmps + 2.0f * plan->decelerationMmps2 * distanceMm) /
+    return sqrtf(speedMmps * speedMmps +
+                 2.0f * MotionSequencePlan_DecelerationIntegral(run, fromMm, toMm)) /
            plan->mmPerCount;
 }
 
@@ -167,6 +214,7 @@ bool MotionSequencePlan_Evaluate(
     float speedLimitCps = plan->segments[run->first].speedCps;
     bool found = false;
     *sample = (MotionPathSample){0};
+    sample->profileLimitsProvided = true;
 
     /* Emit constant sections and symmetric linear ramps. Analytic integrals
      * keep heading independent of update rate and encoder sample skipping. */
@@ -191,6 +239,12 @@ bool MotionSequencePlan_Evaluate(
                         fminf(clampedProgressMm - sectionStartMm, constantLengthMm));
             sample->straightTuningWeight =
                 segment->curvaturePerMm == 0.0f ? 1.0f : 0.0f;
+            sample->accelerationMmps2 = segment->curvaturePerMm == 0.0f
+                                           ? plan->straightAccelerationMmps2
+                                           : plan->arcAccelerationMmps2;
+            sample->decelerationMmps2 = segment->curvaturePerMm == 0.0f
+                                           ? plan->straightDecelerationMmps2
+                                           : plan->arcDecelerationMmps2;
             found = true;
         }
 
@@ -223,6 +277,14 @@ bool MotionSequencePlan_Evaluate(
                 sample->straightTuningWeight =
                     startStraightWeight +
                     (endStraightWeight - startStraightWeight) * blendFraction;
+                bool straightBlend = startCurvaturePerMm == 0.0f &&
+                                     endCurvaturePerMm == 0.0f;
+                sample->accelerationMmps2 = straightBlend
+                                               ? plan->straightAccelerationMmps2
+                                               : plan->arcAccelerationMmps2;
+                sample->decelerationMmps2 = straightBlend
+                                               ? plan->straightDecelerationMmps2
+                                               : plan->arcDecelerationMmps2;
                 found = true;
             }
 
@@ -252,9 +314,10 @@ bool MotionSequencePlan_Evaluate(
             speedLimitCps = fminf(
                 speedLimitCps,
                 MotionSequencePlan_GetApproachSpeedCps(
-                    plan,
+                    run,
                     plan->segments[i].speedCps,
-                    fmaxf(0.0f, nominalPositionMm - clampedProgressMm)));
+                    clampedProgressMm,
+                    fmaxf(clampedProgressMm, nominalPositionMm)));
         }
 
         if (i < run->last)
@@ -265,14 +328,17 @@ bool MotionSequencePlan_Evaluate(
                 speedLimitCps = fminf(
                     speedLimitCps,
                     MotionSequencePlan_GetApproachSpeedCps(
-                        plan,
+                        run,
                         plan->junctionSpeedCps[i],
-                        fmaxf(0.0f, segmentEndMm - halfLengthMm - clampedProgressMm)));
+                        clampedProgressMm,
+                        fmaxf(clampedProgressMm, segmentEndMm - halfLengthMm)));
             }
         }
         nominalPositionMm = segmentEndMm;
     }
 
     sample->speedLimitCps = speedLimitCps;
+    sample->brakingSpeedLimitCps = MotionSequencePlan_GetApproachSpeedCps(
+        run, 0.0f, clampedProgressMm, runLengthMm);
     return isfinite(speedLimitCps) && speedLimitCps > 0.0f;
 }

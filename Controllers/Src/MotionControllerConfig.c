@@ -133,9 +133,11 @@ const MotionControllerConfig motionControllerConfig =
     .wheelSyncKpCpsPerMm = 10.0f,
     .maxWheelSyncCorrectionCps = 100.0f,
 
-    /* Current production-candidate profile from the terminal-arc campaign. */
-    .motionAccelerationMmps2 = 1500.0f,
-    .motionDecelerationMmps2 = 1000.0f,
+    /* Preserve this branch's profiles; the experiment overrides its own copy. */
+    .straightAccelerationMmps2 = 1500.0f,
+    .straightDecelerationMmps2 = 1000.0f,
+    .arcAccelerationMmps2 = 1500.0f,
+    .arcDecelerationMmps2 = 1000.0f,
     .motionCompletionToleranceMm = 0.5f,
 
     .arcYawRateFilterTauSec = 0.10f,

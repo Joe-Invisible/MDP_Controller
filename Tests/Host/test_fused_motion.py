@@ -39,6 +39,9 @@ static void begin(Fixture *f, MotionSequence *s)
 {
     setup(f, false);
     assert(MotionSequence_Begin(s, &f->motion, &motionSequenceConfig) == 0);
+    /* Fixed geometry for these unit checks; the robot harness uses current defaults. */
+    s->config.blendLengthMm = 100;
+    s->config.junctionSpeedCps = 2000;
 }
 
 static void prepareSequence(Fixture *f, MotionSequence *s)
@@ -101,7 +104,138 @@ static void testBlendGeometry(void)
              * exceed v_next^2 + 2*d*dx, even before a lower-speed segment. */
             float va = a.speedLimitCps * mmPerCount();
             float vb = b.speedLimitCps * mmPerCount();
-            assert(va * va <= vb * vb + 2 * f.config.motionDecelerationMmps2 + 0.1f);
+            assert(va * va <= vb * vb + 2 * f.config.straightDecelerationMmps2 + 0.1f);
+        }
+    }
+}
+
+static void testSeparateProfileLimits(void)
+{
+    for (int direction = -1; direction <= 1; direction += 2) {
+        for (unsigned stopped = 0; stopped < 2; ++stopped) {
+            Fixture f; MotionSequence s;
+            begin(&f, &s);
+            f.config.straightAccelerationMmps2 = 3000;
+            f.config.straightDecelerationMmps2 = 3000;
+            f.config.arcAccelerationMmps2 = 2000;
+            f.config.arcDecelerationMmps2 = 2000;
+            assert(initMotion(&f) == 0);
+            assert(MotionSequence_AddStraight(&s, direction * 300, 7800, stopped) == 0);
+            assert(MotionSequence_AddArc(&s, direction * 500, -500, 7800, stopped) == 0);
+            assert(MotionSequence_AddStraight(&s, direction * 300, 7800, stopped) == 0);
+            assert(MotionSequence_Execute(&s) == 0);
+            near(f.motion.motionProfile.accelerationMmps2, 3000, 0);
+            prepareSequence(&f, &s);
+            near(f.motion.motionProfile.targetSpeedMmps, 3000 * DT, 1e-4f);
+            if (stopped) {
+                seek(&f, &s, 301);
+                assert(f.motion.mode == MOTIONCONTROLLER_BRAKING);
+                for (unsigned i = 0; i < f.config.stopStableSampleCount; ++i)
+                    sequenceUpdate(&f, &s);
+                assert(s.run.first == 1 && s.run.last == 1);
+                near(f.motion.motionProfile.accelerationMmps2, 2000, 0);
+                near(f.motion.motionProfile.decelerationMmps2, 2000, 0);
+                prepareSequence(&f, &s);
+                near(f.motion.motionProfile.targetSpeedMmps, 2000 * DT, 1e-4f);
+                seek(&f, &s, 501);
+                for (unsigned i = 0; i < f.config.stopStableSampleCount; ++i)
+                    sequenceUpdate(&f, &s);
+                assert(s.run.first == 2);
+                near(f.motion.motionProfile.accelerationMmps2, 3000, 0);
+                near(f.motion.motionProfile.decelerationMmps2, 3000, 0);
+                continue;
+            }
+            MotionPathSample sample;
+            assert(MotionSequencePlan_Evaluate(&s.run, 0, &sample));
+            /* Constant straights: 250+250 mm; arc + blends: 400+100+100 mm. */
+            float expectedBudget = 3000 * 500 + 2000 * 600;
+            near(powf(sample.brakingSpeedLimitCps * mmPerCount(), 2),
+                 2 * expectedBudget, 1.0f);
+            const float positions[] = {100, 300, 400, 800, 1000};
+            const float limits[] = {3000, 2000, 2000, 2000, 3000};
+            for (unsigned j = 0; j < 5; ++j) {
+                f.motion.motionProfile.targetSpeedMmps = 200;
+                seek(&f, &s, positions[j]);
+                near(f.motion.motionProfile.accelerationMmps2, limits[j], 0);
+                near(f.motion.motionProfile.decelerationMmps2, limits[j], 0);
+                near(fabsf(f.motion.targetSpeedCps) * mmPerCount(),
+                     200 + limits[j] * DT, 1e-4f);
+                assert(MotionSequencePlan_Evaluate(&s.run, positions[j], &sample));
+                /* Independent midpoint integration checks the full stopping
+                 * envelope, including crossing both kinds of limit. */
+                float numericBudget = 0;
+                for (float x = positions[j] + 0.5f; x < 1100; x += 1.0f) {
+                    MotionPathSample next;
+                    assert(MotionSequencePlan_Evaluate(&s.run, x, &next));
+                    numericBudget += next.decelerationMmps2;
+                }
+                near(powf(sample.brakingSpeedLimitCps * mmPerCount(), 2),
+                     2 * numericBudget, 1.0f);
+            }
+            /* Arc-to-straight execution uses the remaining stronger straight
+             * budget, instead of imposing arc deceleration across the run. */
+            assert(MotionSequencePlan_Evaluate(&s.run, 900, &sample));
+            near(sample.brakingSpeedLimitCps * mmPerCount(), sqrtf(2*3000*200), 1e-4f);
+            MotionController_Stop(&f.motion);
+            begin(&f, &s);
+            f.config.straightDecelerationMmps2 = 3000;
+            f.config.arcDecelerationMmps2 = 2000;
+            s.config.blendLengthMm = 200;
+            assert(MotionSequence_AddStraight(&s, direction * 500, 7800, false) == 0);
+            assert(MotionSequence_AddArc(&s, direction * 500, -500, 1000, false) == 0);
+            assert(MotionSequence_Execute(&s) == 0);
+            assert(MotionSequencePlan_Evaluate(&s.run, 350, &sample));
+            near(sample.speedLimitCps * mmPerCount(),
+                 sqrtf(powf(1000 * mmPerCount(), 2) + 2*3000*50), 1e-4f);
+            /* A final arc's yaw-priority approach consumes the arc budget,
+             * even though the continuous run started on a stronger straight. */
+            MotionController_Stop(&f.motion);
+            begin(&f, &s);
+            f.config.straightDecelerationMmps2 = 3000;
+            f.config.arcDecelerationMmps2 = 2000;
+            assert(MotionSequence_AddStraight(&s, direction * 500, 7800, false) == 0);
+            assert(MotionSequence_AddArc(&s, direction * 500, -500, 7800, false) == 0);
+            assert(MotionSequence_Execute(&s) == 0);
+            prepareSequence(&f, &s);
+            f.motion.motionProfile.targetSpeedMmps = 1000;
+            seek(&f, &s, 850);
+            float toEntry = f.motion.pathProfile.terminalEntryProgressMm -
+                fabsf(f.motion.travelledDistanceMm);
+            near(fabsf(f.motion.targetSpeedCps) * mmPerCount(),
+                 sqrtf(powf(800 * mmPerCount(), 2) + 2*2000*toEntry), 0.001f);
+            /* Opposite arc blend crosses zero but keeps the arc limits. */
+            MotionController_Stop(&f.motion);
+            begin(&f, &s);
+            f.config.straightAccelerationMmps2 = 3000;
+            f.config.arcAccelerationMmps2 = 2000;
+            assert(MotionSequence_AddArc(&s, direction * 300, 500, 2000, false) == 0);
+            assert(MotionSequence_AddArc(&s, direction * 300, -500, 2000, false) == 0);
+            assert(MotionSequence_Execute(&s) == 0);
+            assert(MotionSequencePlan_Evaluate(&s.run, 300, &sample));
+            near(sample.curvaturePerMm, 0, 1e-8f);
+            near(sample.accelerationMmps2, 2000, 0);
+        }
+    }
+    /* A changing path's supplied envelope replaces the constant-local-d
+     * envelope without losing the usual distance-completion semantics. */
+    MotionProfile profile;
+    assert(MotionProfile_Init(&profile, 2000, 2000, 0.5f));
+    assert(MotionProfile_Start(&profile, 1100, 2000));
+    profile.targetSpeedMmps = 1500;
+    float pathStopSpeed = sqrtf(2 * (2000*50 + 3000*250));
+    near(MotionProfile_UpdateWithBrakingLimit(&profile, 800, DT, pathStopSpeed),
+         pathStopSpeed, 1e-4f);
+    near(MotionProfile_UpdateWithBrakingLimit(&profile, 1100, DT, 0), 0, 0);
+    assert(!MotionProfile_IsActive(&profile));
+    /* All four planner limits are validated even for an empty plan. */
+    const float invalid[] = {0, -1, NAN, INFINITY};
+    for (unsigned field = 0; field < 4; ++field) {
+        for (unsigned v = 0; v < 4; ++v) {
+            MotionSequencePlan plan = {0};
+            float limits[] = {3000, 3000, 2000, 2000};
+            limits[field] = invalid[v];
+            assert(!MotionSequencePlan_Prepare(&plan, &motionSequenceConfig,
+                mmPerCount(), limits[0], limits[1], limits[2], limits[3], 60000, 120));
         }
     }
 }
@@ -289,7 +423,7 @@ static void testFastJunctionAndRateIsolation(void)
         bad.steeringCommandRatePerSec = invalidRates[i];
         assert(MotionSequence_Begin(&s, &f.motion, &bad) ==
                MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION);
-        assert(!MotionSequencePlan_Prepare(&s.plan, &bad, mmPerCount(), 1000, 60000, 120));
+        assert(!MotionSequencePlan_Prepare(&s.plan, &bad, mmPerCount(), 1500, 1000, 1500, 1000, 60000, 120));
         MotionPathProfile profile = {.signedDistanceMm=100, .maxSpeedCps=2000,
             .evaluate=MotionSequencePlan_Evaluate, .context=&s.run,
             .steeringCommandRatePerSec=invalidRates[i]};
@@ -458,7 +592,8 @@ static void testStopsReversalsAndCancel(void)
 static bool badSample(const void *context, float x, MotionPathSample *sample)
 {
     (void)context;
-    *sample = (MotionPathSample){0, 0, x > 1 && x < 99 ? NAN : 500, 1};
+    *sample = (MotionPathSample){.speedLimitCps=x > 1 && x < 99 ? NAN : 500,
+        .straightTuningWeight=1};
     return true;
 }
 
@@ -537,7 +672,7 @@ static void testRandomPlans(void)
                 kappa, 500 + randUnit() * 2000, randUnit() < 0.2f};
         }
         assert(MotionSequencePlan_Prepare(&p, &motionSequenceConfig, mmPerCount(),
-                                          1000, 60000, 120));
+                                          1500, 1000, 1500, 1000, 60000, 120));
         float total = 0, yaw = 0;
         for (unsigned first = 0; first < p.count;) {
             unsigned last = MotionSequencePlan_RunEnd(&p, first);
@@ -566,12 +701,12 @@ static void testRandomPlans(void)
     }
     MotionSequencePlan p = {0};
     MotionSequenceConfig bad = {.blendLengthMm=NAN, .junctionSpeedCps=500};
-    assert(!MotionSequencePlan_Prepare(&p, &bad, 1, 1, 1, 1));
+    assert(!MotionSequencePlan_Prepare(&p, &bad, 1, 1, 1, 1, 1, 1, 1));
     p.count = MOTION_SEQUENCE_CAPACITY + 1;
-    assert(!MotionSequencePlan_Prepare(&p, &motionSequenceConfig, 1, 1, 1, 1));
+    assert(!MotionSequencePlan_Prepare(&p, &motionSequenceConfig, 1, 1, 1, 1, 1, 1, 1));
     p.count = 1;
     p.segments[0] = (MotionSequenceSegment){NAN, 0, 100, false};
-    assert(!MotionSequencePlan_Prepare(&p, &motionSequenceConfig, 1, 1, 1, 1));
+    assert(!MotionSequencePlan_Prepare(&p, &motionSequenceConfig, 1, 1, 1, 1, 1, 1, 1));
 }
 
 
@@ -676,6 +811,12 @@ static void testRobotHarness(void)
             assert(motionSequenceFusionTestPassed && motionSequenceFusionTestComparisonValid);
             assert(motionSequenceFusionTestResultCount == 2 && hardwareStartCount == 2);
             assert(a->passed && b->passed);
+            near(hardwareFixture->motionController.config->straightAccelerationMmps2, 3000, 0);
+            near(hardwareFixture->motionController.config->straightDecelerationMmps2, 3000, 0);
+            near(hardwareFixture->motionController.config->arcAccelerationMmps2, 2000, 0);
+            near(hardwareFixture->motionController.config->arcDecelerationMmps2, 2000, 0);
+            near(hardwareFixture->leftWheelController.pid.kp, 0.03f, 0);
+            near(hardwareFixture->rightWheelController.pid.kp, 0.03f, 0);
             assert(!a->stopAfterEachSegment && b->stopAfterEachSegment);
             assert(a->completedRuns == 1 && b->completedRuns == 12);
             assert(motionSequenceFusionTestSequence.plan.count == 12);
@@ -705,6 +846,9 @@ static void testRobotHarness(void)
                 MotionSequenceFusionTestSample *sample = &motionSequenceFusionTestLog[i];
                 assert(sample->comparisonRunIndex < 2);
                 ++taggedSamples[sample->comparisonRunIndex];
+                assert(sample->accelerationLimitMmps2 == 3000 ||
+                       sample->accelerationLimitMmps2 == 2000);
+                assert(sample->decelerationLimitMmps2 == sample->accelerationLimitMmps2);
                 if (i > 0 && sample->comparisonRunIndex ==
                     motionSequenceFusionTestLog[i - 1].comparisonRunIndex)
                     assert(sample->timeMs >= motionSequenceFusionTestLog[i - 1].timeMs);
@@ -745,6 +889,7 @@ int main(void)
     assert(MotionController_MoveStraight(&f.motion, 100, 500) == 0);
     prepare(&f, MOTIONCONTROLLER_STRAIGHT_PREPARING, MOTIONCONTROLLER_STRAIGHT);
     testBlendGeometry();
+    testSeparateProfileLimits();
     testContinuityAndCompletion();
     testFeedforwardAndScheduling();
     testEqualCurvatureAndSignChange();
@@ -755,7 +900,7 @@ int main(void)
     testRandomPlans();
     testRobotHarness();
     puts("PASS: fused geometry/heading area, lookahead, forward/reverse continuity, "
-         "FF bridge, gain scheduling, slew, stops/reversals, cancellation, faults, 150 random plans, robot harness, final-arc yaw priority");
+         "FF bridge, separate limits/stopping envelopes, gain scheduling, slew, stops/reversals, cancellation, faults, 150 random plans, robot harness, final-arc yaw priority");
     return 0;
 }
 '''

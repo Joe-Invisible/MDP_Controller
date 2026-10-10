@@ -18,7 +18,9 @@ interpolation and physical transition tracking are experimental.
 `TestMain.c` selects the new fusion harness. See
 [the fusion experiment guide](Tests/README_fused_motion.md) for API usage,
 software-only tests, endpoint policy, logging and the stopped comparison.
-Hardware validation and a full CubeIDE target build are pending.
+The fused A/B harness uses straight acceleration/deceleration of 3000 mm/s²,
+arc acceleration/deceleration of 2000 mm/s², and wheel Kp = 0.03. Host checks
+and an ARM Debug build/link pass; physical sequence validation remains pending.
 
 ## Robot Geometry
 
@@ -111,15 +113,27 @@ For straight motion the desired difference is zero. For an arc, the desired diff
 
 The motion profile provides acceleration, cruise, and deceleration references while respecting the requested travel distance.
 
-Current production-candidate values are:
+Straight and arc motions have independent limits in `MotionControllerConfig`:
 
-```text
-acceleration = 1500 mm/s^2
-deceleration = 1000 mm/s^2
-completion tolerance = 0.5 mm
-```
+| Motion | Acceleration (mm/s²) | Deceleration (mm/s²) |
+| --- | ---: | ---: |
+| Straight | 1500 | 1000 |
+| Arc | 1500 | 1000 |
 
-These values were updated during the terminal-arc validation campaign and are configurable through `MotionControllerConfig`.
+The fields are `straightAccelerationMmps2`, `straightDecelerationMmps2`,
+`arcAccelerationMmps2`, and `arcDecelerationMmps2`. The shared defaults above
+preserve this branch's inherited tuning; the fused A/B harness uses its own
+3000/3000 straight and 2000/2000 arc configuration. They limit
+rear-axle-centre speed in either travel direction; outer-wheel demands on arcs
+are higher. The controller selects the pair before each primitive starts,
+including its steering preparation. Arc terminal approach uses the selected
+arc deceleration too.
+
+The shared completion tolerance remains 0.5 mm. Full-brake behavior is separate
+from these profile limits. Fused execution uses straight limits on constant
+straight sections and arc limits through turns and curvature-changing blends.
+Junction approach, final stopping and terminal-arc approach integrate the
+appropriate deceleration over the remaining path.
 
 ### Yaw-Priority Arc Completion
 
