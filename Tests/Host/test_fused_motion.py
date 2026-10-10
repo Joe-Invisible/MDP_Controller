@@ -752,11 +752,11 @@ bool RobotTestFixture_InitMotionController(RobotTestFixture *rf,
 static void testTask2RouteGeometry(void)
 {
     MotionSequencePlan plan = motionSequenceFusionTestSequence.plan;
-    assert(plan.count == 17);
+    assert(plan.count == 10);
     assert(MotionSequencePlan_Prepare(&plan, &motionSequenceFusionTestSequence.config,
         mmPerCount(), 3000, 3000, 2000, 2000, 0, 480));
     bool stopped = plan.segments[0].stopAfter;
-    double x = -300, y = 0, yaw = 0;
+    double x = -250, y = 0, yaw = 0;
     bool passes[2][2] = {{false, false}, {false, false}};
     const char *output = getenv("TASK2_ROUTE_CSV");
     FILE *trace = output ? fopen(output, "a") : NULL;
@@ -786,8 +786,11 @@ static void testTask2RouteGeometry(void)
                     assert(fabs(cos(yaw)) > 0.9);
                     assert(!passes[obstacle][returning]);
                     passes[obstacle][returning] = true;
-                    /* First left/second right outbound; opposite sides back. */
-                    assert(y * ((obstacle == returning) ? 1 : -1) > halfHeight + 201);
+                    /* Outward S: first left/second right. The one straight
+                     * diagonal return passes above BOTH obstacles. */
+                    int expectedSide = returning || obstacle == 0 ? 1 : -1;
+                    assert(y * expectedSide > halfHeight + 201);
+                    if (!returning && obstacle == 0) assert(y < 300);
                 }
             }
             /* Check corners and the body's intersections with x=0: an
@@ -799,14 +802,14 @@ static void testTask2RouteGeometry(void)
                 cornerX[j] = x + front[j]*150*cos(yaw) - side[j]*100*sin(yaw);
                 cornerY[j] = y + front[j]*150*sin(yaw) + side[j]*100*cos(yaw);
                 if (cornerX[j] < 0)
-                    assert(cornerX[j] > -600 && fabs(cornerY[j]) < 250);
+                    assert(cornerX[j] > -500 && fabs(cornerY[j]) < 300);
             }
             for (unsigned j = 0; j < 4; ++j) {
                 unsigned next = (j + 1) % 4;
                 if ((cornerX[j] < 0) != (cornerX[next] < 0)) {
                     double fraction = -cornerX[j] / (cornerX[next] - cornerX[j]);
                     double mouthY = cornerY[j] + fraction*(cornerY[next] - cornerY[j]);
-                    assert(fabs(mouthY) < 250);
+                    assert(fabs(mouthY) < 300);
                 }
             }
             if (trace) fprintf(trace, "%u,%.6f,%.6f,%.6f\n", stopped, x, y, yaw);
@@ -819,9 +822,19 @@ static void testTask2RouteGeometry(void)
     }
     if (trace) fclose(trace);
     for (unsigned i = 0; i < 2; ++i) assert(passes[i][0] && passes[i][1]);
-    near((float)yaw, PI, 1e-5f);
-    assert(x > -450 && x < -150 && fabs(y) < 150); /* Entire footprint parked. */
-    if (stopped) { near((float)x, -300, 0.01f); near((float)y, 0, 0.01f); }
+    float expectedYaw = PI + atan2f(50, 2850) + asinf(600 / hypotf(2850, 50));
+    near((float)yaw, expectedYaw, 1e-5f);
+    for (unsigned j = 0; j < 4; ++j) {
+        int front = j < 2 ? 1 : -1;
+        int side = j % 2 ? 1 : -1;
+        double cx = x + front*150*cos(yaw) - side*100*sin(yaw);
+        double cy = y + front*150*sin(yaw) + side*100*cos(yaw);
+        assert(cx > -500 && cx < 0 && fabs(cy) < 300);
+    }
+    if (stopped) { near((float)x, -250, 0.01f); near((float)y, 0, 0.01f); }
+    /* The final segment is a SINGLE straight tangent return into the park. */
+    assert(plan.segments[9].curvaturePerMm == 0);
+    assert(plan.segments[9].signedDistanceMm > 2700);
     printf("Task 2 %s nominal endpoint: x=%.2f y=%.2f mm, heading=%.2f deg\n",
            stopped ? "stopped" : "fused", x, y, yaw * 180 / PI);
 }
@@ -852,7 +865,7 @@ void HAL_Delay(uint32_t ms)
 void SW1_WaitForPressAndRelease(void)
 {
     if (hardwareScenario == 0) {
-        assert(strstr(oledRows[1], "Task2 eight: 9.31m"));
+        assert(strstr(oledRows[1], "Task2 S: 8.18m"));
         assert(strstr(oledRows[4], "Park +x"));
         testTask2RouteGeometry();
     }
@@ -905,17 +918,17 @@ static void testRobotHarness(void)
             near(hardwareFixture->leftWheelController.pid.kp, 0.03f, 0);
             near(hardwareFixture->rightWheelController.pid.kp, 0.03f, 0);
             assert(!a->stopAfterEachSegment && b->stopAfterEachSegment);
-            assert(a->completedRuns == 1 && b->completedRuns == 17);
-            assert(motionSequenceFusionTestSequence.plan.count == 17);
-            for (unsigned i = 0; i < 17; ++i) {
+            assert(a->completedRuns == 1 && b->completedRuns == 10);
+            assert(motionSequenceFusionTestSequence.plan.count == 10);
+            for (unsigned i = 0; i < 10; ++i) {
                 const MotionSequenceSegment *seg = &motionSequenceFusionTestSequence.plan.segments[i];
                 near(seg->speedCps, 5000, 0);
                 assert(seg->stopAfter && seg->signedDistanceMm > 0);
             }
-            near(a->nominalTravelMm, 4700 + (4400.0f / 3.0f) * PI, 0.02f);
+            near(a->nominalTravelMm, 8176.1359f, 0.02f);
             near(a->nominalTravelMm, b->nominalTravelMm, 0);
-            near(a->nominalYawRad, PI, 1e-6f);
-            near(b->nominalYawRad, PI, 1e-6f);
+            near(a->nominalYawRad, PI + atan2f(50, 2850) + asinf(600 / hypotf(2850, 50)), 1e-6f);
+            near(b->nominalYawRad, a->nominalYawRad, 1e-6f);
             assert(a->elapsedMs < b->elapsedMs);
             assert(motionSequenceFusionTestSavedTimeMs ==
                    (int32_t)b->elapsedMs - (int32_t)a->elapsedMs);
@@ -941,7 +954,7 @@ static void testRobotHarness(void)
             assert(taggedSamples[0] > 1 && taggedSamples[1] > 1);
             assert(fakeTick >= a->elapsedMs + b->elapsedMs + 2800U);
             near(final->sequenceTravelMm, b->measuredTravelMm, 0);
-            printf("Ideal Task 2 figure-eight A/B harness: fused %u ms, stopped %u ms, "
+            printf("Ideal Task 2 S/straight-return A/B harness: fused %u ms, stopped %u ms, "
                    "saved %d ms (%.1f%%); software timing only\n",
                    a->elapsedMs, b->elapsedMs, motionSequenceFusionTestSavedTimeMs,
                    motionSequenceFusionTestSavedPercent);
