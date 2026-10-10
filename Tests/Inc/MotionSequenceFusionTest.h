@@ -9,11 +9,20 @@ typedef enum
 {
     MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING = 0,
     MOTION_SEQUENCE_FUSION_TEST_REFERENCE_FILTER,
+    MOTION_SEQUENCE_FUSION_TEST_TASK1_GAINS,
 } MotionSequenceFusionTestExperiment;
 
-/* Set before MotionSequenceFusionTestRun(). Default: short filter A/B. */
+/* Set before MotionSequenceFusionTestRun(). Default: reduced/Task 1 gains. */
 extern MotionSequenceFusionTestExperiment motionSequenceFusionTestExperiment;
 extern uint32_t motionSequenceFusionTestLogPeriodMs;
+
+typedef struct
+{
+    float yawRateKp;
+    float yawRateKi;
+    float yawRateKd;
+    float headingKpPerSec;
+} MotionSequenceFusionTestTuning;
 
 typedef struct
 {
@@ -30,6 +39,9 @@ typedef struct
     float measuredYawRad;
     float nominalTravelMm;
     float nominalYawRad;
+    /* Actual per-run configuration; final controller config belongs to B. */
+    MotionSequenceFusionTestTuning straightTuning;
+    MotionSequenceFusionTestTuning arcTuning;
 } MotionSequenceFusionTestResult;
 
 typedef struct

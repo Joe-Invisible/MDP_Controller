@@ -955,8 +955,16 @@ void HAL_Delay(uint32_t ms)
 void SW1_WaitForPressAndRelease(void)
 {
     if (hardwareScenario == 0 &&
-        motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_REFERENCE_FILTER) {
-        assert(strstr(oledRows[0], hardwareStartCount == 0 ? "A existing" : "B matched"));
+        motionSequenceFusionTestExperiment != MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING) {
+        bool gains = motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK1_GAINS;
+        assert(strstr(oledRows[0], gains ? (hardwareStartCount == 0 ? "A reduced" : "B Task1")
+                                        : (hardwareStartCount == 0 ? "A existing" : "B matched")));
+        const MotionControllerConfig *config = hardwareFixture->motionController.config;
+        bool restored = gains && hardwareStartCount == 1;
+        assert(config->useMatchedYawRateReferenceFilter == (gains || hardwareStartCount == 1));
+        near(hardwareFixture->motionController.arcYawRatePID.ki, restored ? 50 : 0, 0);
+        assert(strstr(oledRows[6], restored ? "S P100 I50 D0 H0.5" : "S P100 I0 D0 H0"));
+        assert(strstr(oledRows[7], restored ? "C P100 I50 D0 H0.5" : "C P100 I0 D0 H0"));
         assert(strstr(oledRows[1], "R525 180: 2.55m"));
         assert(strstr(oledRows[4], "Reset +x"));
     } else if (hardwareScenario == 0) {
@@ -1076,9 +1084,10 @@ static void testRobotHarness(void)
     }
 }
 
-static void testFilterRobotHarness(void)
+static void testAccuracyRobotHarness(MotionSequenceFusionTestExperiment experiment)
 {
-    motionSequenceFusionTestExperiment = MOTION_SEQUENCE_FUSION_TEST_REFERENCE_FILTER;
+    motionSequenceFusionTestExperiment = experiment;
+    bool gains = experiment == MOTION_SEQUENCE_FUSION_TEST_TASK1_GAINS;
     for (unsigned scenario = 0; scenario < 6; ++scenario) {
         hardwareScenario = scenario;
         hardwareStartCount = 0;
@@ -1093,12 +1102,23 @@ static void testFilterRobotHarness(void)
         near(motionSequenceFusionTestSavedPercent, 0, 0);
         MotionSequenceFusionTestResult *a = &motionSequenceFusionTestResults[0];
         MotionSequenceFusionTestResult *b = &motionSequenceFusionTestResults[1];
-        assert(!a->useMatchedYawRateReferenceFilter);
+        assert(a->useMatchedYawRateReferenceFilter == gains);
+        near(a->straightTuning.yawRateKp, 100, 0); near(a->arcTuning.yawRateKp, 100, 0);
+        near(a->straightTuning.yawRateKi, 0, 0); near(a->arcTuning.yawRateKi, 0, 0);
+        near(a->straightTuning.headingKpPerSec, 0, 0); near(a->arcTuning.headingKpPerSec, 0, 0);
+        bool restored = gains && hardwareStartCount == 2;
         const MotionControllerConfig *config = hardwareFixture->motionController.config;
         near(config->straightYawRateKp, 100, 0); near(config->arcYawRateKp, 100, 0);
-        near(config->straightYawRateKi, 0, 0); near(config->arcYawRateKi, 0, 0);
+        near(config->straightYawRateKi, restored ? 50 : 0, 0); near(config->arcYawRateKi, restored ? 50 : 0, 0);
         near(config->straightYawRateKd, 0, 0); near(config->arcYawRateKd, 0, 0);
-        near(config->straightHeadingKpPerSec, 0, 0); near(config->arcHeadingKpPerSec, 0, 0);
+        near(config->straightHeadingKpPerSec, restored ? 0.5f : 0, 0);
+        near(config->arcHeadingKpPerSec, restored ? 0.5f : 0, 0);
+        if (hardwareStartCount == 2) {
+            near(b->straightTuning.yawRateKi, restored ? 50 : 0, 0);
+            near(b->arcTuning.yawRateKi, restored ? 50 : 0, 0);
+            near(b->straightTuning.headingKpPerSec, restored ? 0.5f : 0, 0);
+            near(b->arcTuning.headingKpPerSec, restored ? 0.5f : 0, 0);
+        }
         near(config->arcYawRateFilterTauSec, 0.1f, 0);
         if (scenario == 0) {
             assert(motionSequenceFusionTestComparisonValid && motionSequenceFusionTestPassed);
@@ -1116,8 +1136,9 @@ static void testFilterRobotHarness(void)
                 assert(!motionSequenceFusionTestSequence.plan.segments[i].stopAfter);
                 near(motionSequenceFusionTestSequence.plan.segments[i].speedCps, 5000, 0);
             }
-            assert(strstr(oledRows[0], "DONE") && strstr(oledRows[1], "A existing") &&
-                   strstr(oledRows[2], "B matched"));
+            assert(strstr(oledRows[0], "DONE") &&
+                   strstr(oledRows[1], gains ? "A reduced" : "A existing") &&
+                   strstr(oledRows[2], gains ? "B Task1" : "B matched"));
             assert(strstr(oledRows[3], "A yaw") && strstr(oledRows[4], "B yaw"));
             unsigned taggedSamples[2] = {0};
             for (unsigned i = 0; i < motionSequenceFusionTestLogCount; ++i) {
@@ -1129,11 +1150,18 @@ static void testFilterRobotHarness(void)
                     assert(gap <= 30); /* Includes final partial interval. */
                 }
                 assert(isfinite(sample->filteredGeometricYawRateRadPerSec));
+                if (gains && sample->mode == MOTIONCONTROLLER_PROFILE) {
+                    float kh = sample->comparisonRunIndex == 1 ? 0.5f : 0;
+                    float bound = fabsf(sample->targetSpeedCps) * mmPerCount() * config->maxPathCorrectionCurvaturePerMm;
+                    float headingCorrection = fmaxf(-bound, fminf(bound, kh * sample->headingErrorRad));
+                    near(sample->targetYawRateRadPerSec,
+                         sample->filteredGeometricYawRateRadPerSec + headingCorrection, 0.000001f);
+                }
             }
             assert(taggedSamples[0] > 100 && taggedSamples[0] <= 325);
             assert(taggedSamples[1] > 100 && taggedSamples[1] <= 325);
-            printf("Ideal filter A/B harness: A %u ms, B %u ms, %u samples; "
-                   "not a physical accuracy result\n", a->elapsedMs, b->elapsedMs,
+            printf("Ideal %s A/B harness: A %u ms, B %u ms, %u samples; "
+                   "not a physical accuracy result\n", gains ? "Task 1 gains" : "filter", a->elapsedMs, b->elapsedMs,
                    motionSequenceFusionTestLogCount);
         } else if (scenario == 5) {
             /* Completed slow A cannot consume B's reserved log budget. */
@@ -1182,9 +1210,10 @@ int main(void)
     testStopsReversalsAndCancel();
     testValidationAndFaults();
     testRandomPlans();
-    assert(motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_REFERENCE_FILTER);
+    assert(motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK1_GAINS);
     testRobotHarness();
-    testFilterRobotHarness();
+    testAccuracyRobotHarness(MOTION_SEQUENCE_FUSION_TEST_REFERENCE_FILTER);
+    testAccuracyRobotHarness(MOTION_SEQUENCE_FUSION_TEST_TASK1_GAINS);
     puts("PASS: fused geometry/heading area, lookahead, forward/reverse continuity, "
          "Task 2 obstacle/park geometry, FF bridge, separate limits/stopping envelopes, gain scheduling, slew, stops/reversals, cancellation, faults, 150 random plans, robot harness, final-arc yaw priority");
     return 0;

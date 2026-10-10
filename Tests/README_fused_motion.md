@@ -6,12 +6,26 @@ Base: `90fa9d3b4d37080a7bf035abe1c3439fd2361ffb` on
 `feature/motion-profile-limits` commit `df2fc280541868bff87ff8813cf36dc48462deb0`.
 The separate production UART and IMU-hardening changes are not included.
 
-## Current default: yaw-rate reference filtering A/B
+## Current default: settled Task 1 tuning A/B
 
 The selected `MotionSequenceFusionTestRun()` now runs a short accuracy experiment.
-A uses the existing `curvature * LPF(measured speed)` yaw-rate reference. B uses
-`LPF(curvature * measured speed)` with the same 100 ms time constant, update dt
-and zero initial state as the gyro-rate filter. Both fuse exactly the same path:
+Both A and B use the matched geometric reference
+`LPF(curvature * measured speed)`, with the same 100 ms time constant, update dt
+and zero initial state as the gyro-rate filter. A retains the reduced tuning;
+B restores the settled straight/arc gains from `motionControllerConfig`:
+
+| Run | Yaw-rate P / I / D | Heading gain (s⁻¹) |
+| --- | --- | ---: |
+| A reduced | 100 / 0 / 0 | 0 |
+| B Task 1 | 100 / 50 / 0 | 0.5 |
+
+The table reflects the current shared configuration. B copies its eight gain
+fields directly, preserving any straight/arc differences. The ready screen
+reads the actual controller configuration for both regimes; each result stores
+its own `straightTuning` and `arcTuning` snapshot. Config and PID initialization
+are validated before each ready screen without reinitializing the hardware/IMU.
+
+Both fuse exactly the same path:
 
 | Segment | Distance | Radius | Requested speed |
 | --- | ---: | ---: | ---: |
@@ -23,13 +37,12 @@ Total commanded travel is **2549.34 mm**, displayed before each run. This is a
 local turn/transition test. The longer obstacle course below remains available
 through the experiment selector.
 
-Both A and B set straight/arc yaw-rate **Kp=100, Ki=Kd=0**, outer heading gain
-**0 s^-1**, filter tau **0.10 s**, and wheel **Kp=0.03, Ki=Kd=0**. Straight A/D is
+Both A and B use filter tau **0.10 s** and wheel **Kp=0.03, Ki=Kd=0**. Straight A/D is
 3000/3000 mm/s²; arc and blend A/D is 2000/2000 mm/s². Feedforward calibration,
 blend length (200 mm), junction ceiling (8000 CPS), steering slew (480 raw/s),
 wheel synchronisation and feedback authority are identical between A and B.
-The heading correction remains outside the new geometric-reference filter;
-it is disabled in this experiment. Nominal raw steering feedforward always
+The heading correction remains outside the geometric-reference filter;
+B restores it together with the yaw-rate integral gain. Nominal raw steering feedforward always
 uses current curvature. Shared production defaults select the existing filter.
 
 Mark the rear-axle midpoint at `(0,0)`, heading `+x`. The unblended centreline
@@ -41,26 +54,26 @@ The blends preserve total nominal distance/yaw but slightly change XY.
 
 1. Build/flash this branch and set a breakpoint at
    `MotionSequenceFusionTestFinished`.
-2. Place the robot at the marked start. OLED shows `A existing`, estimated
-   travel and fixed gains. Press/release SW1 to run A.
+2. Place the robot at the marked start. OLED shows `A reduced`, estimated
+   travel and actual straight/arc gains. Press/release SW1 to run A.
 3. After A stops, return the robot to the **same marked pose**. OLED shows
-   `B matched`; press/release SW1 to run B. SW1 during either run cancels it.
+   `B Task1`; press/release SW1 to run B. SW1 during either run cancels it.
 4. Export **once after both runs**, using a fresh filename:
 
 ```text
 source exp/gdb_scripts/export_fused_motion.gdb
 set $mctrl_fusion_battery_v = 11.66
-mctrl-fusion-export fusion_filter_run01.txt
+mctrl-fusion-export fusion_task1_gains_run01.txt
 ```
 
 Enter the actual battery voltage. The common log samples both trials every
 20 ms (control period 10 ms). Each has a reserved 325-sample budget, about
 6.5 seconds including preparation/braking. Overflow sets the per-run/global
-truncation flags, retains the final sample and invalidates the filter comparison.
+truncation flags, retains the final sample and invalidates the accuracy comparison.
 A failed/cancelled run does not launch B. Button waits/resetting are excluded
 from elapsed times. One exporter captures the selector, sampling period,
-per-run filter choice, both results and all tagged samples. The final config
-is B's; per-run flags identify A correctly. The original time-savings fields
+per-run filter choice and gain snapshots, both results and all tagged samples.
+The final controller config is B's; A's result retains its reduced tuning. The original time-savings fields
 remain zero for this accuracy experiment.
 
 Inspect raw and filtered gyro rates alongside
@@ -68,15 +81,25 @@ Inspect raw and filtered gyro rates alongside
 `targetYawRateRadPerSec`. Compare steering-correction saturation and oscillation
 at both blends, sustained yaw-rate bias on the constant arc, and heading error
 entering/leaving the final straight. Record physical endpoint displacement
-separately. With heading gain zero, this test isolates the yaw-rate feedback
-change; it does not establish final parking accuracy or remove steady bias.
+separately. This compares the complete settled tuning against the reduced
+baseline. It does not isolate the contribution of integral versus heading
+feedback, or establish full Task 2 parking accuracy.
 
 The host regression supplies perfect coincident wheel/gyro samples: the existing
 formulation reaches the 30-unit correction clamp during changing curvature,
 whereas the matched formulation produces near-zero correction. It also checks
 reverse motion, zero filter tau, constant-curvature speed ramps, reference
-history/reset, and both on-target harnesses including cancellation/timeouts.
-These are software checks, not a servo/vehicle simulation or physical results.
+history/reset, and all three experiment modes including cancellation/timeouts.
+The tuning comparison additionally checks that both filters are matched, that
+B restores the actual PI/heading configuration before preparation, and that
+its heading correction contributes to the logged yaw-rate request. These are
+software checks, not a servo/vehicle simulation or physical results.
+
+The previous filter-only A/B remains available as
+`MOTION_SEQUENCE_FUSION_TEST_REFERENCE_FILTER`: A existing filtering, B matched,
+both with 100/0/0 yaw-rate gains and heading gain zero. It uses the same short
+path, 20 ms logging and single export. The current default selector is
+`MOTION_SEQUENCE_FUSION_TEST_TASK1_GAINS`.
 
 To restore the Task 2 fused-versus-stopped timing test, change the initializer
 of `motionSequenceFusionTestExperiment` in `MotionSequenceFusionTest.c` to

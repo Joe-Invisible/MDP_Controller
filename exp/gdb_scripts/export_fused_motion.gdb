@@ -21,10 +21,14 @@ define mctrl-fusion-export
     echo === Selected experiment and sampling ===\n
     p motionSequenceFusionTestExperiment
     p motionSequenceFusionTestLogPeriodMs
-    if motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_REFERENCE_FILTER
-        echo === A/B reference filter comparison (0=existing, 1=matched; both fused) ===\n
+    if motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK1_GAINS
+        echo === A/B tuning comparison (0=reduced, 1=Task1; both matched and fused) ===\n
     else
-        echo === A/B timing comparison (0=fused, 1=stopped) ===\n
+        if motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_REFERENCE_FILTER
+            echo === A/B reference filter comparison (0=existing, 1=matched; both fused) ===\n
+        else
+            echo === A/B timing comparison (0=fused, 1=stopped) ===\n
+        end
     end
     p motionSequenceFusionTestResultCount
     p motionSequenceFusionTestResults

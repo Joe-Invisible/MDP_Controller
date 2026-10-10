@@ -14,8 +14,8 @@ ROOT = Path(__file__).resolve().parents[2]
 SOURCE = r'''
 #include "MotionSequenceFusionTest.h"
 MotionSequenceFusionTestExperiment motionSequenceFusionTestExperiment =
-    FILTER_EXPERIMENT ? MOTION_SEQUENCE_FUSION_TEST_REFERENCE_FILTER : MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING;
-uint32_t motionSequenceFusionTestLogPeriodMs = FILTER_EXPERIMENT ? 20 : 100;
+    EXPERIMENT_MODE;
+uint32_t motionSequenceFusionTestLogPeriodMs = EXPERIMENT_MODE ? 20 : 100;
 bool motionSequenceFusionTestPassed = true;
 MotionControllerStatus motionSequenceFusionTestStatus = MOTIONCONTROLLER_STATUS_PROFILE_ERROR;
 bool motionSequenceFusionTestTimedOut = true;
@@ -28,8 +28,11 @@ bool motionSequenceFusionTestComparisonValid = true;
 int32_t motionSequenceFusionTestSavedTimeMs = 1000;
 float motionSequenceFusionTestSavedPercent = 25;
 MotionSequenceFusionTestResult motionSequenceFusionTestResults[2] = {
-    {.stopAfterEachSegment = false, .passed = true, .elapsedMs = 3000, .completedRuns = 1},
-    {.stopAfterEachSegment = !FILTER_EXPERIMENT, .useMatchedYawRateReferenceFilter = FILTER_EXPERIMENT, .passed = true, .elapsedMs = 4000, .completedRuns = FILTER_EXPERIMENT ? 1 : 10}
+    {.stopAfterEachSegment = false, .useMatchedYawRateReferenceFilter = EXPERIMENT_MODE == 2, .passed = true, .elapsedMs = 3000, .completedRuns = 1,
+     .straightTuning = {100,0,0,0}, .arcTuning = {100,0,0,0}},
+    {.stopAfterEachSegment = !EXPERIMENT_MODE, .useMatchedYawRateReferenceFilter = EXPERIMENT_MODE != 0, .passed = true, .elapsedMs = 4000, .completedRuns = EXPERIMENT_MODE ? 1 : 10,
+     .straightTuning = {100, EXPERIMENT_MODE == 2 ? 50 : 0, 0, EXPERIMENT_MODE == 2 ? 0.5f : 0},
+     .arcTuning = {100, EXPERIMENT_MODE == 2 ? 50 : 0, 0, EXPERIMENT_MODE == 2 ? 0.5f : 0}}
 };
 MotionSequenceFusionTestSample motionSequenceFusionTestLog[2] = {
     {.timeMs = 20, .comparisonRunIndex = 0, .steeringCommand = 12, .sequenceTravelMm = 123, .accelerationLimitMmps2=3000, .decelerationLimitMmps2=3000},
@@ -61,12 +64,12 @@ def main():
         work = Path(directory)
         (work / "stm32f4xx_hal.h").write_text(HAL_STUB)
         (work / "fixture.c").write_text(SOURCE)
-        for filter_experiment, count in ((mode, count) for mode in (0, 1) for count in (0, 2, 3)):
+        for experiment_mode, count in ((mode, count) for mode in (0, 1, 2) for count in (0, 2, 3)):
             elf = work / "fixture"
-            output = work / f"export-{filter_experiment}-{count}.txt"
+            output = work / f"export-{experiment_mode}-{count}.txt"
             command = shlex.split(os.environ.get("CC", "gcc")) + [
                 "-std=c11", "-g", "-O0", "-fno-pie", "-no-pie",
-                f"-DSAMPLE_COUNT={count}", f"-DFILTER_EXPERIMENT={filter_experiment}", f"-I{work}",
+                f"-DSAMPLE_COUNT={count}", f"-DEXPERIMENT_MODE={experiment_mode}", f"-I{work}",
                 f"-I{ROOT / 'Controllers/Inc'}", f"-I{ROOT / 'PeripheralDrivers/Inc'}",
                 f"-I{ROOT / 'Tests/Inc'}", str(work / "fixture.c"),
                 str(ROOT / "Controllers/Src/MotionControllerConfig.c"),
@@ -92,7 +95,13 @@ def main():
             assert log.count("kp = 0.0299999993") == 2
             assert "elapsedMs = 3000" in log and "elapsedMs = 4000" in log
             assert "completedRuns = 1" in log
-            if filter_experiment:
+            if experiment_mode == 2:
+                assert "A/B tuning comparison" in log
+                assert "MOTION_SEQUENCE_FUSION_TEST_TASK1_GAINS" in log
+                assert "straightTuning = {yawRateKp = 100, yawRateKi = 50, yawRateKd = 0, headingKpPerSec = 0.5}" in log
+                assert "arcTuning = {yawRateKp = 100, yawRateKi = 50, yawRateKd = 0, headingKpPerSec = 0.5}" in log
+                assert "completedRuns = 10" not in log
+            elif experiment_mode == 1:
                 assert "A/B reference filter comparison" in log
                 assert "MOTION_SEQUENCE_FUSION_TEST_REFERENCE_FILTER" in log
                 assert "useMatchedYawRateReferenceFilter = true" in log
