@@ -97,15 +97,25 @@ For straight motion the desired difference is zero. For an arc, the desired diff
 
 The motion profile provides acceleration, cruise, and deceleration references while respecting the requested travel distance.
 
-Current production-candidate values are:
+Straight and arc motions have independent limits in `MotionControllerConfig`:
 
-```text
-acceleration = 1500 mm/s^2
-deceleration = 1000 mm/s^2
-completion tolerance = 0.5 mm
-```
+| Motion | Acceleration (mm/s²) | Deceleration (mm/s²) |
+| --- | ---: | ---: |
+| Straight | 2500 | 1000 |
+| Arc | 2500 | 1000 |
 
-These values were updated during the terminal-arc validation campaign and are configurable through `MotionControllerConfig`.
+The fields are `straightAccelerationMmps2`, `straightDecelerationMmps2`,
+`arcAccelerationMmps2`, and `arcDecelerationMmps2`. Both pairs initially
+preserve the production values pending wheel-performance tuning. They limit
+rear-axle-centre speed in either travel direction; outer-wheel demands on arcs
+are higher. The controller selects the pair before each primitive starts,
+including its steering preparation. Arc terminal approach uses the selected
+arc deceleration too.
+
+The shared completion tolerance remains 0.5 mm; the command application retains
+its straight and ultrasonic tolerance overrides. Full-brake behavior is separate
+from these profile limits. Fused-transition and junction-speed planning must
+consume the separate limits when this change is integrated into the fusion branch.
 
 ### Yaw-Priority Arc Completion
 

@@ -19,7 +19,7 @@ typedef struct { uint32_t unused; } TIM_HandleTypeDef;
 typedef struct { uint32_t unused; } I2C_HandleTypeDef;
 #endif
 """
-HARNESS = r'''
+FIXTURE_HARNESS = r'''
 #include "MotionController.h"
 #include "SteeringControllerConfig.h"
 #include <assert.h>
@@ -122,6 +122,8 @@ static void prepare(Fixture *f, MotionControllerMode preparing,
     near(f->motion.yawDeg, 0.0f, 0.0f);
 }
 
+'''
+HARNESS = FIXTURE_HARNESS + r'''
 static void testStraightSignsAndGeometry(void)
 {
     for (int direction = -1; direction <= 1; direction += 2) {
@@ -344,14 +346,14 @@ int main(void)
 '''
 
 
-def main():
+def run_harness(harness):
     sources = ["MotionController", "MotionControllerConfig", "SteeringController",
                "SteeringControllerConfig", "PIDController", "MotionProfile",
                "RobotKinematics"]
     with tempfile.TemporaryDirectory(prefix="mdp-motion-test-") as directory:
         work = Path(directory)
         (work / "stm32f4xx_hal.h").write_text(HAL_STUB)
-        (work / "test.c").write_text(HARNESS)
+        (work / "test.c").write_text(harness)
         command = shlex.split(os.environ.get("CC", "gcc")) + [
             "-std=c11", "-Wall", "-Wextra", "-Werror", "-pedantic", "-O1",
             "-fsanitize=undefined", "-fno-sanitize-recover=all",
@@ -362,6 +364,10 @@ def main():
         command += ["-lm", "-o", str(work / "test")]
         subprocess.run(command, check=True)
         subprocess.run([str(work / "test")], check=True)
+
+
+def main():
+    run_harness(HARNESS)
 
 
 if __name__ == "__main__":

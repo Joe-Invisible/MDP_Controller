@@ -116,8 +116,10 @@ static const MotionControllerConfig arcTestMotionConfig =
     .wheelSyncKpCpsPerMm = ARC_TEST_SYNC_KP_CPS_PER_MM,
     .maxWheelSyncCorrectionCps = ARC_TEST_SYNC_MAX_CORRECTION_CPS,
 
-    .motionAccelerationMmps2 = ARC_TEST_ACCELERATION_MMPS2,
-    .motionDecelerationMmps2 = ARC_TEST_DECELERATION_MMPS2,
+    .straightAccelerationMmps2 = ARC_TEST_ACCELERATION_MMPS2,
+    .straightDecelerationMmps2 = ARC_TEST_DECELERATION_MMPS2,
+    .arcAccelerationMmps2 = ARC_TEST_ACCELERATION_MMPS2,
+    .arcDecelerationMmps2 = ARC_TEST_DECELERATION_MMPS2,
     .motionCompletionToleranceMm = 0.5f,
 
     .arcYawRateFilterTauSec = 0.10f,
