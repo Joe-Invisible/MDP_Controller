@@ -263,8 +263,8 @@ static bool MotionSequenceFusionTest_RunPattern(bool stopAfter)
 {
     MotionSequenceFusionTestResult *result =
         &motionSequenceFusionTestResults[comparisonRunIndex];
-    /* Restore the settled tuning before applying the reduced A override.
-     * This changes only yaw/heading tuning and filter selection between runs. */
+    /* Reset this branch's defaults for the timing mode. The Task 1 operating
+     * point below is user-confirmed and independent of these branch defaults. */
     fusionMotionConfig.straightYawRateKp = motionControllerConfig.straightYawRateKp;
     fusionMotionConfig.straightYawRateKi = motionControllerConfig.straightYawRateKi;
     fusionMotionConfig.straightYawRateKd = motionControllerConfig.straightYawRateKd;
@@ -273,6 +273,14 @@ static bool MotionSequenceFusionTest_RunPattern(bool stopAfter)
     fusionMotionConfig.arcYawRateKi = motionControllerConfig.arcYawRateKi;
     fusionMotionConfig.arcYawRateKd = motionControllerConfig.arcYawRateKd;
     fusionMotionConfig.arcHeadingKpPerSec = motionControllerConfig.arcHeadingKpPerSec;
+    if (motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK1_GAINS &&
+        comparisonRunIndex == 1U)
+    {
+        fusionMotionConfig.straightYawRateKp = fusionMotionConfig.arcYawRateKp = 270.0f;
+        fusionMotionConfig.straightYawRateKi = fusionMotionConfig.arcYawRateKi = 150.0f;
+        fusionMotionConfig.straightYawRateKd = fusionMotionConfig.arcYawRateKd = 0.0f;
+        fusionMotionConfig.straightHeadingKpPerSec = fusionMotionConfig.arcHeadingKpPerSec = 0.0f;
+    }
     if (MotionSequenceFusionTest_IsAccuracyExperiment() &&
         (motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_REFERENCE_FILTER ||
          comparisonRunIndex == 0U))

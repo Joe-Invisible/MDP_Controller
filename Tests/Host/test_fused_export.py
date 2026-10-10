@@ -31,8 +31,8 @@ MotionSequenceFusionTestResult motionSequenceFusionTestResults[2] = {
     {.stopAfterEachSegment = false, .useMatchedYawRateReferenceFilter = EXPERIMENT_MODE == 2, .passed = true, .elapsedMs = 3000, .completedRuns = 1,
      .straightTuning = {100,0,0,0}, .arcTuning = {100,0,0,0}},
     {.stopAfterEachSegment = !EXPERIMENT_MODE, .useMatchedYawRateReferenceFilter = EXPERIMENT_MODE != 0, .passed = true, .elapsedMs = 4000, .completedRuns = EXPERIMENT_MODE ? 1 : 10,
-     .straightTuning = {100, EXPERIMENT_MODE == 2 ? 50 : 0, 0, EXPERIMENT_MODE == 2 ? 0.5f : 0},
-     .arcTuning = {100, EXPERIMENT_MODE == 2 ? 50 : 0, 0, EXPERIMENT_MODE == 2 ? 0.5f : 0}}
+     .straightTuning = {EXPERIMENT_MODE == 2 ? 270 : 100, EXPERIMENT_MODE == 2 ? 150 : 0, 0, 0},
+     .arcTuning = {EXPERIMENT_MODE == 2 ? 270 : 100, EXPERIMENT_MODE == 2 ? 150 : 0, 0, 0}}
 };
 MotionSequenceFusionTestSample motionSequenceFusionTestLog[2] = {
     {.timeMs = 20, .comparisonRunIndex = 0, .steeringCommand = 12, .sequenceTravelMm = 123, .accelerationLimitMmps2=3000, .decelerationLimitMmps2=3000},
@@ -98,8 +98,8 @@ def main():
             if experiment_mode == 2:
                 assert "A/B tuning comparison" in log
                 assert "MOTION_SEQUENCE_FUSION_TEST_TASK1_GAINS" in log
-                assert "straightTuning = {yawRateKp = 100, yawRateKi = 50, yawRateKd = 0, headingKpPerSec = 0.5}" in log
-                assert "arcTuning = {yawRateKp = 100, yawRateKi = 50, yawRateKd = 0, headingKpPerSec = 0.5}" in log
+                assert "straightTuning = {yawRateKp = 270, yawRateKi = 150, yawRateKd = 0, headingKpPerSec = 0}" in log
+                assert "arcTuning = {yawRateKp = 270, yawRateKi = 150, yawRateKd = 0, headingKpPerSec = 0}" in log
                 assert "completedRuns = 10" not in log
             elif experiment_mode == 1:
                 assert "A/B reference filter comparison" in log

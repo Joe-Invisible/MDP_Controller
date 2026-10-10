@@ -12,16 +12,16 @@ The selected `MotionSequenceFusionTestRun()` now runs a short accuracy experimen
 Both A and B use the matched geometric reference
 `LPF(curvature * measured speed)`, with the same 100 ms time constant, update dt
 and zero initial state as the gyro-rate filter. A retains the reduced tuning;
-B restores the settled straight/arc gains from `motionControllerConfig`:
+B restores the user-confirmed Task 1 tuning for both straight and arc:
 
 | Run | Yaw-rate P / I / D | Heading gain (s⁻¹) |
 | --- | --- | ---: |
 | A reduced | 100 / 0 / 0 | 0 |
-| B Task 1 | 100 / 50 / 0 | 0.5 |
+| B Task 1 | 270 / 150 / 0 | 0 |
 
-The table reflects the current shared configuration. B copies its eight gain
-fields directly, preserving any straight/arc differences. The ready screen
-reads the actual controller configuration for both regimes; each result stores
+The Task 1 operating point is pinned in the experiment-local configuration.
+The ready screen reads the actual controller configuration for both regimes;
+each result stores
 its own `straightTuning` and `arcTuning` snapshot. Config and PID initialization
 are validated before each ready screen without reinitializing the hardware/IMU.
 
@@ -41,9 +41,8 @@ Both A and B use filter tau **0.10 s** and wheel **Kp=0.03, Ki=Kd=0**. Straight 
 3000/3000 mm/s²; arc and blend A/D is 2000/2000 mm/s². Feedforward calibration,
 blend length (200 mm), junction ceiling (8000 CPS), steering slew (480 raw/s),
 wheel synchronisation and feedback authority are identical between A and B.
-The heading correction remains outside the geometric-reference filter;
-B restores it together with the yaw-rate integral gain. Nominal raw steering feedforward always
-uses current curvature. Shared production defaults select the existing filter.
+Heading feedback is disabled in both runs. Nominal raw steering feedforward
+always uses current curvature. Shared production defaults select the existing filter.
 
 Mark the rear-axle midpoint at `(0,0)`, heading `+x`. The unblended centreline
 reaches `(300,0)`, then `(300,1050)` heading `-x`, then `(-300,1050)`. It extends
@@ -82,8 +81,8 @@ Inspect raw and filtered gyro rates alongside
 at both blends, sustained yaw-rate bias on the constant arc, and heading error
 entering/leaving the final straight. Record physical endpoint displacement
 separately. This compares the complete settled tuning against the reduced
-baseline. It does not isolate the contribution of integral versus heading
-feedback, or establish full Task 2 parking accuracy.
+baseline. It changes P and I together to restore the known operating point;
+heading gain remains zero. It does not establish full Task 2 parking accuracy.
 
 The host regression supplies perfect coincident wheel/gyro samples: the existing
 formulation reaches the 30-unit correction clamp during changing curvature,
@@ -91,8 +90,8 @@ whereas the matched formulation produces near-zero correction. It also checks
 reverse motion, zero filter tau, constant-curvature speed ramps, reference
 history/reset, and all three experiment modes including cancellation/timeouts.
 The tuning comparison additionally checks that both filters are matched, that
-B restores the actual PI/heading configuration before preparation, and that
-its heading correction contributes to the logged yaw-rate request. These are
+B restores P=270/I=150 before preparation, and that heading feedback remains
+zero in both runs. These are
 software checks, not a servo/vehicle simulation or physical results.
 
 The previous filter-only A/B remains available as

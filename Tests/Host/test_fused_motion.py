@@ -962,9 +962,10 @@ void SW1_WaitForPressAndRelease(void)
         const MotionControllerConfig *config = hardwareFixture->motionController.config;
         bool restored = gains && hardwareStartCount == 1;
         assert(config->useMatchedYawRateReferenceFilter == (gains || hardwareStartCount == 1));
-        near(hardwareFixture->motionController.arcYawRatePID.ki, restored ? 50 : 0, 0);
-        assert(strstr(oledRows[6], restored ? "S P100 I50 D0 H0.5" : "S P100 I0 D0 H0"));
-        assert(strstr(oledRows[7], restored ? "C P100 I50 D0 H0.5" : "C P100 I0 D0 H0"));
+        near(hardwareFixture->motionController.arcYawRatePID.kp, restored ? 270 : 100, 0);
+        near(hardwareFixture->motionController.arcYawRatePID.ki, restored ? 150 : 0, 0);
+        assert(strstr(oledRows[6], restored ? "S P270 I150 D0 H0" : "S P100 I0 D0 H0"));
+        assert(strstr(oledRows[7], restored ? "C P270 I150 D0 H0" : "C P100 I0 D0 H0"));
         assert(strstr(oledRows[1], "R525 180: 2.55m"));
         assert(strstr(oledRows[4], "Reset +x"));
     } else if (hardwareScenario == 0) {
@@ -1108,16 +1109,19 @@ static void testAccuracyRobotHarness(MotionSequenceFusionTestExperiment experime
         near(a->straightTuning.headingKpPerSec, 0, 0); near(a->arcTuning.headingKpPerSec, 0, 0);
         bool restored = gains && hardwareStartCount == 2;
         const MotionControllerConfig *config = hardwareFixture->motionController.config;
-        near(config->straightYawRateKp, 100, 0); near(config->arcYawRateKp, 100, 0);
-        near(config->straightYawRateKi, restored ? 50 : 0, 0); near(config->arcYawRateKi, restored ? 50 : 0, 0);
+        near(config->straightYawRateKp, restored ? 270 : 100, 0);
+        near(config->arcYawRateKp, restored ? 270 : 100, 0);
+        near(config->straightYawRateKi, restored ? 150 : 0, 0); near(config->arcYawRateKi, restored ? 150 : 0, 0);
         near(config->straightYawRateKd, 0, 0); near(config->arcYawRateKd, 0, 0);
-        near(config->straightHeadingKpPerSec, restored ? 0.5f : 0, 0);
-        near(config->arcHeadingKpPerSec, restored ? 0.5f : 0, 0);
+        near(config->straightHeadingKpPerSec, 0, 0);
+        near(config->arcHeadingKpPerSec, 0, 0);
         if (hardwareStartCount == 2) {
-            near(b->straightTuning.yawRateKi, restored ? 50 : 0, 0);
-            near(b->arcTuning.yawRateKi, restored ? 50 : 0, 0);
-            near(b->straightTuning.headingKpPerSec, restored ? 0.5f : 0, 0);
-            near(b->arcTuning.headingKpPerSec, restored ? 0.5f : 0, 0);
+            near(b->straightTuning.yawRateKp, restored ? 270 : 100, 0);
+            near(b->arcTuning.yawRateKp, restored ? 270 : 100, 0);
+            near(b->straightTuning.yawRateKi, restored ? 150 : 0, 0);
+            near(b->arcTuning.yawRateKi, restored ? 150 : 0, 0);
+            near(b->straightTuning.headingKpPerSec, 0, 0);
+            near(b->arcTuning.headingKpPerSec, 0, 0);
         }
         near(config->arcYawRateFilterTauSec, 0.1f, 0);
         if (scenario == 0) {
@@ -1151,11 +1155,8 @@ static void testAccuracyRobotHarness(MotionSequenceFusionTestExperiment experime
                 }
                 assert(isfinite(sample->filteredGeometricYawRateRadPerSec));
                 if (gains && sample->mode == MOTIONCONTROLLER_PROFILE) {
-                    float kh = sample->comparisonRunIndex == 1 ? 0.5f : 0;
-                    float bound = fabsf(sample->targetSpeedCps) * mmPerCount() * config->maxPathCorrectionCurvaturePerMm;
-                    float headingCorrection = fmaxf(-bound, fminf(bound, kh * sample->headingErrorRad));
                     near(sample->targetYawRateRadPerSec,
-                         sample->filteredGeometricYawRateRadPerSec + headingCorrection, 0.000001f);
+                         sample->filteredGeometricYawRateRadPerSec, 0.000001f);
                 }
             }
             assert(taggedSamples[0] > 100 && taggedSamples[0] <= 325);
