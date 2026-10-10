@@ -956,16 +956,18 @@ void SW1_WaitForPressAndRelease(void)
 {
     if (hardwareScenario == 0 &&
         motionSequenceFusionTestExperiment != MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING) {
+        bool single = motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_SINGLE_TUNING;
         bool gains = motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK1_GAINS;
-        assert(strstr(oledRows[0], gains ? (hardwareStartCount == 0 ? "A reduced" : "B Task1")
-                                        : (hardwareStartCount == 0 ? "A existing" : "B matched")));
+        assert(strstr(oledRows[0], single ? "Tuning" :
+            gains ? (hardwareStartCount == 0 ? "A reduced" : "B Task1")
+                  : (hardwareStartCount == 0 ? "A existing" : "B matched")));
         const MotionControllerConfig *config = hardwareFixture->motionController.config;
         bool restored = gains && hardwareStartCount == 1;
-        assert(config->useMatchedYawRateReferenceFilter == (gains || hardwareStartCount == 1));
-        near(hardwareFixture->motionController.arcYawRatePID.kp, restored ? 270 : 100, 0);
+        assert(config->useMatchedYawRateReferenceFilter == (single || gains || hardwareStartCount == 1));
+        near(hardwareFixture->motionController.arcYawRatePID.kp, single ? 150 : restored ? 270 : 100, 0);
         near(hardwareFixture->motionController.arcYawRatePID.ki, restored ? 150 : 0, 0);
-        assert(strstr(oledRows[6], restored ? "S P270 I150 D0 H0" : "S P100 I0 D0 H0"));
-        assert(strstr(oledRows[7], restored ? "C P270 I150 D0 H0" : "C P100 I0 D0 H0"));
+        assert(strstr(oledRows[6], single ? "S P150 I0 D0 H0" : restored ? "S P270 I150 D0 H0" : "S P100 I0 D0 H0"));
+        assert(strstr(oledRows[7], single ? "C P150 I0 D0 H0" : restored ? "C P270 I150 D0 H0" : "C P100 I0 D0 H0"));
         assert(strstr(oledRows[1], "R525 180: 2.55m"));
         assert(strstr(oledRows[4], "Reset +x"));
     } else if (hardwareScenario == 0) {
@@ -1194,6 +1196,74 @@ static void testAccuracyRobotHarness(MotionSequenceFusionTestExperiment experime
     }
 }
 
+static void testSingleTuningHarness(void)
+{
+    motionSequenceFusionTestExperiment = MOTION_SEQUENCE_FUSION_TEST_SINGLE_TUNING;
+    for (unsigned scenario = 0; scenario < 6; ++scenario) {
+        if (scenario == 3 || scenario == 4) continue; /* No second run exists. */
+        hardwareScenario = scenario;
+        hardwareStartCount = 0;
+        hardwareTrialStartTick = fakeTick = 0;
+        leftCountFraction = rightCountFraction = 0;
+        hardwareFixture = NULL;
+        MotionSequenceFusionTestRun();
+        const MotionSequenceFusionTestResult *result = &motionSequenceFusionTestResults[0];
+        assert(hardwareStartCount == 1 && motionSequenceFusionTestResultCount == 1);
+        assert(!motionSequenceFusionTestComparisonValid && motionSequenceFusionTestSavedTimeMs == 0);
+        near(motionSequenceFusionTestSavedPercent, 0, 0);
+        assert(motionSequenceFusionTestLogPeriodMs == 20);
+        assert(result->useMatchedYawRateReferenceFilter && !result->stopAfterEachSegment);
+        near(result->straightTuning.yawRateKp, 150, 0);
+        near(result->arcTuning.yawRateKp, 150, 0);
+        near(result->straightTuning.yawRateKi, 0, 0);
+        near(result->arcTuning.headingKpPerSec, 0, 0);
+        assert(!motionSequenceFusionTestResults[1].passed);
+        assert(motionSequenceFusionTestResults[1].elapsedMs == 0);
+        assert(motionSequenceFusionTestSequence.plan.count == 3);
+        near(result->nominalTravelMm, 900 + 525 * PI, 0.001f);
+        near(result->nominalYawRad, PI, 0.000001f);
+        for (unsigned i = 0; i < motionSequenceFusionTestLogCount; ++i) {
+            const MotionSequenceFusionTestSample *sample = &motionSequenceFusionTestLog[i];
+            assert(sample->comparisonRunIndex == 0);
+            if (sample->mode == MOTIONCONTROLLER_PROFILE)
+                near(sample->targetYawRateRadPerSec, sample->filteredGeometricYawRateRadPerSec, 0.000001f);
+        }
+        assert(motionSequenceFusionTestLog[motionSequenceFusionTestLogCount-1].mode == MOTIONCONTROLLER_IDLE);
+        assert(strstr(oledRows[0], "Tuning") && !strstr(oledRows[0], "A/B"));
+        if (scenario == 0 || scenario == 5) {
+            assert(motionSequenceFusionTestPassed && result->passed && !result->logTruncated);
+            assert(strstr(oledRows[0], "DONE") && strstr(oledRows[2], "Yaw"));
+            if (scenario == 5) assert(motionSequenceFusionTestLogCount > 325);
+            else printf("Ideal single tuning harness: %u ms, %u samples; not a physical accuracy result\n",
+                        result->elapsedMs, motionSequenceFusionTestLogCount);
+        } else {
+            assert(!motionSequenceFusionTestPassed && !result->passed);
+            assert(result->timedOut == (scenario == 2));
+            assert(result->cancelled == (scenario == 1));
+            assert(strstr(oledRows[0], "INVALID"));
+            if (scenario == 2) {
+                assert(result->logTruncated && motionSequenceFusionTestLogCount == 650);
+                assert(strstr(oledRows[5], "LOG TRUNCATED"));
+            }
+        }
+    }
+    /* User-selected gains survive Run() and are captured independently per regime. */
+    motionSequenceFusionTestStraightTuning = (MotionSequenceFusionTestTuning){160, 0, 0, 0.2f};
+    motionSequenceFusionTestArcTuning = (MotionSequenceFusionTestTuning){140, 0, 0, 0.3f};
+    hardwareScenario = 5; hardwareStartCount = 0; hardwareTrialStartTick = fakeTick = 0;
+    leftCountFraction = rightCountFraction = 0; hardwareFixture = NULL;
+    MotionSequenceFusionTestRun();
+    assert(motionSequenceFusionTestPassed && hardwareStartCount == 1);
+    near(motionSequenceFusionTestResults[0].straightTuning.yawRateKp, 160, 0);
+    near(motionSequenceFusionTestResults[0].arcTuning.yawRateKp, 140, 0);
+    near(motionSequenceFusionTestResults[0].straightTuning.headingKpPerSec, 0.2f, 0);
+    near(motionSequenceFusionTestResults[0].arcTuning.headingKpPerSec, 0.3f, 0);
+    near(hardwareFixture->motionController.config->straightYawRateKp, 160, 0);
+    near(hardwareFixture->motionController.config->arcHeadingKpPerSec, 0.3f, 0);
+    motionSequenceFusionTestStraightTuning = motionSequenceFusionTestArcTuning =
+        (MotionSequenceFusionTestTuning){150, 0, 0, 0};
+}
+
 int main(void)
 {
     /* Keep existing preparation helper compiled and exercised too. */
@@ -1211,7 +1281,8 @@ int main(void)
     testStopsReversalsAndCancel();
     testValidationAndFaults();
     testRandomPlans();
-    assert(motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK1_GAINS);
+    assert(motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_SINGLE_TUNING);
+    testSingleTuningHarness();
     testRobotHarness();
     testAccuracyRobotHarness(MOTION_SEQUENCE_FUSION_TEST_REFERENCE_FILTER);
     testAccuracyRobotHarness(MOTION_SEQUENCE_FUSION_TEST_TASK1_GAINS);

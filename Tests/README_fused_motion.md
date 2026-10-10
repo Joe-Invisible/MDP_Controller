@@ -6,26 +6,28 @@ Base: `90fa9d3b4d37080a7bf035abe1c3439fd2361ffb` on
 `feature/motion-profile-limits` commit `df2fc280541868bff87ff8813cf36dc48462deb0`.
 The separate production UART and IMU-hardening changes are not included.
 
-## Current default: settled Task 1 tuning A/B
+## Current default: single tuning run
 
-The selected `MotionSequenceFusionTestRun()` now runs a short accuracy experiment.
-Both A and B use the matched geometric reference
-`LPF(curvature * measured speed)`, with the same 100 ms time constant, update dt
-and zero initial state as the gyro-rate filter. A retains the reduced tuning;
-B restores the user-confirmed Task 1 tuning for both straight and arc:
+`MotionSequenceFusionTestRun()` runs the short fused accuracy path once. There
+is no P100 baseline, second button prompt, or A/B comparison in this mode.
+The default selector is `MOTION_SEQUENCE_FUSION_TEST_SINGLE_TUNING`.
 
-| Run | Yaw-rate P / I / D | Heading gain (s⁻¹) |
+| Regime | Yaw-rate P / I / D | Heading gain (s⁻¹) |
 | --- | --- | ---: |
-| A reduced | 100 / 0 / 0 | 0 |
-| B Task 1 | 270 / 150 / 0 | 0 |
+| Straight | 150 / 0 / 0 | 0 |
+| Arc | 150 / 0 / 0 | 0 |
 
-The Task 1 operating point is pinned in the experiment-local configuration.
-The ready screen reads the actual controller configuration for both regimes;
-each result stores
-its own `straightTuning` and `arcTuning` snapshot. Config and PID initialization
-are validated before each ready screen without reinitializing the hardware/IMU.
+Edit `motionSequenceFusionTestStraightTuning` and
+`motionSequenceFusionTestArcTuning` at the top of `MotionSequenceFusionTest.c`
+to choose the next trial's gains. These test-local settings can also be set in
+GDB before `MotionSequenceFusionTestRun()`. They are copied to the controller
+before validation/PID initialization and the ready screen. Shared production
+configuration is unchanged. The OLED reads actual straight/arc gains; the
+result stores `straightTuning` and `arcTuning` snapshots.
 
-Both fuse exactly the same path:
+The matched geometric reference `LPF(curvature * measured speed)` uses the same
+100 ms time constant, update dt and zero initial state as the gyro-rate filter.
+Nominal raw steering feedforward always uses current curvature.
 
 | Segment | Distance | Radius | Requested speed |
 | --- | ---: | ---: | ---: |
@@ -33,16 +35,11 @@ Both fuse exactly the same path:
 | Left semicircle | 1649.34 mm (180°) | +525 mm | 5000 CPS |
 | Exit straight | 600 mm | Straight | 5000 CPS |
 
-Total commanded travel is **2549.34 mm**, displayed before each run. This is a
-local turn/transition test. The longer obstacle course below remains available
-through the experiment selector.
-
-Both A and B use filter tau **0.10 s** and wheel **Kp=0.03, Ki=Kd=0**. Straight A/D is
-3000/3000 mm/s²; arc and blend A/D is 2000/2000 mm/s². Feedforward calibration,
-blend length (200 mm), junction ceiling (8000 CPS), steering slew (480 raw/s),
-wheel synchronisation and feedback authority are identical between A and B.
-Heading feedback is disabled in both runs. Nominal raw steering feedforward
-always uses current curvature. Shared production defaults select the existing filter.
+Total commanded travel is **2549.34 mm**, displayed before starting. Wheel
+Kp=0.03, Ki=Kd=0; straight A/D is 3000/3000 mm/s²; arc/blend A/D is
+2000/2000 mm/s². Blend length is 200 mm, junction ceiling 8000 CPS and
+steering slew 480 raw/s. Feedforward, wheel synchronization and correction
+limits retain the preceding experiment's settings.
 
 Mark the rear-axle midpoint at `(0,0)`, heading `+x`. The unblended centreline
 reaches `(300,0)`, then `(300,1050)` heading `-x`, then `(-300,1050)`. It extends
@@ -51,61 +48,52 @@ approximately **1.6 m along x × 1.5 m along y**, allowing an assumed centred
 300×200 mm chassis; leave room for tracking error and actual chassis offsets.
 The blends preserve total nominal distance/yaw but slightly change XY.
 
-1. Build/flash this branch and set a breakpoint at
-   `MotionSequenceFusionTestFinished`.
-2. Place the robot at the marked start. OLED shows `A reduced`, estimated
-   travel and actual straight/arc gains. Press/release SW1 to run A.
-3. After A stops, return the robot to the **same marked pose**. OLED shows
-   `B Task1`; press/release SW1 to run B. SW1 during either run cancels it.
-4. Export **once after both runs**, using a fresh filename:
+1. Build/flash and set a breakpoint at `MotionSequenceFusionTestFinished`.
+2. Place the robot at the marked start. OLED shows `Tuning ready`, estimated
+   travel and actual straight/arc gains. Press/release SW1 once to start.
+   SW1 during the run cancels it.
+3. After the robot stops, export once with a fresh filename:
 
 ```text
 source exp/gdb_scripts/export_fused_motion.gdb
 set $mctrl_fusion_battery_v = 11.66
-mctrl-fusion-export fusion_task1_gains_run01.txt
+mctrl-fusion-export fusion_tuning_run01.txt
 ```
 
-Enter the actual battery voltage. The common log samples both trials every
-20 ms (control period 10 ms). Each has a reserved 325-sample budget, about
-6.5 seconds including preparation/braking. Overflow sets the per-run/global
-truncation flags, retains the final sample and invalidates the accuracy comparison.
-A failed/cancelled run does not launch B. Button waits/resetting are excluded
-from elapsed times. One exporter captures the selector, sampling period,
-per-run filter choice and gain snapshots, both results and all tagged samples.
-The final controller config is B's; A's result retains its reduced tuning. The original time-savings fields
-remain zero for this accuracy experiment.
+Enter the actual battery voltage. Control runs every 10 ms; samples are recorded
+every 20 ms. This one trial has the full 650-sample budget, about 13 seconds
+including preparation/braking. Overflow sets truncation flags, preserves the
+final sample and marks the overall test invalid. Manual waiting and the 400 ms
+hand-clearance delay are excluded from elapsed time.
 
-Inspect raw and filtered gyro rates alongside
-`unfilteredGeometricYawRateRadPerSec`, `filteredGeometricYawRateRadPerSec` and
-`targetYawRateRadPerSec`. Compare steering-correction saturation and oscillation
-at both blends, sustained yaw-rate bias on the constant arc, and heading error
+The export contains one result and only this trial's samples, all tagged with
+`comparisonRunIndex = 0`. The unused second result slot is omitted.
+`motionSequenceFusionTestPassed` indicates complete, untruncated execution;
+physical accuracy must still be assessed from tracking and endpoint measurements.
+`motionSequenceFusionTestComparisonValid` is false and time-savings fields are
+zero because this is a single run. The final OLED shows duration and yaw error.
+
+Inspect raw/filtered gyro rates, geometric yaw references, steering-correction
+saturation/ringing at the blends, sustained arc yaw-rate bias, and heading error
 entering/leaving the final straight. Record physical endpoint displacement
-separately. This compares the complete settled tuning against the reduced
-baseline. It changes P and I together to restore the known operating point;
-heading gain remains zero. It does not establish full Task 2 parking accuracy.
+separately; successful execution does not establish Task 2 parking accuracy.
 
-The host regression supplies perfect coincident wheel/gyro samples: the existing
-formulation reaches the 30-unit correction clamp during changing curvature,
-whereas the matched formulation produces near-zero correction. It also checks
-reverse motion, zero filter tau, constant-curvature speed ramps, reference
-history/reset, and all three experiment modes including cancellation/timeouts.
-The tuning comparison additionally checks that both filters are matched, that
-B restores P=270/I=150 before preparation, and that heading feedback remains
-zero in both runs. These are
-software checks, not a servo/vehicle simulation or physical results.
+The host checks cover one start/result, dynamic gains and ready-screen values,
+matched references, completion, cancellation, timeout, full log capacity and
+retained final samples, plus the original controller/planner regressions.
+These are software checks, not physical servo/vehicle results.
 
-The previous filter-only A/B remains available as
-`MOTION_SEQUENCE_FUSION_TEST_REFERENCE_FILTER`: A existing filtering, B matched,
-both with 100/0/0 yaw-rate gains and heading gain zero. It uses the same short
-path, 20 ms logging and single export. The current default selector is
-`MOTION_SEQUENCE_FUSION_TEST_TASK1_GAINS`.
+Previous A/B experiments remain available by changing the selector before the run:
 
-To restore the Task 2 fused-versus-stopped timing test, change the initializer
-of `motionSequenceFusionTestExperiment` in `MotionSequenceFusionTest.c` to
-`MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING`, or set it in GDB before the run.
-That mode retains the original course, original yaw/heading tuning, 100 ms
-logging and time-savings report. The remaining course description applies to
-that timing mode.
+- `MOTION_SEQUENCE_FUSION_TEST_REFERENCE_FILTER`: P100/0/0 and heading zero,
+  existing versus matched filtering on the short path.
+- `MOTION_SEQUENCE_FUSION_TEST_TASK1_GAINS`: P100/0/0 versus Task 1 P270/I150/D0,
+  heading zero and matched filtering on both runs.
+- `MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING`: original long course, original
+  yaw/heading tuning, 100 ms logging and fused-versus-stopped time savings.
+
+The two short A/B modes reserve 325 samples per run and require a pose reset
+between runs. The remaining course description applies to the optional timing mode.
 
 ## Wheel-performance settings
 
@@ -488,7 +476,7 @@ mctrl-fusion-export fusion_run01.txt
 ```
 
 Enter the actual measured voltage. Choose a new output name for each run;
-export appends if the name already exists. The command exports both A/B results and the timing comparison, the last
+export appends if the name already exists. For timing mode, the command exports both A/B results and the timing comparison, the last
 trace's complete plan, actual experiment tuning and wheel PID gains, final heading policy/termination flags
 and tagged samples from both traces. It neither resumes
 the target nor initiates motion. The old automatic sequence-export breakpoint

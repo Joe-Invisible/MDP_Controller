@@ -36,8 +36,8 @@ void InvokeTest() {
 	/* Select this separate harness for straight feedforward calibration:
 	 * MotionControllerStraightFeedforwardTestRun();
 	 * The original arc harness retains the pending raw +95 setup. */
-	/* Experimental branch: reduced/Task 1 gains A/B, both matched and fused.
-     * The selector retains filter A/B and the Task 2 timing comparison.
+	/* Experimental branch: one matched, fused tuning run at 150/0/0, heading 0.
+     * The selector retains the previous A/B experiments.
      * Restore MotionControllerSequenceTestRun() for the original harness. */
     MotionSequenceFusionTestRun();
 

@@ -21,17 +21,26 @@ define mctrl-fusion-export
     echo === Selected experiment and sampling ===\n
     p motionSequenceFusionTestExperiment
     p motionSequenceFusionTestLogPeriodMs
-    if motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK1_GAINS
-        echo === A/B tuning comparison (0=reduced, 1=Task1; both matched and fused) ===\n
+    if motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_SINGLE_TUNING
+        echo === Single tuning run (index 0; matched and fused) ===\n
     else
-        if motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_REFERENCE_FILTER
-            echo === A/B reference filter comparison (0=existing, 1=matched; both fused) ===\n
+        if motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK1_GAINS
+            echo === A/B tuning comparison (0=reduced, 1=Task1; both matched and fused) ===\n
         else
-            echo === A/B timing comparison (0=fused, 1=stopped) ===\n
+            if motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_REFERENCE_FILTER
+                echo === A/B reference filter comparison (0=existing, 1=matched; both fused) ===\n
+            else
+                echo === A/B timing comparison (0=fused, 1=stopped) ===\n
+            end
         end
     end
     p motionSequenceFusionTestResultCount
-    p motionSequenceFusionTestResults
+    set $fusion_result_capacity = sizeof(motionSequenceFusionTestResults) / sizeof(motionSequenceFusionTestResults[0])
+    if motionSequenceFusionTestResultCount > 0 && motionSequenceFusionTestResultCount <= $fusion_result_capacity
+        p motionSequenceFusionTestResults[0] @ motionSequenceFusionTestResultCount
+    else
+        echo No results, or invalid count: result array was not read.\n
+    end
     p motionSequenceFusionTestComparisonValid
     p motionSequenceFusionTestSavedTimeMs
     p motionSequenceFusionTestSavedPercent

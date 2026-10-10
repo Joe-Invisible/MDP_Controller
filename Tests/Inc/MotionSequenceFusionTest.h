@@ -3,6 +3,7 @@
 
 #include "MotionSequence.h"
 
+/* Result capacity for optional A/B modes; single tuning uses only index 0. */
 #define MOTION_SEQUENCE_FUSION_TEST_RUN_COUNT 2U
 
 typedef enum
@@ -10,9 +11,10 @@ typedef enum
     MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING = 0,
     MOTION_SEQUENCE_FUSION_TEST_REFERENCE_FILTER,
     MOTION_SEQUENCE_FUSION_TEST_TASK1_GAINS,
+    MOTION_SEQUENCE_FUSION_TEST_SINGLE_TUNING,
 } MotionSequenceFusionTestExperiment;
 
-/* Set before MotionSequenceFusionTestRun(). Default: reduced/Task 1 gains. */
+/* Set before MotionSequenceFusionTestRun(). Default: one tuning run. */
 extern MotionSequenceFusionTestExperiment motionSequenceFusionTestExperiment;
 extern uint32_t motionSequenceFusionTestLogPeriodMs;
 
@@ -23,6 +25,10 @@ typedef struct
     float yawRateKd;
     float headingKpPerSec;
 } MotionSequenceFusionTestTuning;
+
+/* Single-run settings, independent of production config; set before Run(). */
+extern MotionSequenceFusionTestTuning motionSequenceFusionTestStraightTuning;
+extern MotionSequenceFusionTestTuning motionSequenceFusionTestArcTuning;
 
 typedef struct
 {
@@ -39,7 +45,7 @@ typedef struct
     float measuredYawRad;
     float nominalTravelMm;
     float nominalYawRad;
-    /* Actual per-run configuration; final controller config belongs to B. */
+    /* Actual per-run configuration; final controller config belongs to last run. */
     MotionSequenceFusionTestTuning straightTuning;
     MotionSequenceFusionTestTuning arcTuning;
 } MotionSequenceFusionTestResult;
