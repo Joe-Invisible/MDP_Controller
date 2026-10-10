@@ -13,6 +13,9 @@ from test_unified_motion import HAL_STUB
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = r'''
 #include "MotionSequenceFusionTest.h"
+MotionSequenceFusionTestExperiment motionSequenceFusionTestExperiment =
+    FILTER_EXPERIMENT ? MOTION_SEQUENCE_FUSION_TEST_REFERENCE_FILTER : MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING;
+uint32_t motionSequenceFusionTestLogPeriodMs = FILTER_EXPERIMENT ? 20 : 100;
 bool motionSequenceFusionTestPassed = true;
 MotionControllerStatus motionSequenceFusionTestStatus = MOTIONCONTROLLER_STATUS_PROFILE_ERROR;
 bool motionSequenceFusionTestTimedOut = true;
@@ -26,11 +29,11 @@ int32_t motionSequenceFusionTestSavedTimeMs = 1000;
 float motionSequenceFusionTestSavedPercent = 25;
 MotionSequenceFusionTestResult motionSequenceFusionTestResults[2] = {
     {.stopAfterEachSegment = false, .passed = true, .elapsedMs = 3000, .completedRuns = 1},
-    {.stopAfterEachSegment = true, .passed = true, .elapsedMs = 4000, .completedRuns = 10}
+    {.stopAfterEachSegment = !FILTER_EXPERIMENT, .useMatchedYawRateReferenceFilter = FILTER_EXPERIMENT, .passed = true, .elapsedMs = 4000, .completedRuns = FILTER_EXPERIMENT ? 1 : 10}
 };
 MotionSequenceFusionTestSample motionSequenceFusionTestLog[2] = {
     {.timeMs = 20, .comparisonRunIndex = 0, .steeringCommand = 12, .sequenceTravelMm = 123, .accelerationLimitMmps2=3000, .decelerationLimitMmps2=3000},
-    {.timeMs = 40, .comparisonRunIndex = 1, .steeringCommand = 13, .sequenceTravelMm = 234, .accelerationLimitMmps2=2000, .decelerationLimitMmps2=2000}
+    {.timeMs = 40, .unfilteredGeometricYawRateRadPerSec = 0.25f, .filteredGeometricYawRateRadPerSec = 0.75f, .comparisonRunIndex = 1, .steeringCommand = 13, .sequenceTravelMm = 234, .accelerationLimitMmps2=2000, .decelerationLimitMmps2=2000}
 };
 static const SteeringControllerCalibration calibration = {.maxCommandRatePerSec = 120};
 static SteeringController steering = {.calibration = &calibration};
@@ -58,12 +61,12 @@ def main():
         work = Path(directory)
         (work / "stm32f4xx_hal.h").write_text(HAL_STUB)
         (work / "fixture.c").write_text(SOURCE)
-        for count in (0, 2, 3):
+        for filter_experiment, count in ((mode, count) for mode in (0, 1) for count in (0, 2, 3)):
             elf = work / "fixture"
-            output = work / f"export-{count}.txt"
+            output = work / f"export-{filter_experiment}-{count}.txt"
             command = shlex.split(os.environ.get("CC", "gcc")) + [
                 "-std=c11", "-g", "-O0", "-fno-pie", "-no-pie",
-                f"-DSAMPLE_COUNT={count}", f"-I{work}",
+                f"-DSAMPLE_COUNT={count}", f"-DFILTER_EXPERIMENT={filter_experiment}", f"-I{work}",
                 f"-I{ROOT / 'Controllers/Inc'}", f"-I{ROOT / 'PeripheralDrivers/Inc'}",
                 f"-I{ROOT / 'Tests/Inc'}", str(work / "fixture.c"),
                 str(ROOT / "Controllers/Src/MotionControllerConfig.c"),
@@ -87,12 +90,22 @@ def main():
             assert "arcAccelerationMmps2 = 2000" in log
             assert "arcDecelerationMmps2 = 2000" in log
             assert log.count("kp = 0.0299999993") == 2
-            assert "A/B timing comparison" in log
             assert "elapsedMs = 3000" in log and "elapsedMs = 4000" in log
-            assert "completedRuns = 1" in log and "completedRuns = 10" in log
+            assert "completedRuns = 1" in log
+            if filter_experiment:
+                assert "A/B reference filter comparison" in log
+                assert "MOTION_SEQUENCE_FUSION_TEST_REFERENCE_FILTER" in log
+                assert "useMatchedYawRateReferenceFilter = true" in log
+                assert "completedRuns = 10" not in log
+            else:
+                assert "A/B timing comparison" in log
+                assert "MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING" in log
+                assert "completedRuns = 10" in log
             if count == 2:
                 assert "steeringCommand = 12" in log and "steeringCommand = 13" in log
                 assert "comparisonRunIndex = 0" in log and "comparisonRunIndex = 1" in log
+                assert "unfilteredGeometricYawRateRadPerSec = 0.25" in log
+                assert "filteredGeometricYawRateRadPerSec = 0.75" in log
                 assert "No samples, or invalid count" not in log
             else:
                 assert "No samples, or invalid count" in log

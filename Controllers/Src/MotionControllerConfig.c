@@ -141,6 +141,7 @@ const MotionControllerConfig motionControllerConfig =
     .motionCompletionToleranceMm = 0.5f,
 
     .arcYawRateFilterTauSec = 0.10f,
+    .useMatchedYawRateReferenceFilter = false,
 
     .stopStableSampleCount = 3U,
 };

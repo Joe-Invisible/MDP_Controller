@@ -18,7 +18,14 @@ define mctrl-fusion-export
     p motionSequenceFusionTestCancelled
     p motionSequenceFusionTestLogTruncated
     p motionSequenceFusionTestElapsedMs
-    echo === A/B timing comparison (0=fused, 1=stopped) ===\n
+    echo === Selected experiment and sampling ===\n
+    p motionSequenceFusionTestExperiment
+    p motionSequenceFusionTestLogPeriodMs
+    if motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_REFERENCE_FILTER
+        echo === A/B reference filter comparison (0=existing, 1=matched; both fused) ===\n
+    else
+        echo === A/B timing comparison (0=fused, 1=stopped) ===\n
+    end
     p motionSequenceFusionTestResultCount
     p motionSequenceFusionTestResults
     p motionSequenceFusionTestComparisonValid

@@ -36,7 +36,8 @@ void InvokeTest() {
 	/* Select this separate harness for straight feedforward calibration:
 	 * MotionControllerStraightFeedforwardTestRun();
 	 * The original arc harness retains the pending raw +95 setup. */
-	/* Experimental branch: one fused straight/arc/straight run.
+	/* Experimental branch: yaw-reference filter A/B, both continuously fused.
+     * The experiment selector also retains the Task 2 timing comparison.
      * Restore MotionControllerSequenceTestRun() for the original harness. */
     MotionSequenceFusionTestRun();
 

@@ -140,6 +140,10 @@ typedef struct
 	float arcHeadingErrorRad;
 
 	float arcFeedforwardYawRateRadPerSec;
+    /* Geometric reference before/after the gyro-matched LPF. Filter history
+     * persists across virtual junctions and resets at a new motion origin. */
+    float arcUnfilteredFeedforwardYawRateRadPerSec;
+    float arcFilteredFeedforwardYawRateRadPerSec;
 	float arcHeadingYawRateCorrectionRadPerSec;
 	float arcTargetYawRateRadPerSec;
 

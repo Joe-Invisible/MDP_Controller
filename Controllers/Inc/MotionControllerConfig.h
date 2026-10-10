@@ -117,6 +117,11 @@ typedef struct
     /* Shared measured-speed / yaw-rate feedback filter time constant. */
     float arcYawRateFilterTauSec;
 
+    /* Experimental A/B: filter curvature * measured speed with the gyro LPF.
+     * False retains curvature * filtered speed. The heading outer loop and
+     * nominal raw steering feedforward are unchanged by this selection. */
+    bool useMatchedYawRateReferenceFilter;
+
     /* Consecutive stationary updates required to complete braking. */
     uint8_t stopStableSampleCount;
 } MotionControllerConfig;

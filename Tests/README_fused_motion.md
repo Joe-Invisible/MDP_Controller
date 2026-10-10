@@ -6,9 +6,88 @@ Base: `90fa9d3b4d37080a7bf035abe1c3439fd2361ffb` on
 `feature/motion-profile-limits` commit `df2fc280541868bff87ff8813cf36dc48462deb0`.
 The separate production UART and IMU-hardening changes are not included.
 
+## Current default: yaw-rate reference filtering A/B
+
+The selected `MotionSequenceFusionTestRun()` now runs a short accuracy experiment.
+A uses the existing `curvature * LPF(measured speed)` yaw-rate reference. B uses
+`LPF(curvature * measured speed)` with the same 100 ms time constant, update dt
+and zero initial state as the gyro-rate filter. Both fuse exactly the same path:
+
+| Segment | Distance | Radius | Requested speed |
+| --- | ---: | ---: | ---: |
+| Entry straight | 300 mm | Straight | 5000 CPS |
+| Left semicircle | 1649.34 mm (180°) | +525 mm | 5000 CPS |
+| Exit straight | 600 mm | Straight | 5000 CPS |
+
+Total commanded travel is **2549.34 mm**, displayed before each run. This is a
+local turn/transition test. The longer obstacle course below remains available
+through the experiment selector.
+
+Both A and B set straight/arc yaw-rate **Kp=100, Ki=Kd=0**, outer heading gain
+**0 s^-1**, filter tau **0.10 s**, and wheel **Kp=0.03, Ki=Kd=0**. Straight A/D is
+3000/3000 mm/s²; arc and blend A/D is 2000/2000 mm/s². Feedforward calibration,
+blend length (200 mm), junction ceiling (8000 CPS), steering slew (480 raw/s),
+wheel synchronisation and feedback authority are identical between A and B.
+The heading correction remains outside the new geometric-reference filter;
+it is disabled in this experiment. Nominal raw steering feedforward always
+uses current curvature. Shared production defaults select the existing filter.
+
+Mark the rear-axle midpoint at `(0,0)`, heading `+x`. The unblended centreline
+reaches `(300,0)`, then `(300,1050)` heading `-x`, then `(-300,1050)`. It extends
+behind the starting line during the final straight. The nominal swept area is
+approximately **1.6 m along x × 1.5 m along y**, allowing an assumed centred
+300×200 mm chassis; leave room for tracking error and actual chassis offsets.
+The blends preserve total nominal distance/yaw but slightly change XY.
+
+1. Build/flash this branch and set a breakpoint at
+   `MotionSequenceFusionTestFinished`.
+2. Place the robot at the marked start. OLED shows `A existing`, estimated
+   travel and fixed gains. Press/release SW1 to run A.
+3. After A stops, return the robot to the **same marked pose**. OLED shows
+   `B matched`; press/release SW1 to run B. SW1 during either run cancels it.
+4. Export **once after both runs**, using a fresh filename:
+
+```text
+source exp/gdb_scripts/export_fused_motion.gdb
+set $mctrl_fusion_battery_v = 11.66
+mctrl-fusion-export fusion_filter_run01.txt
+```
+
+Enter the actual battery voltage. The common log samples both trials every
+20 ms (control period 10 ms). Each has a reserved 325-sample budget, about
+6.5 seconds including preparation/braking. Overflow sets the per-run/global
+truncation flags, retains the final sample and invalidates the filter comparison.
+A failed/cancelled run does not launch B. Button waits/resetting are excluded
+from elapsed times. One exporter captures the selector, sampling period,
+per-run filter choice, both results and all tagged samples. The final config
+is B's; per-run flags identify A correctly. The original time-savings fields
+remain zero for this accuracy experiment.
+
+Inspect raw and filtered gyro rates alongside
+`unfilteredGeometricYawRateRadPerSec`, `filteredGeometricYawRateRadPerSec` and
+`targetYawRateRadPerSec`. Compare steering-correction saturation and oscillation
+at both blends, sustained yaw-rate bias on the constant arc, and heading error
+entering/leaving the final straight. Record physical endpoint displacement
+separately. With heading gain zero, this test isolates the yaw-rate feedback
+change; it does not establish final parking accuracy or remove steady bias.
+
+The host regression supplies perfect coincident wheel/gyro samples: the existing
+formulation reaches the 30-unit correction clamp during changing curvature,
+whereas the matched formulation produces near-zero correction. It also checks
+reverse motion, zero filter tau, constant-curvature speed ramps, reference
+history/reset, and both on-target harnesses including cancellation/timeouts.
+These are software checks, not a servo/vehicle simulation or physical results.
+
+To restore the Task 2 fused-versus-stopped timing test, change the initializer
+of `motionSequenceFusionTestExperiment` in `MotionSequenceFusionTest.c` to
+`MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING`, or set it in GDB before the run.
+That mode retains the original course, original yaw/heading tuning, 100 ms
+logging and time-savings report. The remaining course description applies to
+that timing mode.
+
 ## Wheel-performance settings
 
-The selected A/B harness requests 5000 CPS on a Task 2 outward-S / straight-return course
+The optional timing A/B harness requests 5000 CPS on a Task 2 outward-S / straight-return course
 that returns to the car park. Both traces use one experiment-local configuration:
 
 | Motion | Acceleration (mm/s²) | Deceleration (mm/s²) |
@@ -227,14 +306,15 @@ code/constants and approximately 113 KiB RAM (including the shared sample buffer
 reservations), within the STM32F407's configured memory. Control-period timing
 and physical robot trials still require hardware validation.
 
-## Robot experiment
+## Optional Task 2 timing experiment
 
 `Tests/Src/TestMain.c` selects `MotionSequenceFusionTestRun()` on this branch.
 CubeIDE's existing Controllers/Tests source folders include the new `.c` files;
 refresh the project and clean/rebuild before flashing. Existing production
 UART/RPi integration is outside this first experiment.
 
-The harness runs the same **Task 2 outward S and straight return** twice at
+In `MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING` mode, the harness runs the same
+**Task 2 outward S and straight return** twice at
 **5000 CPS requested for every straight and arc**. Assume the first arrow points
 left and the second points right. It leaves the car park, passes the first
 obstacle on its left and the second on its right, turns around beyond the

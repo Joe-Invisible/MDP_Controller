@@ -685,6 +685,8 @@ static MotionControllerStatus MotionController_StartMotion(
     controller->arcHeadingErrorRad = 0.0f;
 
     controller->arcFeedforwardYawRateRadPerSec = 0.0f;
+    controller->arcUnfilteredFeedforwardYawRateRadPerSec = 0.0f;
+    controller->arcFilteredFeedforwardYawRateRadPerSec = 0.0f;
     controller->arcHeadingYawRateCorrectionRadPerSec = 0.0f;
     controller->arcTargetYawRateRadPerSec = 0.0f;
 
@@ -1151,6 +1153,8 @@ static MotionControllerStatus MotionController_UpdateSteeringPreparation(
     controller->filteredYawRateDps = 0.0f;
     controller->measuredCentreSpeedMmps = 0.0f;
     controller->filteredMeasuredCentreSpeedMmps = 0.0f;
+    controller->arcUnfilteredFeedforwardYawRateRadPerSec = 0.0f;
+    controller->arcFilteredFeedforwardYawRateRadPerSec = 0.0f;
 
     MotionController_ResetOdometry(controller);
 
@@ -1278,9 +1282,24 @@ static void MotionController_UpdatePathSteering(
         desiredYawRad -
         measuredYawRad;
 
+    /* Filtering speed alone does not align a changing-curvature reference
+     * with the filtered gyro: k(t) * LPF(v) differs from LPF(k(t) * v).
+     * Maintain the matched reference in both A/B modes for diagnostics.
+     * Use the same current wheel sample, dt, tau and zero initial state as
+     * the gyro LPF. Nominal steering feedforward still uses current curvature.
+     */
+    controller->arcUnfilteredFeedforwardYawRateRadPerSec =
+        controller->targetCurvaturePerMm * controller->measuredCentreSpeedMmps;
+    controller->arcFilteredFeedforwardYawRateRadPerSec +=
+        speedFilterAlpha *
+        (controller->arcUnfilteredFeedforwardYawRateRadPerSec -
+         controller->arcFilteredFeedforwardYawRateRadPerSec);
+
     float feedforwardYawRateRadPerSec =
-        controller->targetCurvaturePerMm *
-        controller->filteredMeasuredCentreSpeedMmps;
+        controller->config->useMatchedYawRateReferenceFilter
+            ? controller->arcFilteredFeedforwardYawRateRadPerSec
+            : controller->targetCurvaturePerMm *
+              controller->filteredMeasuredCentreSpeedMmps;
 
     float headingKpPerSec =
         controller->mode == MOTIONCONTROLLER_STRAIGHT

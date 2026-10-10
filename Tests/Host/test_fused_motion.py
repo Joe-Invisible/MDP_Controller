@@ -299,6 +299,93 @@ static void testContinuityAndCompletion(void)
     }
 }
 
+/* Perfect coincident wheel/gyro samples isolate false errors introduced by
+ * filtering; this is not a simulation of servo or vehicle dynamics. */
+static void testMatchedYawRateReference(void)
+{
+    float peakExisting = 0, peakMatched = 0;
+    for (int direction = -1; direction <= 1; direction += 2) {
+        for (unsigned zeroTau = 0; zeroTau < 2; ++zeroTau) {
+            for (unsigned matched = 0; matched < 2; ++matched) {
+                Fixture f; MotionSequence s;
+                begin(&f, &s);
+                s.config.blendLengthMm = 200;
+                f.config.useMatchedYawRateReferenceFilter = matched;
+                f.config.arcYawRateFilterTauSec = zeroTau ? 0 : 0.1f;
+                f.config.straightYawRateKp = f.config.arcYawRateKp = 100;
+                f.config.straightYawRateKi = f.config.arcYawRateKi = 0;
+                f.config.straightYawRateKd = f.config.arcYawRateKd = 0;
+                f.config.straightHeadingKpPerSec = f.config.arcHeadingKpPerSec = 0;
+                f.config.wheelSyncKpCpsPerMm = 0;
+                assert(initMotion(&f) == 0);
+                assert(MotionSequence_AddStraight(&s, direction * 300, 5000, false) == 0);
+                assert(MotionSequence_AddArc(&s, direction * 525 * PI, 525, 5000, false) == 0);
+                assert(MotionSequence_AddStraight(&s, direction * 600, 5000, false) == 0);
+                f.motion.arcFilteredFeedforwardYawRateRadPerSec = 123;
+                assert(MotionSequence_Execute(&s) == 0);
+                near(f.motion.arcFilteredFeedforwardYawRateRadPerSec, 0, 0);
+                prepareSequence(&f, &s);
+                bool retainedExitHistory = false;
+                for (unsigned i = 1; i <= 370; ++i) {
+                    float progress = i * 6.5f;
+                    int nextCounts = (int)roundf(progress / mmPerCount());
+                    int previousCounts = (int)roundf(direction * f.motion.travelledDistanceMm / mmPerCount());
+                    /* Mirror the incoming encoder increment, including float
+                     * accumulation, so the gyro/reference samples coincide. */
+                    float sampledProgress = direction * (f.motion.travelledDistanceMm +
+                        direction * (nextCounts - previousCounts) * mmPerCount());
+                    MotionPathSample sample;
+                    assert(MotionSequencePlan_Evaluate(&s.run, sampledProgress, &sample));
+                    f.left.measuredSpeedCps = f.right.measuredSpeedCps = direction * 5000;
+                    gyroDps = sample.curvaturePerMm * direction * 5000 * mmPerCount() * 180 / PI;
+                    seek(&f, &s, progress);
+                    assert(f.motion.mode == MOTIONCONTROLLER_PROFILE);
+                    if (matched || zeroTau) {
+                        near(f.motion.arcYawRateErrorRadPerSec, 0, 0.00001f);
+                        near(f.motion.arcSteeringCorrectionCommand, 0, 0.001f);
+                    }
+                    if (!zeroTau) {
+                        float correction = fabsf(f.motion.arcSteeringCorrectionCommand);
+                        if (matched) peakMatched = fmaxf(peakMatched, correction);
+                        else peakExisting = fmaxf(peakExisting, correction);
+                        if (sample.curvaturePerMm == 0 && sampledProgress > 2050 &&
+                            fabsf(f.motion.arcFilteredFeedforwardYawRateRadPerSec) > 0.01f)
+                            retainedExitHistory = true;
+                    }
+                }
+                if (!zeroTau) assert(retainedExitHistory);
+                MotionPathProfile nextProfile = f.motion.pathProfile;
+                assert(MotionController_Stop(&f.motion) == 0);
+                assert(MotionController_FollowProfile(&f.motion, &nextProfile) == 0);
+                near(f.motion.arcFilteredFeedforwardYawRateRadPerSec, 0, 0);
+                near(f.motion.arcUnfilteredFeedforwardYawRateRadPerSec, 0, 0);
+            }
+        }
+    }
+    near(peakExisting, 30, 0.001f);
+    assert(peakMatched < 0.001f);
+    printf("Perfect tracking filter experiment: existing peak correction %.2f, "
+           "matched %.6f raw units; software signal test only\n", peakExisting, peakMatched);
+    /* With constant curvature both formulations agree, including speed ramps. */
+    float references[2][80];
+    for (unsigned matched = 0; matched < 2; ++matched) {
+        Fixture f; setup(&f, false);
+        f.config.useMatchedYawRateReferenceFilter = matched;
+        f.config.arcYawRateFilterTauSec = 0.1f;
+        f.config.straightHeadingKpPerSec = f.config.arcHeadingKpPerSec = 0;
+        assert(initMotion(&f) == 0);
+        assert(MotionController_MoveArc(&f.motion, 1000, 525, 5000) == 0);
+        prepare(&f, MOTIONCONTROLLER_ARC_PREPARING, MOTIONCONTROLLER_ARC);
+        for (unsigned i = 0; i < 80; ++i) {
+            f.left.measuredSpeedCps = f.right.measuredSpeedCps = (i < 40 ? i : 80-i) * 100;
+            gyroDps = f.left.measuredSpeedCps * mmPerCount() / 525 * 180 / PI;
+            update(&f, DT);
+            references[matched][i] = f.motion.arcTargetYawRateRadPerSec;
+            if (matched) near(references[0][i], references[1][i], 0.000001f);
+        }
+    }
+}
+
 static void testFeedforwardAndScheduling(void)
 {
     Fixture f; MotionSequence s;
@@ -844,18 +931,20 @@ uint32_t HAL_GetTick(void)
 {
     ++fakeTick;
     bool trackMotion = hardwareScenario == 0 || hardwareScenario == 1 ||
-        hardwareScenario == 3 || (hardwareScenario == 4 && hardwareStartCount == 1);
+        hardwareScenario == 3 || hardwareScenario == 5 ||
+        (hardwareScenario == 4 && hardwareStartCount == 1);
     if (hardwareFixture && trackMotion) {
         WheelSpeedController *l = &hardwareFixture->leftWheelController;
         WheelSpeedController *r = &hardwareFixture->rightWheelController;
-        leftCountFraction += l->targetSpeedCps * 0.001f;
-        rightCountFraction += r->targetSpeedCps * 0.001f;
+        float speedScale = hardwareScenario == 5 ? 0.5f : 1.0f;
+        leftCountFraction += speedScale * l->targetSpeedCps * 0.001f;
+        rightCountFraction += speedScale * r->targetSpeedCps * 0.001f;
         int dl = (int)leftCountFraction, dr = (int)rightCountFraction;
         leftCountFraction -= dl; rightCountFraction -= dr;
         hardwareFixture->leftRearWheel.state.encCount += dl;
         hardwareFixture->rightRearWheel.state.encCount += dr;
-        l->measuredSpeedCps = l->targetSpeedCps;
-        r->measuredSpeedCps = r->targetSpeedCps;
+        l->measuredSpeedCps = speedScale * l->targetSpeedCps;
+        r->measuredSpeedCps = speedScale * r->targetSpeedCps;
         gyroDps = hardwareFixture->motionController.targetCurvaturePerMm *
             0.5f * (l->measuredSpeedCps + r->measuredSpeedCps) * mmPerCount() * 180 / PI;
     }
@@ -865,7 +954,12 @@ void HAL_Delay(uint32_t ms)
 { for (uint32_t i = 0; i < ms; ++i) (void)HAL_GetTick(); }
 void SW1_WaitForPressAndRelease(void)
 {
-    if (hardwareScenario == 0) {
+    if (hardwareScenario == 0 &&
+        motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_REFERENCE_FILTER) {
+        assert(strstr(oledRows[0], hardwareStartCount == 0 ? "A existing" : "B matched"));
+        assert(strstr(oledRows[1], "R525 180: 2.55m"));
+        assert(strstr(oledRows[4], "Reset +x"));
+    } else if (hardwareScenario == 0) {
         assert(strstr(oledRows[1], "Task2 S: 7.73m"));
         assert(strstr(oledRows[4], "Park +x"));
         testTask2RouteGeometry();
@@ -894,6 +988,7 @@ void OLED_Printf(uint8_t x, uint8_t y, const char *format, ...)
 
 static void testRobotHarness(void)
 {
+    motionSequenceFusionTestExperiment = MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING;
     for (unsigned scenario = 0; scenario < 5; ++scenario) {
         hardwareScenario = scenario;
         hardwareStartCount = 0;
@@ -981,6 +1076,95 @@ static void testRobotHarness(void)
     }
 }
 
+static void testFilterRobotHarness(void)
+{
+    motionSequenceFusionTestExperiment = MOTION_SEQUENCE_FUSION_TEST_REFERENCE_FILTER;
+    for (unsigned scenario = 0; scenario < 6; ++scenario) {
+        hardwareScenario = scenario;
+        hardwareStartCount = 0;
+        hardwareTrialStartTick = 0;
+        fakeTick = 0;
+        leftCountFraction = rightCountFraction = 0;
+        hardwareFixture = NULL;
+        MotionSequenceFusionTestRun();
+        assert(motionSequenceFusionTestLogPeriodMs == 20);
+        assert(motionSequenceFusionTestLogCount > 1 && motionSequenceFusionTestLogCount <= 650);
+        assert(motionSequenceFusionTestSavedTimeMs == 0);
+        near(motionSequenceFusionTestSavedPercent, 0, 0);
+        MotionSequenceFusionTestResult *a = &motionSequenceFusionTestResults[0];
+        MotionSequenceFusionTestResult *b = &motionSequenceFusionTestResults[1];
+        assert(!a->useMatchedYawRateReferenceFilter);
+        const MotionControllerConfig *config = hardwareFixture->motionController.config;
+        near(config->straightYawRateKp, 100, 0); near(config->arcYawRateKp, 100, 0);
+        near(config->straightYawRateKi, 0, 0); near(config->arcYawRateKi, 0, 0);
+        near(config->straightYawRateKd, 0, 0); near(config->arcYawRateKd, 0, 0);
+        near(config->straightHeadingKpPerSec, 0, 0); near(config->arcHeadingKpPerSec, 0, 0);
+        near(config->arcYawRateFilterTauSec, 0.1f, 0);
+        if (scenario == 0) {
+            assert(motionSequenceFusionTestComparisonValid && motionSequenceFusionTestPassed);
+            assert(hardwareStartCount == 2 && motionSequenceFusionTestResultCount == 2);
+            assert(a->passed && b->passed && b->useMatchedYawRateReferenceFilter);
+            assert(!a->stopAfterEachSegment && !b->stopAfterEachSegment);
+            assert(a->completedRuns == 1 && b->completedRuns == 1);
+            assert(!a->logTruncated && !b->logTruncated);
+            near(a->nominalTravelMm, 900 + 525 * PI, 0.001f);
+            near(a->nominalTravelMm, b->nominalTravelMm, 0);
+            near(a->nominalYawRad, PI, 0.000001f);
+            near(a->nominalYawRad, b->nominalYawRad, 0);
+            assert(motionSequenceFusionTestSequence.plan.count == 3);
+            for (unsigned i = 0; i < 3; ++i) {
+                assert(!motionSequenceFusionTestSequence.plan.segments[i].stopAfter);
+                near(motionSequenceFusionTestSequence.plan.segments[i].speedCps, 5000, 0);
+            }
+            assert(strstr(oledRows[0], "DONE") && strstr(oledRows[1], "A existing") &&
+                   strstr(oledRows[2], "B matched"));
+            assert(strstr(oledRows[3], "A yaw") && strstr(oledRows[4], "B yaw"));
+            unsigned taggedSamples[2] = {0};
+            for (unsigned i = 0; i < motionSequenceFusionTestLogCount; ++i) {
+                const MotionSequenceFusionTestSample *sample = &motionSequenceFusionTestLog[i];
+                assert(sample->comparisonRunIndex < 2);
+                ++taggedSamples[sample->comparisonRunIndex];
+                if (i && sample->comparisonRunIndex == motionSequenceFusionTestLog[i-1].comparisonRunIndex) {
+                    unsigned gap = sample->timeMs - motionSequenceFusionTestLog[i-1].timeMs;
+                    assert(gap <= 30); /* Includes final partial interval. */
+                }
+                assert(isfinite(sample->filteredGeometricYawRateRadPerSec));
+            }
+            assert(taggedSamples[0] > 100 && taggedSamples[0] <= 325);
+            assert(taggedSamples[1] > 100 && taggedSamples[1] <= 325);
+            printf("Ideal filter A/B harness: A %u ms, B %u ms, %u samples; "
+                   "not a physical accuracy result\n", a->elapsedMs, b->elapsedMs,
+                   motionSequenceFusionTestLogCount);
+        } else if (scenario == 5) {
+            /* Completed slow A cannot consume B's reserved log budget. */
+            assert(hardwareStartCount == 2 && motionSequenceFusionTestResultCount == 2);
+            assert(a->passed && b->passed && b->useMatchedYawRateReferenceFilter);
+            assert(a->logTruncated && b->logTruncated);
+            assert(!motionSequenceFusionTestComparisonValid && !motionSequenceFusionTestPassed);
+            assert(motionSequenceFusionTestLogCount == 650);
+            assert(motionSequenceFusionTestLog[324].comparisonRunIndex == 0);
+            assert(motionSequenceFusionTestLog[324].mode == MOTIONCONTROLLER_IDLE);
+            assert(motionSequenceFusionTestLog[325].comparisonRunIndex == 1);
+            assert(strstr(oledRows[5], "LOG TRUNCATED"));
+        } else {
+            bool second = scenario >= 3;
+            bool timeout = scenario == 2 || scenario == 4;
+            assert(!motionSequenceFusionTestComparisonValid && !motionSequenceFusionTestPassed);
+            assert(hardwareStartCount == (second ? 2U : 1U));
+            assert(motionSequenceFusionTestResultCount == (second ? 2U : 1U));
+            MotionSequenceFusionTestResult *failed = second ? b : a;
+            assert(!failed->passed && failed->timedOut == timeout && failed->cancelled == !timeout);
+            if (second) assert(a->passed && b->useMatchedYawRateReferenceFilter);
+            assert(motionSequenceFusionTestLogTruncated == timeout);
+            assert(strstr(oledRows[0], "INVALID"));
+        }
+        const MotionSequenceFusionTestSample *last =
+            &motionSequenceFusionTestLog[motionSequenceFusionTestLogCount-1];
+        assert(last->mode == MOTIONCONTROLLER_IDLE);
+        assert(last->comparisonRunIndex == (scenario == 0 || scenario >= 3 ? 1U : 0U));
+    }
+}
+
 int main(void)
 {
     /* Keep existing preparation helper compiled and exercised too. */
@@ -990,6 +1174,7 @@ int main(void)
     testBlendGeometry();
     testSeparateProfileLimits();
     testContinuityAndCompletion();
+    testMatchedYawRateReference();
     testFeedforwardAndScheduling();
     testEqualCurvatureAndSignChange();
     testFastJunctionAndRateIsolation();
@@ -997,7 +1182,9 @@ int main(void)
     testStopsReversalsAndCancel();
     testValidationAndFaults();
     testRandomPlans();
+    assert(motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_REFERENCE_FILTER);
     testRobotHarness();
+    testFilterRobotHarness();
     puts("PASS: fused geometry/heading area, lookahead, forward/reverse continuity, "
          "Task 2 obstacle/park geometry, FF bridge, separate limits/stopping envelopes, gain scheduling, slew, stops/reversals, cancellation, faults, 150 random plans, robot harness, final-arc yaw priority");
     return 0;

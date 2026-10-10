@@ -5,9 +5,20 @@
 
 #define MOTION_SEQUENCE_FUSION_TEST_RUN_COUNT 2U
 
+typedef enum
+{
+    MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING = 0,
+    MOTION_SEQUENCE_FUSION_TEST_REFERENCE_FILTER,
+} MotionSequenceFusionTestExperiment;
+
+/* Set before MotionSequenceFusionTestRun(). Default: short filter A/B. */
+extern MotionSequenceFusionTestExperiment motionSequenceFusionTestExperiment;
+extern uint32_t motionSequenceFusionTestLogPeriodMs;
+
 typedef struct
 {
     bool stopAfterEachSegment;
+    bool useMatchedYawRateReferenceFilter;
     bool passed;
     bool timedOut;
     bool cancelled;
@@ -24,7 +35,7 @@ typedef struct
 typedef struct
 {
     uint32_t timeMs;
-    uint32_t comparisonRunIndex; /* 0 = fused, 1 = stop at each segment. */
+    uint32_t comparisonRunIndex; /* See experiment selector and per-run result. */
     uint32_t mode;
     uint32_t sequenceState;
     uint32_t firstSegment;
@@ -42,6 +53,8 @@ typedef struct
     float yawRateDps;
     float filteredYawRateDps;
     float targetYawRateRadPerSec;
+    float unfilteredGeometricYawRateRadPerSec;
+    float filteredGeometricYawRateRadPerSec;
     float headingErrorRad;
     float steeringFeedforward;
     float steeringCorrection;
