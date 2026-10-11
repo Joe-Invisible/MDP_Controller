@@ -60,6 +60,9 @@ negativeArcFeedforwardPoints[] =
 static const MotionControllerArcFeedforwardPoint
 positiveArcFeedforwardPoints[] =
 {
+	{ +0.000054f, -5.625f },
+	{ +0.000183f, -11.25f },
+	{ +0.000436f, -16.875f },
     { +1.0f / 1500.0f, -22.5f },
     { +1.0f / 1000.0f, -27.7f },
     { +1.0f /  500.0f, -47.5f },
