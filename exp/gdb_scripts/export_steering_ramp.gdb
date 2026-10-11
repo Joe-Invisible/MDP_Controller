@@ -2,6 +2,7 @@
 # Use a fresh filename: export appends if the file already exists.
 set print elements unlimited
 set print repeats unlimited
+set max-value-size unlimited
 init-if-undefined $steering_ramp_battery_v = 0.0
 
 define steering-ramp-export

@@ -278,7 +278,8 @@ int main(void) {
 def check_export(gdb, work):
     # Read initialized ELF data directly: no ptrace, target or motion required.
     (work/'SteeringRampResponseTest.c').write_text(EXPORT_FIXTURE)
-    for count, results, initialized in [(3, 3, 1), (0, 0, 1), (1501, 4, 1), (3, 3, 0)]:
+    for count, results, initialized in [(3, 3, 1), (1174, 3, 1), (0, 0, 1),
+                                        (1501, 4, 1), (3, 3, 0)]:
         elf, export = work/'export-fixture', work/'export.txt'
         command = shlex.split(os.environ.get('CC', 'gcc')) + [
             '-std=c11', '-g', '-O0', '-fno-pie', '-no-pie',
@@ -300,7 +301,7 @@ def check_export(gdb, work):
         text = export.read_text()
         assert text.rstrip().endswith('=== EXPORT COMPLETE ===')
         assert '11.43' in text and 'rampLengthMm = 541.5' in text
-        if count == 3:
+        if count in (3, 1174):
             for rate in [-50, -100, 200]:
                 assert f'rawCommandRatePerSec = {rate}' in text
             for trial in range(3):
