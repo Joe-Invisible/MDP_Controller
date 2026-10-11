@@ -217,6 +217,9 @@ static void testArcAndReverse(void)
             near(f.steering.command, turn == -1 ? 47.5f : -47.5f, 1e-5f);
             prepare(&f, MOTIONCONTROLLER_ARC_PREPARING, MOTIONCONTROLLER_ARC);
             near(f.motion.arcCommandedCurvaturePerMm, turn / 500.0f, 1e-7f);
+            /* The base revision uses measured speed, not profile speed, for FF. */
+            f.left.measuredSpeedCps = f.right.measuredSpeedCps = direction * 1000;
+            update(&f, DT);
             assert(f.motion.arcFeedforwardYawRateRadPerSec * turn * direction > 0);
             float nominalKappa = f.motion.targetCurvaturePerMm;
             f.motion.yawDeg = 10.0f;
@@ -236,6 +239,44 @@ static void testArcAndReverse(void)
     assert(MotionController_MoveArc(&f.motion, 500, 10000, 2000) ==
            MOTIONCONTROLLER_STATUS_UNSUPPORTED_CURVATURE);
     assert(f.motion.mode == MOTIONCONTROLLER_IDLE);
+}
+
+static void testOpenLoopArcDistanceCompletion(void)
+{
+    const float radii[] = {2000, 3000, 6000};
+    const float commands[] = {-16.875f, -11.25f, -5.625f};
+    for (unsigned i = 0; i < 3; ++i) {
+        for (unsigned overshoot = 0; overshoot < 2; ++overshoot) {
+            Fixture f; setup(&f, false);
+            f.config.arcYawRateKp = f.config.arcYawRateKi = f.config.arcYawRateKd = 0;
+            f.config.arcHeadingKpPerSec = 0;
+            f.config.motionAccelerationMmps2 = f.config.motionDecelerationMmps2 = 2000;
+            assert(initMotion(&f) == 0);
+            assert(MotionController_MoveArc(&f.motion, 1000, radii[i], 5000) == 0);
+            prepare(&f, MOTIONCONTROLLER_ARC_PREPARING, MOTIONCONTROLLER_ARC);
+            float mmPerCount = PI * kinematics.rearWheelDiameterMm / kinematics.rearEncoderCountsPerRev;
+            /* Even yaw already beyond its nominal endpoint cannot end the run. */
+            f.motion.yawDeg = overshoot ? 100.0f : 0.0f;
+            gyroDps = 0;
+            uint16_t counts = (uint16_t)floorf(970 / mmPerCount);
+            f.leftMotor.state.encCount += counts;
+            f.rightMotor.state.encCount += counts;
+            update(&f, DT);
+            assert(f.motion.mode == MOTIONCONTROLLER_ARC);
+            near(f.steering.command, commands[i], 1e-5f);
+            near(f.motion.arcSteeringCorrectionCommand, 0, 0);
+            near(f.motion.wheelReferenceCurvaturePerMm, 1/radii[i], 1e-8f);
+            float half = kinematics.rearTrackWidthMm / (2*radii[i]);
+            near(f.motion.leftBaseTargetCps, f.motion.targetSpeedCps*(1-half), 1e-3f);
+            near(f.motion.rightBaseTargetCps, f.motion.targetSpeedCps*(1+half), 1e-3f);
+            counts = (uint16_t)ceilf(35/mmPerCount);
+            f.leftMotor.state.encCount += counts;
+            f.rightMotor.state.encCount += counts;
+            update(&f, DT);
+            /* Distance completion also stops an underturn; no yaw-driven overrun. */
+            assert(f.motion.mode == MOTIONCONTROLLER_BRAKING);
+        }
+    }
 }
 
 static void testLowSpeedAndFilter(void)
@@ -334,6 +375,7 @@ int main(void)
     testStraightSignsAndGeometry();
     testFixedStraightFeedforward();
     testArcAndReverse();
+    testOpenLoopArcDistanceCompletion();
     testLowSpeedAndFilter();
     testLegacyAndValidation();
     testCompletionAndFaults();

@@ -60,6 +60,11 @@ negativeArcFeedforwardPoints[] =
 static const MotionControllerArcFeedforwardPoint
 positiveArcFeedforwardPoints[] =
 {
+    /* PROVISIONAL near-straight candidates. Replace curvature with measured
+     * pre-braking yaw [rad] / centre travel [mm] before treating as calibrated. */
+    { +1.0f / 6000.0f, -5.625f },
+    { +1.0f / 3000.0f, -11.25f },
+    { +1.0f / 2000.0f, -16.875f },
     { +1.0f / 1500.0f, -22.5f },
     { +1.0f / 1000.0f, -27.7f },
     { +1.0f /  500.0f, -47.5f },

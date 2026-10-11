@@ -1,20 +1,10 @@
 /*
  * MotionControllerArcTest.c
  *
- * First physical constant-curvature arc test.
- *
- * Feedforward steering only:
- *
- *     radius     = +4000 mm
- *     arc length = 1000 mm
- *     speed      = 2000 CPS
- *
- * Nominal full-arc geometry:
- *
- *     curvature = 1 / 4000 = 0.00025 /mm
- *     yaw        = 1000 / 4000
- *                = 0.25 rad
- *                = 14.32 deg
+ * Distance-terminated open-loop loose-arc feedforward calibration.
+ * Default: +R2000, 1000 mm, 5000 CPS, acceleration/deceleration 2000 mm/s^2.
+ * Provisional raw candidates are in MotionControllerConfig.c. This branch
+ * predates yaw-priority termination; yaw is a measurement, not a stop target.
  *
  * Created on: 2026年9月9日
  * Author: Joe
@@ -36,9 +26,9 @@
 /* Test configuration                                                         */
 /* -------------------------------------------------------------------------- */
 
-#define ARC_TEST_DISTANCE_MM              (431.97f)
-#define ARC_TEST_RADIUS_MM                (-275.0f)
-#define ARC_TEST_SPEED_CPS                (2000.0f)
+#define ARC_TEST_DISTANCE_MM              (1000.0f)
+#define ARC_TEST_RADIUS_MM                (2000.0f)
+#define ARC_TEST_SPEED_CPS                (5000.0f)
 
 #define ARC_TEST_CONTROL_PERIOD_MS        (10U)
 #define ARC_TEST_CONTROL_PERIOD_S         (0.010f)
@@ -62,7 +52,7 @@
 #define ARC_TEST_SYNC_KP_CPS_PER_MM       (10.0f)
 #define ARC_TEST_SYNC_MAX_CORRECTION_CPS  (100.0f)
 
-#define ARC_TEST_FF_EXP	(0)
+#define ARC_TEST_FF_EXP	(1)
 
 /*
  * Heading PID is deliberately not used during ARC mode.
@@ -99,8 +89,8 @@
 /*
  * Current motion-profile parameters.
  */
-#define ARC_TEST_ACCELERATION_MMPS2       (500.0f)
-#define ARC_TEST_DECELERATION_MMPS2       (250.0f)
+#define ARC_TEST_ACCELERATION_MMPS2       (2000.0f)
+#define ARC_TEST_DECELERATION_MMPS2       (2000.0f)
 
 static const MotionControllerConfig arcTestMotionConfig =
 {
@@ -155,6 +145,11 @@ static const MotionControllerConfig arcTestMotionConfig =
 /* -------------------------------------------------------------------------- */
 /* Diagnostic state                                                           */
 /* -------------------------------------------------------------------------- */
+
+volatile const float motionControllerArcTestRequestedDistanceMm = ARC_TEST_DISTANCE_MM;
+volatile const float motionControllerArcTestRequestedRadiusMm = ARC_TEST_RADIUS_MM;
+volatile const float motionControllerArcTestRequestedSpeedCps = ARC_TEST_SPEED_CPS;
+volatile float motionControllerArcTestPreparedRawCommand;
 
 static float arcTestLeftDistanceMm = 0.0f;
 static float arcTestRightDistanceMm = 0.0f;
@@ -238,9 +233,8 @@ volatile float motionControllerArcTestFinalRightDistanceMm = 0.0f;
 
 
 volatile const char *motionControllerArcTestInfo =
-    "Closed-loop arc: R=-10000mm, S=1000mm, 2000CPS, "
-    "accel=500, decel=250, Ksync=10, heading Kp=1.00, "
-    "steering pre-positioned 500ms";
+    "Distance completion; fixed nominal wheel ratio; deterministic centring; "
+    "use pre-braking exit yaw/distance for curvature";
 
 
 /* -------------------------------------------------------------------------- */
@@ -256,6 +250,7 @@ static void MotionControllerArcTest_ResetLog(void)
 
     motionControllerArcTestCommandAccepted = false;
     motionControllerArcTestTimedOut = false;
+    motionControllerArcTestPreparedRawCommand = 0.0f;
 
     motionControllerArcTestArcExitCaptured = false;
     motionControllerArcTestArcExitTimeMs = 0U;
@@ -621,9 +616,19 @@ static bool MotionControllerArcTest_Init(
     }
 
 
+    /* Match the wheel-speed feedback used by the fusion experiments. */
+    fixture->leftWheelController.pid.kp = 0.03f;
+    fixture->leftWheelController.pid.ki = 0.0f;
+    fixture->rightWheelController.pid.kp = 0.03f;
+    fixture->rightWheelController.pid.ki = 0.0f;
     return true;
 }
 
+__attribute__((noinline)) void MotionControllerArcTestFinished(void)
+{
+    /* Export breakpoint after final results have been captured. */
+    __asm__ volatile ("" ::: "memory");
+}
 
 /* -------------------------------------------------------------------------- */
 /* Test                                                                        */
@@ -632,6 +637,9 @@ static bool MotionControllerArcTest_Init(
 void MotionControllerArcTestRun(void)
 {
     RobotTestFixture fixture = { 0 };
+    const float requestedDistanceMm = motionControllerArcTestRequestedDistanceMm;
+    const float requestedRadiusMm = motionControllerArcTestRequestedRadiusMm;
+    const float requestedSpeedCps = motionControllerArcTestRequestedSpeedCps;
 
 
     if (!MotionControllerArcTest_Init(&fixture))
@@ -646,18 +654,18 @@ void MotionControllerArcTestRun(void)
 
     OLED_Printf(
         0, 0,
-        "Arc Motion Test");
+        "Arc FF distance");
 
     OLED_Printf(
         0, 1,
         "R:%+.0f S:%.0f",
-        ARC_TEST_RADIUS_MM,
-        ARC_TEST_DISTANCE_MM);
+        requestedRadiusMm,
+        requestedDistanceMm);
 
     OLED_Printf(
         0, 2,
         "Speed: %.0f CPS",
-        ARC_TEST_SPEED_CPS);
+        requestedSpeedCps);
 
     OLED_Printf(
         0, 3,
@@ -671,6 +679,10 @@ void MotionControllerArcTestRun(void)
     OLED_Refresh_Gram();
 
 
+    OLED_Printf(0, 5, "P%g I%g D%g H%g", (double)arcTestMotionConfig.arcYawRateKp,
+                (double)arcTestMotionConfig.arcYawRateKi, (double)arcTestMotionConfig.arcYawRateKd,
+                (double)arcTestMotionConfig.arcHeadingKpPerSec);
+    OLED_Refresh_Gram();
     SW1_WaitForPressAndRelease();
 
 
@@ -722,9 +734,9 @@ void MotionControllerArcTestRun(void)
     motionControllerArcTestCommandAccepted =
         MotionController_MoveArc(
             &fixture.motionController,
-            ARC_TEST_DISTANCE_MM,
-            ARC_TEST_RADIUS_MM,
-            ARC_TEST_SPEED_CPS) ==
+            requestedDistanceMm,
+            requestedRadiusMm,
+            requestedSpeedCps) ==
         MOTIONCONTROLLER_STATUS_OK;
 
 
@@ -744,6 +756,9 @@ void MotionControllerArcTestRun(void)
         SW1_WhileNotPressed();
         return;
     }
+
+    motionControllerArcTestPreparedRawCommand =
+        fixture.motionController.arcSteeringFeedforwardCommand;
 
     /*
      * Capture state before the first control update.
@@ -1024,5 +1039,6 @@ void MotionControllerArcTestRun(void)
     /*
      * Preserve all data in RAM for debugger export.
      */
+    MotionControllerArcTestFinished();
     SW1_WhileNotPressed();
 }

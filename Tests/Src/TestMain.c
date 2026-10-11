@@ -32,10 +32,8 @@ void InvokeTest() {
 
 	LED_On();
 
-	/* Select this separate harness for straight feedforward calibration:
-	 * MotionControllerStraightFeedforwardTestRun();
-	 * The original arc harness retains the pending raw +95 setup. */
-	MotionControllerSequenceTestRun();
+	/* Distance-terminated, open-loop loose-arc feedforward calibration. */
+	MotionControllerArcTestRun();
 
 	while (1) {
 		// Test ended. Loop forever.
