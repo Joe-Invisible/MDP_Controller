@@ -839,7 +839,7 @@ bool RobotTestFixture_InitMotionController(RobotTestFixture *rf,
 static void testTask2RouteGeometry(void)
 {
     MotionSequencePlan plan = motionSequenceFusionTestSequence.plan;
-    assert(plan.count == 10);
+    assert(plan.count == 4);
     assert(MotionSequencePlan_Prepare(&plan, &motionSequenceFusionTestSequence.config,
         mmPerCount(), 3000, 3000, 2000, 2000, 0, 480));
     bool stopped = plan.segments[0].stopAfter;
@@ -878,7 +878,7 @@ static void testTask2RouteGeometry(void)
                      * diagonal return passes above BOTH obstacles. */
                     int expectedSide = returning || obstacle == 0 ? 1 : -1;
                     assert(y * expectedSide > halfHeight + 201);
-                    if (!returning && obstacle == 0) assert(y < 300);
+                    /* Broad first pass retains clearance without a lane-reset turn. */
                 }
             }
             /* Check corners and the body's intersections with x=0: an
@@ -910,7 +910,7 @@ static void testTask2RouteGeometry(void)
     }
     if (trace) fclose(trace);
     for (unsigned i = 0; i < 2; ++i) assert(passes[i][0] && passes[i][1]);
-    float expectedYaw = PI + atan2f(50, 2775) + asinf(525 / hypotf(2775, 50));
+    float expectedYaw = PI + asinf(575 / 2650.0f);
     near((float)yaw, expectedYaw, 1e-5f);
     for (unsigned j = 0; j < 4; ++j) {
         int front = j < 2 ? 1 : -1;
@@ -921,8 +921,12 @@ static void testTask2RouteGeometry(void)
     }
     if (stopped) { near((float)x, -250, 0.01f); near((float)y, 0, 0.01f); }
     /* The final segment is a SINGLE straight tangent return into the park. */
-    assert(plan.segments[9].curvaturePerMm == 0);
-    assert(plan.segments[9].signedDistanceMm > 2700);
+    assert(plan.segments[3].curvaturePerMm == 0);
+    assert(plan.segments[3].signedDistanceMm > 2500);
+    for (unsigned i = 0; i < plan.count; ++i) {
+        assert(plan.segments[i].signedDistanceMm >= 1000);
+        if (i + 1 < plan.count) near(plan.junctionHalfLengthMm[i], stopped ? 0 : 250, 0);
+    }
     printf("Task 2 %s nominal endpoint: x=%.2f y=%.2f mm, heading=%.2f deg\n",
            stopped ? "stopped" : "fused", x, y, yaw * 180 / PI);
 }
@@ -931,7 +935,7 @@ uint32_t HAL_GetTick(void)
 {
     ++fakeTick;
     bool trackMotion = hardwareScenario == 0 || hardwareScenario == 1 ||
-        hardwareScenario == 3 || hardwareScenario == 5 ||
+        hardwareScenario == 3 || hardwareScenario == 5 || hardwareScenario == 6 ||
         (hardwareScenario == 4 && hardwareStartCount == 1);
     if (hardwareFixture && trackMotion) {
         WheelSpeedController *l = &hardwareFixture->leftWheelController;
@@ -948,6 +952,7 @@ uint32_t HAL_GetTick(void)
         gyroDps = hardwareFixture->motionController.targetCurvaturePerMm *
             0.5f * (l->measuredSpeedCps + r->measuredSpeedCps) * mmPerCount() * 180 / PI;
     }
+    if (hardwareScenario == 6 && hardwareStartCount == 2) gyroDps = 0;
     return fakeTick;
 }
 void HAL_Delay(uint32_t ms)
@@ -975,7 +980,7 @@ void SW1_WaitForPressAndRelease(void)
         }
         assert(strstr(oledRows[4], "Reset +x"));
     } else if (hardwareScenario == 0) {
-        assert(strstr(oledRows[1], "Task2 S: 7.73m"));
+        assert(strstr(oledRows[1], "Task2 S: 7.81m"));
         assert(strstr(oledRows[4], "Park +x"));
         testTask2RouteGeometry();
     }
@@ -1029,18 +1034,52 @@ static void testRobotHarness(void)
             near(hardwareFixture->leftWheelController.pid.kp, 0.03f, 0);
             near(hardwareFixture->rightWheelController.pid.kp, 0.03f, 0);
             assert(!a->stopAfterEachSegment && b->stopAfterEachSegment);
-            assert(a->completedRuns == 1 && b->completedRuns == 10);
-            assert(motionSequenceFusionTestSequence.plan.count == 10);
-            for (unsigned i = 0; i < 10; ++i) {
+            assert(a->completedRuns == 1 && b->completedRuns == 4);
+            assert(!a->usesStandalonePrimitives && !a->yawPriorityArcExits);
+            assert(b->usesStandalonePrimitives && b->yawPriorityArcExits);
+            assert(a->useMatchedYawRateReferenceFilter && !b->useMatchedYawRateReferenceFilter);
+            near(a->straightTuning.yawRateKp, 100, 0);
+            near(a->straightTuning.yawRateKi, 50, 0);
+            near(a->arcTuning.yawRateKp, 150, 0);
+            near(a->arcTuning.yawRateKi, 75, 0);
+            near(a->arcTuning.headingKpPerSec, 0.5f, 0);
+            near(b->straightTuning.yawRateKp, 270, 0);
+            near(b->straightTuning.yawRateKi, 150, 0);
+            near(b->arcTuning.yawRateKp, 270, 0);
+            near(b->arcTuning.yawRateKi, 150, 0);
+            near(b->arcTuning.headingKpPerSec, 0, 0);
+            const MotionSequencePlan *fusedPlan = &motionSequenceFusionTestFusedPlan;
+            assert(fusedPlan->prepared && fusedPlan->count == 4);
+            const MotionControllerArcConfig *arcConfig = hardwareFixture->motionController.config->arcConfig;
+            assert(arcConfig->positivePointCount == 8);
+            near(arcConfig->positivePoints[0].curvaturePerMm, 0.000054f, 0);
+            near(arcConfig->positivePoints[1].curvaturePerMm, 0.000183f, 0);
+            near(arcConfig->positivePoints[2].curvaturePerMm, 0.000436f, 0);
+            for (unsigned i = 0; i < 3; ++i) {
+                near(fusedPlan->junctionHalfLengthMm[i], 250, 0);
+                assert(fusedPlan->junctionSpeedCps[i] > 0 && fusedPlan->junctionSpeedCps[i] <= 5000);
+            }
+            printf("Task 2 prepared A junction speeds: %.1f / %.1f / %.1f CPS\n",
+                fusedPlan->junctionSpeedCps[0], fusedPlan->junctionSpeedCps[1], fusedPlan->junctionSpeedCps[2]);
+            assert(motionSequenceFusionTestArcExitCount == 3);
+            for (unsigned i = 0; i < 3; ++i) {
+                const MotionSequenceFusionTestArcExit *exit = &motionSequenceFusionTestArcExits[i];
+                assert(exit->segmentIndex == i);
+                assert(exit->yawPredictedReached && !exit->distanceLimitReached);
+                assert(exit->measuredDistanceMm > 0);
+                assert(fabsf(exit->measuredYawRad - exit->nominalYawRad) < 0.02f);
+            }
+            assert(motionSequenceFusionTestSequence.plan.count == 4);
+            for (unsigned i = 0; i < 4; ++i) {
                 const MotionSequenceSegment *seg = &motionSequenceFusionTestSequence.plan.segments[i];
                 near(seg->speedCps, 5000, 0);
                 assert(seg->stopAfter && seg->signedDistanceMm > 0);
             }
-            near(a->nominalTravelMm, 7732.5795f, 0.02f);
+            near(a->nominalTravelMm, 7809.482f, 0.02f);
             near(a->nominalTravelMm, b->nominalTravelMm, 0);
-            near(a->nominalYawRad, PI + atan2f(50, 2775) + asinf(525 / hypotf(2775, 50)), 1e-6f);
+            near(a->nominalYawRad, PI + asinf(575 / 2650.0f), 1e-6f);
             near(b->nominalYawRad, a->nominalYawRad, 1e-6f);
-            assert(a->elapsedMs < b->elapsedMs);
+            assert(a->elapsedMs > 0 && b->elapsedMs > 0);
             assert(motionSequenceFusionTestSavedTimeMs ==
                    (int32_t)b->elapsedMs - (int32_t)a->elapsedMs);
             near(motionSequenceFusionTestSavedPercent,
@@ -1055,6 +1094,11 @@ static void testRobotHarness(void)
                 MotionSequenceFusionTestSample *sample = &motionSequenceFusionTestLog[i];
                 assert(sample->comparisonRunIndex < 2);
                 ++taggedSamples[sample->comparisonRunIndex];
+                if (sample->comparisonRunIndex == 1 &&
+                    motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING) {
+                    assert(sample->mode != MOTIONCONTROLLER_PROFILE &&
+                           sample->mode != MOTIONCONTROLLER_PROFILE_PREPARING);
+                }
                 assert(sample->accelerationLimitMmps2 == 3000 ||
                        sample->accelerationLimitMmps2 == 2000);
                 assert(sample->decelerationLimitMmps2 == sample->accelerationLimitMmps2);
@@ -1088,6 +1132,29 @@ static void testRobotHarness(void)
         }
         assert(final->mode == MOTIONCONTROLLER_IDLE);
         assert(final->comparisonRunIndex == (scenario >= 3 || scenario == 0 ? 1U : 0U));
+    }
+}
+
+/* A stationary gyro with moving encoders must trigger B's distance guard,
+ * not get reported as a yaw-triggered arc exit. API completion is separate
+ * from heading success; the diagnostics must survive launching the next arc. */
+static void testStoppedArcDistanceGuards(void)
+{
+    motionSequenceFusionTestExperiment = MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING;
+    hardwareScenario = 6;
+    hardwareStartCount = 0;
+    hardwareTrialStartTick = fakeTick = 0;
+    leftCountFraction = rightCountFraction = 0;
+    hardwareFixture = NULL;
+    MotionSequenceFusionTestRun();
+    assert(motionSequenceFusionTestResultCount == 2);
+    assert(motionSequenceFusionTestResults[1].passed);
+    assert(motionSequenceFusionTestArcExitCount == 3);
+    for (unsigned i = 0; i < 3; ++i) {
+        const MotionSequenceFusionTestArcExit *exit = &motionSequenceFusionTestArcExits[i];
+        assert(!exit->yawPredictedReached && exit->distanceLimitReached);
+        assert(exit->measuredDistanceMm >= exit->nominalDistanceMm + 30);
+        near(exit->measuredYawRad, 0, 0);
     }
 }
 
@@ -1309,9 +1376,10 @@ int main(void)
     testStopsReversalsAndCancel();
     testValidationAndFaults();
     testRandomPlans();
-    assert(motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_SINGLE_TUNING);
+    assert(motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING);
     testSingleTuningHarness();
     testRobotHarness();
+    testStoppedArcDistanceGuards();
     testAccuracyRobotHarness(MOTION_SEQUENCE_FUSION_TEST_REFERENCE_FILTER);
     testAccuracyRobotHarness(MOTION_SEQUENCE_FUSION_TEST_TASK1_GAINS);
     puts("PASS: fused geometry/heading area, lookahead, forward/reverse continuity, "

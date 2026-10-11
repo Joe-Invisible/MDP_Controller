@@ -30,7 +30,7 @@ define mctrl-fusion-export
             if motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_REFERENCE_FILTER
                 echo === A/B reference filter comparison (0=existing, 1=matched; both fused) ===\n
             else
-                echo === A/B timing comparison (0=fused, 1=stopped) ===\n
+                echo === A/B Task 2 comparison (0=frozen fusion, 1=standalone stopped; yaw-priority arc exits) ===\n
             end
         end
     end
@@ -44,10 +44,28 @@ define mctrl-fusion-export
     p motionSequenceFusionTestComparisonValid
     p motionSequenceFusionTestSavedTimeMs
     p motionSequenceFusionTestSavedPercent
+    if motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING
+        echo === A prepared fused plan (actual blends and speed caps) ===\n
+        p motionSequenceFusionTestFusedPlan
+    end
+    echo === Standalone stopped arc exits (including braking) ===\n
+    p motionSequenceFusionTestArcExitCount
+    set $fusion_arc_exit_capacity = sizeof(motionSequenceFusionTestArcExits) / sizeof(motionSequenceFusionTestArcExits[0])
+    if motionSequenceFusionTestArcExitCount > 0 && motionSequenceFusionTestArcExitCount <= $fusion_arc_exit_capacity
+        p motionSequenceFusionTestArcExits[0] @ motionSequenceFusionTestArcExitCount
+    else
+        echo No arc exits, or invalid count: arc exit array was not read.\n
+    end
     echo === Plan and final sequence state ===\n
     p motionSequenceFusionTestSequence
     if motionSequenceFusionTestSequence.controller != 0
         p *motionSequenceFusionTestSequence.controller->config
+        if motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING
+            echo === Frozen arc feedforward calibration ===\n
+            p *motionSequenceFusionTestSequence.controller->config->arcConfig
+            p motionSequenceFusionTestSequence.controller->config->arcConfig->positivePoints[0] @ motionSequenceFusionTestSequence.controller->config->arcConfig->positivePointCount
+            p motionSequenceFusionTestSequence.controller->config->arcConfig->negativePoints[0] @ motionSequenceFusionTestSequence.controller->config->arcConfig->negativePointCount
+        end
         p *motionSequenceFusionTestSequence.controller->steering->calibration
         if motionSequenceFusionTestSequence.controller->leftWheel != 0
             p motionSequenceFusionTestSequence.controller->leftWheel->pid

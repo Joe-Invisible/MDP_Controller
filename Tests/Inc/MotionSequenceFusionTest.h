@@ -14,7 +14,7 @@ typedef enum
     MOTION_SEQUENCE_FUSION_TEST_SINGLE_TUNING,
 } MotionSequenceFusionTestExperiment;
 
-/* Set before MotionSequenceFusionTestRun(). Default: one tuning run. */
+/* Set before MotionSequenceFusionTestRun(). Default: Task 2 A/B. */
 extern MotionSequenceFusionTestExperiment motionSequenceFusionTestExperiment;
 extern uint32_t motionSequenceFusionTestLogPeriodMs;
 
@@ -33,6 +33,8 @@ extern MotionSequenceFusionTestTuning motionSequenceFusionTestArcTuning;
 typedef struct
 {
     bool stopAfterEachSegment;
+    bool usesStandalonePrimitives;
+    bool yawPriorityArcExits;
     bool useMatchedYawRateReferenceFilter;
     bool passed;
     bool timedOut;
@@ -49,6 +51,24 @@ typedef struct
     MotionSequenceFusionTestTuning straightTuning;
     MotionSequenceFusionTestTuning arcTuning;
 } MotionSequenceFusionTestResult;
+
+/* Side B exits, including braking drift. A distance guard alone does not
+ * demonstrate a successful heading exit. Indices are zero-based. */
+typedef struct
+{
+    uint32_t segmentIndex;
+    float nominalDistanceMm;
+    float measuredDistanceMm;
+    float nominalYawRad;
+    float measuredYawRad;
+    bool yawPredictedReached;
+    bool distanceLimitReached;
+} MotionSequenceFusionTestArcExit;
+
+extern MotionSequenceFusionTestArcExit motionSequenceFusionTestArcExits[MOTION_SEQUENCE_CAPACITY];
+extern uint32_t motionSequenceFusionTestArcExitCount;
+/* Preserve A's prepared blend lengths/speed caps after B replaces the route. */
+extern MotionSequencePlan motionSequenceFusionTestFusedPlan;
 
 typedef struct
 {

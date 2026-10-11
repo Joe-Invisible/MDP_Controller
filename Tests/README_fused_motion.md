@@ -1,16 +1,28 @@
 # Experimental fused motion sequence
 
-Branch: `experiment/fused-motion-limits`.
+Branch: `experiment/task2-fused-stopped-comparison`.
+Forked from pre-response-planner commit `6d7f13767d18302bd84225aff0fe9a0db66db205`.
+The later measured-response planner (`fe9704f`) and its validation harness are
+not used. The original experiment branch is preserved.
 Base: `90fa9d3b4d37080a7bf035abe1c3439fd2361ffb` on
 `experiment/fused-motion-sequence`, with the separate-limits change adapted from
 `feature/motion-profile-limits` commit `df2fc280541868bff87ff8813cf36dc48462deb0`.
 The separate production UART and IMU-hardening changes are not included.
 
-## Current default: single tuning run
+## Current default: Task 2 fused versus standalone stopped
+
+`TestMain.c` selects `MotionSequenceFusionTestRun()`, with
+`MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING` as the default selector. It uses the
+four long primitives described in [Task 2 comparison](#task-2-comparison).
+A freezes the last logged pre-response-planner tuning (longblend runs 15/16);
+B uses the confirmed Task 1 stopped tuning and standalone yaw-priority arc exits.
+Shared production controller and planner defaults are unchanged.
+
+## Optional historical single tuning run
 
 `MotionSequenceFusionTestRun()` runs the longer transition accuracy path once. There
 is no P100 baseline, second button prompt, or A/B comparison in this mode.
-The default selector is `MOTION_SEQUENCE_FUSION_TEST_SINGLE_TUNING`.
+Select `MOTION_SEQUENCE_FUSION_TEST_SINGLE_TUNING` before entering the harness.
 
 | Regime | Yaw-rate P / I / D | Heading gain (s⁻¹) |
 | --- | --- | ---: |
@@ -100,14 +112,14 @@ matched references, completion, cancellation, timeout, full log capacity and
 retained final samples, plus the original controller/planner regressions.
 These are software checks, not physical servo/vehicle results.
 
-Previous A/B experiments remain available by changing the selector before the run:
+Other experiments remain available by changing the selector before the run:
 
 - `MOTION_SEQUENCE_FUSION_TEST_REFERENCE_FILTER`: P100/0/0 and heading zero,
   existing versus matched filtering on the short path.
 - `MOTION_SEQUENCE_FUSION_TEST_TASK1_GAINS`: P100/0/0 versus Task 1 P270/I150/D0,
   heading zero and matched filtering on both runs.
-- `MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING`: original long course, original
-  yaw/heading tuning, 100 ms logging and fused-versus-stopped time savings.
+- `MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING`: the current default four-primitive
+  Task 2 course, frozen fused tuning versus established stopped tuning.
 
 The two short A/B modes retain the original 300 mm / R525 semicircle / 600 mm
 path and the shared 200 mm blend. They reserve 325 samples per run and require a pose reset
@@ -329,180 +341,178 @@ mode selection, opposite-turn zero crossing and the experiment's actual gains.
 
 The full ARM Debug firmware builds and links with the configured source
 exclusions and the unchanged STM32 FLASH linker script. Changed firmware sources
-also pass `-Wall -Wextra -Werror`. The final image uses approximately 98 KiB FLASH
-code/constants and approximately 113 KiB RAM (including the shared sample buffer, heap and stack
+also pass `-Wall -Wextra -Werror`. The final image uses approximately 104 KiB FLASH
+code/constants and approximately 119 KiB RAM (including the shared sample buffer, heap and stack
 reservations), within the STM32F407's configured memory. Control-period timing
 and physical robot trials still require hardware validation.
 
-## Optional Task 2 timing experiment
+## Task 2 comparison
 
-`Tests/Src/TestMain.c` selects `MotionSequenceFusionTestRun()` on this branch.
-CubeIDE's existing Controllers/Tests source folders include the new `.c` files;
-refresh the project and clean/rebuild before flashing. Existing production
-UART/RPi integration is outside this first experiment.
+Build/flash this branch normally after refreshing and cleaning the CubeIDE
+project. This is a fixed-route physical trial representing Task 2, with first
+arrow left and second arrow right. It does not yet implement arrow recognition,
+obstacle measurement, or vision/IR approach stops.
 
-In `MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING` mode, the harness runs the same
-**Task 2 outward S and straight return** twice at
-**5000 CPS requested for every straight and arc**. Assume the first arrow points
-left and the second points right. It leaves the car park, passes the first
-obstacle on its left and the second on its right, turns around beyond the
-second, then drives **one straight diagonal back into the park**, above both
-obstacles. There are no return-side crossovers or additional parking bends.
-All travel is forward.
+![Task 2 broad arcs and straight return](task2_route.svg)
 
-![Task 2 S and straight return](task2_route.svg)
+### Layout and long primitives
 
-### Midpoint layout and starting pose
-
-Use millimetres, x along the initial forward direction and positive y to the
-left. The car-park mouth is x=0. The corrected park dimensions have the **500 mm
-side along x (depth), and 600 mm across y (width)**. Set up these test assumptions:
+Coordinates are millimetres, x along the initial forward direction, positive y
+left. Both face-to-face gaps remain 1050 mm.
 
 | Item | Placement / dimension |
 | --- | --- |
-| Park interior | x=-500…0, y=-300…300; open at x=0 |
-| Initial rear-axle reference pose | (-250, 0), heading +x |
-| Park mouth to first obstacle near face | 1050, midpoint of 600…1500 |
-| First obstacle | centre (1100, 0), 100 × 100 |
-| First far face to second near face | 1050, midpoint of 600…1500 |
-| Second obstacle | centre (2250, 0), 100 along x × 500 along y |
-| Assumed arena clear width | 1600, boundaries y=±800 |
-| Outbound lanes | first y=+275; second y=-475 |
-| Far turnaround | starts at (2525, -475), R=525 |
+| Park interior | x=-500…0, y=-300…300; mouth at x=0 |
+| Initial rear-axle midpoint | (-250, 0), heading +x |
+| Obstacle 1 | centre (1100, 0), 100 × 100 |
+| Obstacle 2 | centre (2250, 0), 100 along x × 500 along y |
+| Assumed arena | x=-500…3300, y=-800…800; 3.8 × 1.6 m |
+| Final left-turn circle | centre (2400, 0), radius 575 |
 
-The second obstacle is a **500 mm compact-trial choice**. The two longitudinal
-gaps keep their 1050 mm midpoint values and are measured between faces, not
-centres. The 1600 mm assumed clear width leaves 550 mm between each end of the
-second obstacle and the side boundary, exceeding the task's 500 mm minimum.
-The task does not specify a fixed numerical maximum obstacle length or arena
-width; this is the chosen test layout.
+| Primitive | Distance (mm) | Radius (mm) | Heading change |
+| ---: | ---: | ---: | ---: |
+| 1: broad departure left | 1015.11 | +1500 | +38.77° |
+| 2: sweep past obstacle 1 and cross over | 1472.47 | -710.31 | -118.77° |
+| 3: pass obstacle 2 and turn onto return | 2735.03 | +575 | +272.53° |
+| 4: one straight return into park | 2586.87 | straight | 0° |
 
-The first outbound lane remains 275 mm from the centreline; the second is now
-475 mm from it. On both constant straights, the assumed centred 200 mm-wide
-body has 125 mm between its side and the respective obstacle. The smaller
-return radius and closer turnaround reduce the path's extent as well as the
-obstacle's size.
+The contained table is computed from tangent circles, not independent rounded
+waypoints. It starts with a shallow arc inside the park rather than a short
+exit stem. One broad right arc carries the departure heading past obstacle 1;
+there is no turn to reset it to a parallel lane. The next broad left arc combines
+the second-obstacle pass with the turnaround. Total nominal travel is
+**7809.48 mm**, net yaw **+192.532°**. All travel is forward.
 
-The centre path reaches approximately x=3050 and y=+575/-475. Both planner
-modes pass the assumed footprint checks within x=-500…3300 and y=±800,
-including the car park: approximately **3.8 m length × 1.6 m width** of clear
-space. Physical tracking and actual chassis offsets still need checking.
+The longer primitives deliberately trade a wider first pass (about y=+486 mm
+stopped / +468 mm fused at obstacle 1) for fewer stops and longer transitions.
+This is a comparison route, not a claim of a globally optimal path. Travel is
+about 1% longer than the former 7.73 m course, with four primitives instead of ten.
 
-### Sequence
+Every primitive exceeds 1000 mm, so the unchanged quarter-segment planner bound
+permits **three complete 500 mm blends**, each using 250 mm from either neighbour.
+The intermediate arcs retain at least half their lengths at constant curvature;
+there are no compressed blends on short straights or small-angle turns. Actual
+junction speeds still obey the existing feedforward slew budget; no planner
+limits have been relaxed. The host tests assert all lengths and blend sizes.
 
-The stopped route has these 10 segments. Positive radius turns left. Distances
-are rounded here; the contained `fusionTestSteps[]` table in
-`MotionSequenceFusionTest_BuildPattern()` uses the geometric constants at the
-file top and calculates the return tangent from the park's target position.
+The production planner's nominal stopped path ends at **(-250, 0)**; the fused
+path ends at approximately **(-209.75, +10.43)**, about **41.6 mm** away. Both
+have the same nominal final heading. That displacement is caused by blending,
+not a measured tracking error. Both final assumed bodies fit inside the park,
+about 12.53° oblique to the inward axis. The final straight uses distance
+completion in both strategies.
 
-| Segment | Motion | Distance (mm) | Radius / heading change |
-| ---: | --- | ---: | --- |
-| 1 | Exit parking stem | 350 | straight |
-| 2–3 | Move to first left lane | 287.98 each | +275 / +60°, then -275 / -60° |
-| 4 | Pass first obstacle left | 723.41 | straight |
-| 5 | Begin outbound crossover | 287.98 | -275 / -60° |
-| 6 | Diagonal between obstacles | 548.48 | straight |
-| 7 | End outbound crossover | 287.98 | +275 / +60° |
-| 8 | Pass second obstacle right | 474.72 | straight |
-| 9 | Turn onto return tangent | 1758.70 | +525 / +191.94° |
-| 10 | Straight diagonal into park and stop | 2725.34 | straight |
+At at most 1 mm spacing, the geometry check verifies both obstacle passes in
+each direction, body clearance, arena bounds and parking, including the body's
+intersections with the mouth. The footprint is an **assumed centred 300 × 200 mm
+rectangle**, enclosed by a 181 mm radius circle with a further 20 mm obstacle
+margin. This is not a measurement of the rear-axle-to-body offsets. Nominal
+geometry passing does not establish physical collision clearance or parking.
 
-The far-turn circle is centred at (2525, +50). Its upper tangent through the
-park centre gives a turnaround angle of 191.936° and tangent distance of
-2725.344 mm. The stopped tangent starts at approximately (2416.42, +563.65)
-and ends at (-250, 0). This avoids aiming a return line through either obstacle.
-The robot enters the park **about 11.94° oblique to the inward axis**; there is
-no final alignment turn. The goal here is parking the whole robot inside.
+### Frozen operating points and termination
 
-Nominal travel is **7732.58 mm**, with net yaw **+191.936°**. The stopped centre
-path returns to (-250, 0); the fused planner ends at approximately
-(-240.97, +6.03), a 10.9 mm displacement from that target. Both have the same
-nominal final heading. The final 2.73 m straight includes deceleration and
-braking inside the park; both batches therefore finish by distance, rather
-than final-arc yaw-priority termination. B's intermediate arcs also finish by
-distance, as discussed above.
+| Setting | A: frozen fused | B: standalone stopped |
+| --- | --- | --- |
+| Straight P / I / D; heading gain | 100 / 50 / 0; 0.5 s⁻¹ | 270 / 150 / 0; 0 |
+| Arc P / I / D; heading gain | 150 / 75 / 0; 0.5 s⁻¹ | 270 / 150 / 0; 0 |
+| Geometric yaw-rate reference | matched LPF(curvature × measured speed) | curvature × filtered speed |
+| Gyro/speed filter time constant | 100 ms | 100 ms |
+| Execution | one continuous profile | four standalone primitives |
+| Intermediate arc completion | continuous junctions | yaw-priority exit at every arc |
+| Steering rate | 480 raw units/s profile override | normal 120 raw units/s |
+| Requested blend length | 500 mm | no blends |
 
-The host check integrates the production planner at at most 1 mm spacing for
-both modes. It checks the tighter first outbound pass, obstacle sides in both
-directions, obstacle clearance, arena side bounds and park-wall clearance,
-including body intersections with the mouth. Its footprint is an **assumed
-centred 300 × 200 mm rectangle**, enclosed by a 181 mm radius circle with an
-additional 20 mm obstacle margin. The tilted final rectangles are wholly inside
-the corrected park. The last segment is checked as a single straight return.
-This verifies nominal geometry, not the actual chassis footprint or tracking;
-check the robot's rear-axle-to-body offsets and physical parking in the trial.
+A's tuning is pinned in `MotionSequenceFusionTest_RunPattern()`, independently
+of the optional historical single-run tuning variables. B's confirmed production
+operating point comes from the Task 1 campaign; its heading outer loop is off.
+This compares two complete strategies, rather than isolating one gain or filter.
 
-**A** sets `stopAfter=false` on every segment and executes one continuous run.
-**B** sets `stopAfter=true` on every segment and executes 10 rest-to-rest runs.
-The segment table, controller configuration and sequence configuration are
-otherwise identical. A keeps the 8000 CPS junction ceiling, bounded by the
-5000 CPS requests and feedforward slew budget. Blends shrink on the shorter
-60° arcs; B has no junction blending. This fixed-route experiment does not yet
-implement arrow recognition, obstacle measurements or vision/IR approach stops.
+Both request **5000 CPS** on every primitive, wheel P=0.03/I=D=0, correction
+limit 30 raw units, synchronisation Kp=10 and limit 100 CPS, straight A/D
+3000/3000 mm/s² and arc A/D 2000/2000 mm/s². The negative calibration and existing positive operating points are retained.
+The test-local positive table also restores the measured entries used in runs
+10-16: (0.000054/mm, -5.625 raw), (0.000183/mm, -11.25 raw), and
+(0.000436/mm, -16.875 raw). They were absent from the committed defaults.
+These points affect the planner's slope-based junction caps and A's transitions;
+the original finite-curvature points used by B are unchanged. The shared
+production table is not modified.
+A's junction ceiling is 8000 CPS, further bounded by the 5000 CPS requests and
+raw-slew budget. The prepared caps are approximately **4210 / 2775 / 5000 CPS**
+at the three junctions, rather than forcing full speed through them. At those
+speeds, a complete 500 mm blend takes at least about 0.90 / 1.37 / 0.76 s.
+B keeps the same speed and motion limits for this comparison,
+rather than the older production candidate's single 2500/1000 limit pair.
 
-To regenerate the diagram from the production planner (requires matplotlib):
+B calls `MotionController_MoveStraight`/`MoveArc` and `MotionController_Update`
+directly. It does **not** execute four stopped profiles through `MotionSequence`:
+that old comparison used distance completion for intermediate arcs. Sequence
+storage on B merely holds the route, progress and aggregate measurements for
+the shared test logger. Normal centring/steering preparation, PID/filter reset,
+terminal approach, stopping-yaw prediction, 30 mm overrun guard and stationary
+completion remain the established standalone behavior.
+
+`motionSequenceFusionTestArcExits` records each B arc's zero-based segment index,
+nominal/measured travel and relative yaw, plus `yawPredictedReached` and
+`distanceLimitReached`, after braking and before the next command resets them.
+A distance guard alone means the desired exit heading was not reached according
+to the predictor; inspect final measured heading even for yaw-triggered exits.
+`usesStandalonePrimitives` and `yawPriorityArcExits` identify the policy in each
+run result. A/B do not share measured error corrections between manual runs.
+
+### Running and exporting the comparison
+
+1. Mark the layout, park centre and initial heading. Keep the robot stationary
+   through IMU initialization. Set a breakpoint at `MotionSequenceFusionTestFinished`.
+2. At `A fused pattern ready`, place the rear-axle midpoint at (-250, 0), facing
+   +x. The OLED shows actual gains. Press/release SW1 to run A.
+3. A stops and displays `B stopped pattern ready`. Record physical parking,
+   then reset to the identical marked start and heading. Press/release SW1 for B.
+4. After B stops, record physical parking and export once at the breakpoint:
+
+```text
+source exp/gdb_scripts/export_fused_motion.gdb
+set $mctrl_fusion_battery_v = 11.43
+mctrl-fusion-export task2_compare_run01.txt
+```
+
+Enter the measured battery voltage and choose a fresh filename; export appends
+if it already exists. The export includes both actual operating points, elapsed
+times, nominal/measured travel and yaw, policy flags, A's prepared blend lengths/junction speed caps, the route
+description and frozen feedforward table, all recorded stopped arc exits and both runs' tagged samples. It does not resume
+the target or initiate motion.
+
+SW1 during either trace cancels and brakes. Each trace has a 60 s watchdog and
+3 s additional braking timeout. A failure prevents B from launching; an
+incomplete trace withholds savings. Each timer includes preparation, all
+intermediate stops on B and final braking; manual waits and the 400 ms
+hand-clearance delays are excluded.
+
+The final OLED shows both times, milliseconds saved (`B-A`) and percentage
+reduction (`100*(B-A)/B`). Negative savings are retained. `Passed`/`DONE` means
+API completion, not physical Task 2 success. Judge the route by correct obstacle
+sides, absence of contact, whole-body parking, final heading and time. Record
+physical final x/y separately: wheel travel and gyro yaw are not absolute pose.
+This fixed route also does not establish successful arrow/image detection.
+
+One shared 650-sample log uses 100 ms sampling; `comparisonRunIndex` identifies
+A/B and timestamps restart for B. Manual waits are not logged. Overflow flags
+truncation and retains the last sample; summary results and arc-exit records
+remain available. The longer sampling period accommodates the full A/B course;
+it offers less detail of ringing than the earlier 20 ms short tuning exports.
+
+The ideal encoder/gyro host harness reports **A=13091 ms, B=14092 ms**, saving
+**1001 ms (7.1%)**. It checks software scheduling and ideal signals only; it has
+no physical servo/vehicle response model and does not predict real tracking
+accuracy or time savings. It also verifies cancellation/timeout in either run,
+standalone modes on B, yaw-triggered exits, distance-guard diagnostics with
+moving encoders but stationary gyro, manual-wait exclusion and per-trace logs.
+
+To regenerate the diagram from production planner samples:
 
 ```sh
 python3 Tests/Host/plot_task2_route.py
 ```
 
-Keep the robot stationary through normal IMU startup. Press/release SW1 to
-start A. After A completes, the robot remains stopped and prompts for B.
-Check that A parked, then reset it to (-250, 0) facing +x and press/release SW1
-to start B. A finishes at about 191.94°, so rotate it for the identical B starting pose.
-Each button wait and 400 ms hand-clearance delay is excluded from timing. Each run's
-timer starts just before `MotionSequence_Execute()` and ends after completion
-including controller steering preparation and final braking.
-
-Press SW1 during either trace to cancel and brake. Each trace has a 60 s
-watchdog and a further 3 s braking timeout. Failure/cancellation of A prevents B
-from starting; failure of either trace prevents a valid timing comparison.
-`Passed` means both batches completed without an API error, not that their
-physical path/heading met an accuracy criterion.
-
-The final OLED screen shows A's fused time, B's stopped time, milliseconds saved
-(`B-A`) and percentage reduction (`100*(B-A)/B`). A negative saving is retained
-if the fused trace is slower. Incomplete trials show `INVALID` and no savings.
-Debugger-visible `motionSequenceFusionTestResults[0]` and `[1]` retain per-trace
-status, times, run counts, nominal/measured travel and yaw, and truncation flags.
-`motionSequenceFusionTestComparisonValid` guards the saved-time/percentage
-fields. The existing `motionSequenceFusionTestElapsedMs` is the last trace's time.
-
-One shared log holds 650 samples at 100 ms (about 65 s of combined running time)
-without duplicating the large sample buffer. Each sample's `comparisonRunIndex`
-is 0 for A or 1 for B; `timeMs` restarts at zero for each trace. Manual waiting is
-not logged. If full, the final slot is replaced with the latest trace's final
-sample and truncation is flagged globally and in that trace's result. Summary
-results remain available even if detailed logging is truncated.
-
-In the ideal encoder/gyro host harness, A takes 15632 ms and B takes 15995 ms:
-363 ms saved, or about 2.3%. This is a software scheduling check, not a physical
-servo/vehicle performance prediction. The harness also verifies cancellation
-and timeout in either A or B, withholding savings for incomplete comparisons,
-manual-wait exclusion, per-trace logging and OLED text-row coordinates.
-
-To run the original standalone/yaw-priority sequence harness instead, restore
-`MotionControllerSequenceTestRun()` in `TestMain.c`.
-
-Set a breakpoint on `MotionSequenceFusionTestFinished` before starting. Once
-the target is suspended there, run these in the GDB console (cwd = project):
-
-```text
-source exp/gdb_scripts/export_fused_motion.gdb
-set $mctrl_fusion_battery_v = 11.95
-mctrl-fusion-export fusion_run01.txt
-```
-
-Enter the actual measured voltage. Choose a new output name for each run;
-export appends if the name already exists. For timing mode, the command exports both A/B results and the timing comparison, the last
-trace's complete plan, actual experiment tuning and wheel PID gains, final heading policy/termination flags
-and tagged samples from both traces. It neither resumes
-the target nor initiates motion. The old automatic sequence-export breakpoint
-does not apply to this harness.
-
-Inspect the saved timing comparison together with speed/raw-command tracking,
-absence of intermediate preparation/braking in A, measured final travel/yaw
-for both traces, and whether the entire robot parked without touching a wall.
-Record physical final x/y/heading error separately: this harness logs travel/yaw,
-not absolute XY pose, and successful API completion does not establish parking. Physical tracking may require longer blends, lower junction
-speeds or centre-region calibration; the host tests cannot settle those choices.
+Controller/planner host regressions, the real GDB exporter, and the full STM32
+ARM Debug compile/link pass. Opposite-sign arc transitions on this new course
+still require physical validation with the frozen tuning.

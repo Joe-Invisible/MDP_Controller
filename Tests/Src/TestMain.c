@@ -34,9 +34,8 @@ void InvokeTest() {
 
 	LED_On();
 
-    /* Open-loop steering response sweep; export once after all three trials.
-     * Restore MotionSequenceFusionTestRun() to resume the fusion experiment. */
-    SteeringRampResponseTestRun();
+    /* Task 2: frozen fusion versus standalone yaw-priority primitives. */
+    MotionSequenceFusionTestRun();
 
 	while (1) {
 		// Test ended. Loop forever.

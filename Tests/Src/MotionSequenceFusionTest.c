@@ -14,35 +14,21 @@
 #define FUSION_INITIAL_CLEARANCE_MS 400U
 #define FUSION_SPEED_CPS 5000.0f
 #define FUSION_PI 3.14159265358979323846f
-#define FUSION_RADIUS_MM 275.0f
-#define FUSION_SIXTH_TURN_MM (FUSION_RADIUS_MM * FUSION_PI / 3.0f)
-#define FUSION_SQRT_3 1.73205080756887729353f
 /* Mouth x=0, corrected park interior x=-500..0, y=-300..300.
  * Start at its centre (-250,0), initially heading +x. */
 #define FUSION_PARK_START_X_MM (-250.0f)
-#define FUSION_PARK_STEM_MM (100.0f - FUSION_PARK_START_X_MM)
 #define FUSION_FACE_GAP_MM 1050.0f
 #define FUSION_OBSTACLE_THICKNESS_MM 100.0f
 #define FUSION_OBSTACLE_1_X_MM (FUSION_FACE_GAP_MM + 50.0f)
 #define FUSION_OBSTACLE_2_X_MM \
     (FUSION_OBSTACLE_1_X_MM + FUSION_OBSTACLE_THICKNESS_MM + FUSION_FACE_GAP_MM)
-/* Compact 500 mm second obstacle. Preserve 225 mm centre-to-face
- * outbound clearance: second lane is -475 mm; first remains +275 mm. */
-#define FUSION_FIRST_LANE_Y_MM FUSION_RADIUS_MM
-#define FUSION_OBSTACLE_2_LENGTH_MM 500.0f
-#define FUSION_SECOND_LANE_Y_MM (-(FUSION_OBSTACLE_2_LENGTH_MM / 2.0f + 225.0f))
-#define FUSION_ENTRY_END_X_MM (100.0f + FUSION_RADIUS_MM * FUSION_SQRT_3)
-#define FUSION_CROSS_DIAGONAL_MM \
-    (2.0f * (FUSION_FIRST_LANE_Y_MM - FUSION_SECOND_LANE_Y_MM - FUSION_RADIUS_MM) / FUSION_SQRT_3)
-#define FUSION_CROSS_ADVANCE_MM \
-    (FUSION_RADIUS_MM * FUSION_SQRT_3 + FUSION_CROSS_DIAGONAL_MM / 2.0f)
-#define FUSION_CROSS_START_X_MM \
-    ((FUSION_OBSTACLE_1_X_MM + FUSION_OBSTACLE_2_X_MM - FUSION_CROSS_ADVANCE_MM) / 2.0f)
-#define FUSION_CROSS_END_X_MM (FUSION_CROSS_START_X_MM + FUSION_CROSS_ADVANCE_MM)
-#define FUSION_FAR_TURN_X_MM (FUSION_OBSTACLE_2_X_MM + 275.0f)
-#define FUSION_FIRST_LANE_MM (FUSION_CROSS_START_X_MM - FUSION_ENTRY_END_X_MM)
-#define FUSION_SECOND_LANE_MM (FUSION_FAR_TURN_X_MM - FUSION_CROSS_END_X_MM)
-#define FUSION_RETURN_RADIUS_MM (-FUSION_SECOND_LANE_Y_MM + 50.0f)
+/* Three tangent arcs replace the short lane changes. The last left arc
+ * continues past obstacle 2 onto the one straight return. All four
+ * primitives exceed 1000 mm, retaining full 500 mm blends at every junction. */
+#define FUSION_DEPARTURE_RADIUS_MM 1500.0f
+#define FUSION_CROSSOVER_YAW_RAD (80.0f * FUSION_PI / 180.0f)
+#define FUSION_FAR_TURN_X_MM (FUSION_OBSTACLE_2_X_MM + 150.0f)
+#define FUSION_RETURN_RADIUS_MM 575.0f
 
 typedef struct
 {
@@ -68,7 +54,7 @@ static const MotionSequenceFusionTestStep tuningTestSteps[] = {
     {1000.0f, 0.0f, FUSION_SPEED_CPS},
 };
 MotionSequenceFusionTestExperiment motionSequenceFusionTestExperiment =
-    MOTION_SEQUENCE_FUSION_TEST_SINGLE_TUNING;
+    MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING;
 MotionSequenceFusionTestTuning motionSequenceFusionTestStraightTuning = {
     .yawRateKp = 150.0f,
     .yawRateKi = 50.0f,
@@ -117,6 +103,20 @@ static const char *MotionSequenceFusionTest_RunLabel(uint32_t index)
 static RobotTestFixture fixture;
 /* Experiment-local settings: leave the reusable production defaults intact. */
 static MotionControllerConfig fusionMotionConfig;
+/* Measured near-centre entries used locally in longblend runs 10-16.
+ * Freeze them here with the original positive branch; leave shared defaults
+ * intact. The finite-curvature points used by B are unchanged. */
+static const MotionControllerArcFeedforwardPoint task2PositiveFeedforwardPoints[] = {
+    {0.000054f, -5.625f},
+    {0.000183f, -11.25f},
+    {0.000436f, -16.875f},
+    {1.0f / 1500.0f, -22.5f},
+    {1.0f / 1000.0f, -27.7f},
+    {1.0f / 500.0f, -47.5f},
+    {1.0f / 300.0f, -75.0f},
+    {1.0f / 275.0f, -81.7f},
+};
+static MotionControllerArcConfig task2ArcConfig;
 #define FUSION_WHEEL_KP 0.03f
 MotionSequence motionSequenceFusionTestSequence;
 MotionSequenceFusionTestSample motionSequenceFusionTestLog[FUSION_LOG_CAPACITY];
@@ -137,6 +137,96 @@ float motionSequenceFusionTestSavedPercent;
 static uint32_t comparisonRunIndex;
 static bool runLogTruncated;
 static uint32_t runLogStartCount;
+static bool standaloneStoppedRun;
+MotionSequenceFusionTestArcExit motionSequenceFusionTestArcExits[MOTION_SEQUENCE_CAPACITY];
+uint32_t motionSequenceFusionTestArcExitCount;
+MotionSequencePlan motionSequenceFusionTestFusedPlan;
+
+/* Test-local stopped executor: use the established standalone APIs, including
+ * yaw-priority arc termination and their normal steering preparation/rate.
+ * Sequence storage describes the route and aggregates logs only on side B. */
+static MotionControllerStatus MotionSequenceFusionTest_LaunchStandalone(uint32_t index)
+{
+    MotionSequence *sequence = &motionSequenceFusionTestSequence;
+    const MotionSequenceSegment *step = &sequence->plan.segments[index];
+    sequence->run = (MotionSequenceRun){&sequence->plan, index, index};
+    sequence->expectedBraking = false;
+    MotionControllerStatus status = step->curvaturePerMm == 0.0f
+        ? MotionController_MoveStraight(sequence->controller, step->signedDistanceMm, step->speedCps)
+        : MotionController_MoveArc(sequence->controller, step->signedDistanceMm,
+                                   1.0f / step->curvaturePerMm, step->speedCps);
+    sequence->lastStatus = status;
+    sequence->state = status == MOTIONCONTROLLER_STATUS_OK
+        ? MOTION_SEQUENCE_RUNNING : MOTION_SEQUENCE_FAILED;
+    return status;
+}
+
+static MotionControllerStatus MotionSequenceFusionTest_Execute(void)
+{
+    MotionSequence *sequence = &motionSequenceFusionTestSequence;
+    if (!standaloneStoppedRun)
+    {
+        MotionControllerStatus status = MotionSequence_Execute(sequence);
+        if (motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING)
+            motionSequenceFusionTestFusedPlan = sequence->plan;
+        return status;
+    }
+    const MotionControllerConfig *config = sequence->controller->config;
+    const float mmPerCount = FUSION_PI * config->kinematics->rearWheelDiameterMm /
+        config->kinematics->rearEncoderCountsPerRev;
+    if (!MotionSequencePlan_Prepare(&sequence->plan, &sequence->config, mmPerCount,
+            config->straightAccelerationMmps2, config->straightDecelerationMmps2,
+            config->arcAccelerationMmps2, config->arcDecelerationMmps2, 0.0f,
+            sequence->controller->steering->calibration->maxCommandRatePerSec))
+        return MOTIONCONTROLLER_STATUS_PROFILE_ERROR;
+    return MotionSequenceFusionTest_LaunchStandalone(0U);
+}
+
+static MotionControllerStatus MotionSequenceFusionTest_Update(float dt)
+{
+    MotionSequence *sequence = &motionSequenceFusionTestSequence;
+    if (!standaloneStoppedRun)
+        return MotionSequence_Update(sequence, dt);
+    MotionController *controller = sequence->controller;
+    sequence->lastStatus = MotionController_Update(controller, dt);
+    if (sequence->lastStatus != MOTIONCONTROLLER_STATUS_OK)
+    {
+        sequence->state = MOTION_SEQUENCE_FAILED;
+        return sequence->lastStatus;
+    }
+    if (MotionController_IsBusy(controller))
+        return sequence->lastStatus;
+
+    sequence->completedMeasuredTravelMm += fabsf(controller->travelledDistanceMm);
+    sequence->completedMeasuredYawRad += controller->yawDeg * FUSION_PI / 180.0f;
+    if (sequence->state == MOTION_SEQUENCE_ABORTING)
+    {
+        sequence->state = MOTION_SEQUENCE_ABORTED;
+        return sequence->lastStatus;
+    }
+    const MotionSequenceSegment *step = &sequence->plan.segments[sequence->run.first];
+    if (step->curvaturePerMm != 0.0f)
+    {
+        motionSequenceFusionTestArcExits[motionSequenceFusionTestArcExitCount++] =
+            (MotionSequenceFusionTestArcExit){
+                .segmentIndex = sequence->run.first,
+                .nominalDistanceMm = fabsf(step->signedDistanceMm),
+                .measuredDistanceMm = fabsf(controller->travelledDistanceMm),
+                .nominalYawRad = step->signedDistanceMm * step->curvaturePerMm,
+                .measuredYawRad = controller->yawDeg * FUSION_PI / 180.0f,
+                .yawPredictedReached = controller->terminalYawPredictedReached,
+                .distanceLimitReached = controller->terminalDistanceLimitReached,
+            };
+    }
+    ++sequence->completedRuns;
+    const uint32_t next = sequence->run.last + 1U;
+    if (next == sequence->plan.count)
+    {
+        sequence->state = MOTION_SEQUENCE_COMPLETE;
+        return sequence->lastStatus;
+    }
+    return MotionSequenceFusionTest_LaunchStandalone(next);
+}
 
 static void MotionSequenceFusionTest_LogSample(uint32_t elapsedMs)
 {
@@ -170,10 +260,12 @@ static void MotionSequenceFusionTest_LogSample(uint32_t elapsedMs)
         sequence->completedMeasuredYawRad +
         (currentRunIncluded ? 0.0f
                             : controller->yawDeg * (3.14159265358979323846f / 180.0f));
-    sample->desiredYawRad = controller->pathSample.desiredYawRad;
+    sample->desiredYawRad = standaloneStoppedRun
+        ? controller->arcDesiredYawRad : controller->pathSample.desiredYawRad;
     sample->curvaturePerMm = controller->targetCurvaturePerMm;
     sample->commandedCurvaturePerMm = controller->arcCommandedCurvaturePerMm;
-    sample->localSpeedLimitCps = controller->pathSample.speedLimitCps;
+    sample->localSpeedLimitCps = standaloneStoppedRun
+        ? sequence->plan.segments[sequence->run.first].speedCps : controller->pathSample.speedLimitCps;
     sample->targetSpeedCps = controller->targetSpeedCps;
     sample->measuredCentreSpeedMmps = controller->measuredCentreSpeedMmps;
     sample->filteredMeasuredCentreSpeedMmps =
@@ -196,7 +288,9 @@ static void MotionSequenceFusionTest_LogSample(uint32_t elapsedMs)
     sample->rightMeasuredCps = fixture.rightWheelController.measuredSpeedCps;
     sample->wheelSyncErrorMm = controller->wheelSyncErrorMm;
     sample->wheelSyncCorrectionCps = controller->wheelSyncCorrectionCps;
-    sample->straightTuningWeight = controller->pathSample.straightTuningWeight;
+    sample->straightTuningWeight = standaloneStoppedRun
+        ? (sequence->plan.segments[sequence->run.first].curvaturePerMm == 0.0f ? 1.0f : 0.0f)
+        : controller->pathSample.straightTuningWeight;
     sample->accelerationLimitMmps2 = controller->motionProfile.accelerationMmps2;
     sample->decelerationLimitMmps2 = controller->motionProfile.decelerationMmps2;
     sample->brakingSpeedLimitCps = controller->pathSample.brakingSpeedLimitCps;
@@ -257,30 +351,31 @@ __attribute__((noinline)) void MotionSequenceFusionTestFinished(void)
 
 static MotionControllerStatus MotionSequenceFusionTest_BuildPattern(bool stopAfter)
 {
-    /* Circle centre is (farTurnX, secondLaneY + returnRadius). Choose
-     * its upper tangent through the park start: one diagonal straight return
-     * clears both obstacles and needs no extra lane change near the park. */
+    /* Circle centre (farTurnX, 0); upper tangent points back into the park. */
     const float returnDx = FUSION_FAR_TURN_X_MM - FUSION_PARK_START_X_MM;
-    const float returnDy = FUSION_SECOND_LANE_Y_MM + FUSION_RETURN_RADIUS_MM;
-    const float returnCentreDistance = hypotf(returnDx, returnDy);
-    const float returnYawRad = FUSION_PI + atan2f(returnDy, returnDx) +
-        asinf(FUSION_RETURN_RADIUS_MM / returnCentreDistance);
-    const float returnDistanceMm = sqrtf(returnCentreDistance * returnCentreDistance -
+    const float returnYawRad = FUSION_PI + asinf(FUSION_RETURN_RADIUS_MM / returnDx);
+    const float returnDistanceMm = sqrtf(returnDx * returnDx -
         FUSION_RETURN_RADIUS_MM * FUSION_RETURN_RADIUS_MM);
-    /* Task 2 outward S: first left, second right; tangent straight back.
-     * Only stopAfter differs between A and B. No reversing/vision/IR stops.
-     * Blends preserve distance/yaw, not exact XY closure; see route checks. */
+    const float beta = FUSION_CROSSOVER_YAW_RAD;
+    const float departureRadius = FUSION_DEPARTURE_RADIUS_MM;
+    const float tangentX = returnDx - FUSION_RETURN_RADIUS_MM * sinf(beta);
+    const float tangentY = departureRadius + FUSION_RETURN_RADIUS_MM * cosf(beta);
+    /* Tangency fixes the middle circle's radius and the departure angle.
+     * Its centre is one (departureRadius + crossoverRadius) from the first
+     * circle's centre. Solve that squared-distance equation for the radius. */
+    const float crossoverRadius =
+        (tangentX * tangentX + tangentY * tangentY - departureRadius * departureRadius) /
+        (2.0f * (tangentX * sinf(beta) - tangentY * cosf(beta) + departureRadius));
+    const float departureYaw = atan2f(tangentX - crossoverRadius * sinf(beta),
+                                     tangentY + crossoverRadius * cosf(beta));
+    /* One broad right sweep carries the departure heading past obstacle 1.
+     * The final left sweep both passes obstacle 2 and turns onto the return.
+     * No short straights or artificial parallel-lane alignment waypoints. */
     const MotionSequenceFusionTestStep fusionTestSteps[] = {
         /* Distance [mm], radius [mm], requested speed [CPS] */
-        {FUSION_PARK_STEM_MM, 0.0f, FUSION_SPEED_CPS},
-        {FUSION_SIXTH_TURN_MM, +FUSION_RADIUS_MM, FUSION_SPEED_CPS},
-        {FUSION_SIXTH_TURN_MM, -FUSION_RADIUS_MM, FUSION_SPEED_CPS},
-        {FUSION_FIRST_LANE_MM, 0.0f, FUSION_SPEED_CPS},
-        {FUSION_SIXTH_TURN_MM, -FUSION_RADIUS_MM, FUSION_SPEED_CPS},
-        {FUSION_CROSS_DIAGONAL_MM, 0.0f, FUSION_SPEED_CPS},
-        {FUSION_SIXTH_TURN_MM, +FUSION_RADIUS_MM, FUSION_SPEED_CPS},
-        {FUSION_SECOND_LANE_MM, 0.0f, FUSION_SPEED_CPS},
-        {FUSION_RETURN_RADIUS_MM * returnYawRad, +FUSION_RETURN_RADIUS_MM, FUSION_SPEED_CPS},
+        {departureRadius * departureYaw, +departureRadius, FUSION_SPEED_CPS},
+        {crossoverRadius * (departureYaw + beta), -crossoverRadius, FUSION_SPEED_CPS},
+        {FUSION_RETURN_RADIUS_MM * (beta + returnYawRad), +FUSION_RETURN_RADIUS_MM, FUSION_SPEED_CPS},
         {returnDistanceMm, 0.0f, FUSION_SPEED_CPS},
     };
     _Static_assert(sizeof(fusionTestSteps) / sizeof(fusionTestSteps[0]) <=
@@ -294,7 +389,8 @@ static MotionControllerStatus MotionSequenceFusionTest_BuildPattern(bool stopAft
         ? sizeof(filterTestSteps) / sizeof(filterTestSteps[0])
         : sizeof(fusionTestSteps) / sizeof(fusionTestSteps[0]);
     MotionSequenceConfig sequenceConfig = motionSequenceConfig;
-    if (MotionSequenceFusionTest_IsSingleRun())
+    if (MotionSequenceFusionTest_IsSingleRun() ||
+        motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING)
         sequenceConfig.blendLengthMm = FUSION_TUNING_BLEND_LENGTH_MM;
     MotionSequence *sequence = &motionSequenceFusionTestSequence;
     MotionControllerStatus status = MotionSequence_Begin(
@@ -320,6 +416,8 @@ static MotionControllerStatus MotionSequenceFusionTest_BuildPattern(bool stopAft
 
 static bool MotionSequenceFusionTest_RunPattern(bool stopAfter)
 {
+    const bool task2 = motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING;
+    standaloneStoppedRun = task2 && stopAfter;
     MotionSequenceFusionTestResult *result =
         &motionSequenceFusionTestResults[comparisonRunIndex];
     /* Reset this branch's defaults for the timing mode. The Task 1 operating
@@ -332,6 +430,21 @@ static bool MotionSequenceFusionTest_RunPattern(bool stopAfter)
     fusionMotionConfig.arcYawRateKi = motionControllerConfig.arcYawRateKi;
     fusionMotionConfig.arcYawRateKd = motionControllerConfig.arcYawRateKd;
     fusionMotionConfig.arcHeadingKpPerSec = motionControllerConfig.arcHeadingKpPerSec;
+    if (task2)
+    {
+        /* A: last logged pre-response-planner tuning, longblend runs 15/16.
+         * B: confirmed stopped production operating point (Task 1).
+         * Shared speed, feedforward, wheel tuning and motion limits isolate
+         * the complete execution strategies, not just a gain change. */
+        fusionMotionConfig.straightYawRateKp = stopAfter ? 270.0f : 100.0f;
+        fusionMotionConfig.straightYawRateKi = stopAfter ? 150.0f : 50.0f;
+        fusionMotionConfig.straightYawRateKd = 0.0f;
+        fusionMotionConfig.straightHeadingKpPerSec = stopAfter ? 0.0f : 0.5f;
+        fusionMotionConfig.arcYawRateKp = stopAfter ? 270.0f : 150.0f;
+        fusionMotionConfig.arcYawRateKi = stopAfter ? 150.0f : 75.0f;
+        fusionMotionConfig.arcYawRateKd = 0.0f;
+        fusionMotionConfig.arcHeadingKpPerSec = stopAfter ? 0.0f : 0.5f;
+    }
     if (motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK1_GAINS &&
         comparisonRunIndex == 1U)
     {
@@ -363,11 +476,13 @@ static bool MotionSequenceFusionTest_RunPattern(bool stopAfter)
         fusionMotionConfig.arcHeadingKpPerSec = arc->headingKpPerSec;
     }
     fusionMotionConfig.useMatchedYawRateReferenceFilter =
-        MotionSequenceFusionTest_IsSingleRun() ||
+        (task2 && !stopAfter) || MotionSequenceFusionTest_IsSingleRun() ||
         motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK1_GAINS ||
         (motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_REFERENCE_FILTER &&
          comparisonRunIndex == 1U);
     result->stopAfterEachSegment = stopAfter;
+    result->usesStandalonePrimitives = standaloneStoppedRun;
+    result->yawPriorityArcExits = standaloneStoppedRun;
     result->useMatchedYawRateReferenceFilter = fusionMotionConfig.useMatchedYawRateReferenceFilter;
     result->straightTuning = (MotionSequenceFusionTestTuning){
         fusionMotionConfig.straightYawRateKp, fusionMotionConfig.straightYawRateKi,
@@ -411,14 +526,15 @@ static bool MotionSequenceFusionTest_RunPattern(bool stopAfter)
     if (MotionSequenceFusionTest_IsSingleRun())
         OLED_Printf(0, 2, "5000 CPS; B:%gmm", (double)motionSequenceFusionTestSequence.config.blendLengthMm);
     else
-        OLED_Printf(0, 2, "5000 CPS requested");
+        OLED_Printf(0, 2, "%s", standaloneStoppedRun ? "Arc exits: yaw first" :
+                    task2 ? "5000 CPS; B:500mm" : "5000 CPS requested");
     OLED_Printf(0, 3, "%s", MotionSequenceFusionTest_IsSingleRun()
         ? "Path: 2.0 x 1.6m" : MotionSequenceFusionTest_IsAccuracyExperiment()
         ? "Path: 1.6 x 1.5m" : "A/D S:3000 C:2000");
     OLED_Printf(0, 4, "%s", MotionSequenceFusionTest_IsAccuracyExperiment()
         ? "Reset +x; SW1 start" : "Park +x; SW1 start");
     OLED_Printf(0, 5, "SW1 running: cancel");
-    if (MotionSequenceFusionTest_IsAccuracyExperiment())
+    if (MotionSequenceFusionTest_IsAccuracyExperiment() || task2)
     {
         const MotionControllerConfig *config = fixture.motionController.config;
         OLED_Printf(0, 6, "S P%g I%g D%g H%g",
@@ -436,7 +552,7 @@ static bool MotionSequenceFusionTest_RunPattern(bool stopAfter)
      * The button wait, manual pose reset and hand clearance do not count. */
     MotionSequence *sequence = &motionSequenceFusionTestSequence;
     uint32_t startMs = HAL_GetTick();
-    motionSequenceFusionTestStatus = MotionSequence_Execute(sequence);
+    motionSequenceFusionTestStatus = MotionSequenceFusionTest_Execute();
     uint32_t previousUpdateMs = startMs;
     uint32_t lastLogMs = startMs;
     uint32_t brakeStartMs = startMs;
@@ -475,7 +591,7 @@ static bool MotionSequenceFusionTest_RunPattern(bool stopAfter)
         if (motionSequenceFusionTestStatus == MOTIONCONTROLLER_STATUS_OK)
         {
             motionSequenceFusionTestStatus =
-                MotionSequence_Update(sequence, (nowMs - previousUpdateMs) / 1000.0f);
+                MotionSequenceFusionTest_Update((nowMs - previousUpdateMs) / 1000.0f);
         }
         previousUpdateMs = nowMs;
         if (nowMs - lastLogMs >= motionSequenceFusionTestLogPeriodMs)
@@ -526,6 +642,9 @@ void MotionSequenceFusionTestRun(void)
     motionSequenceFusionTestComparisonValid = false;
     motionSequenceFusionTestSavedTimeMs = 0;
     motionSequenceFusionTestSavedPercent = 0.0f;
+    motionSequenceFusionTestArcExitCount = 0U;
+    motionSequenceFusionTestFusedPlan = (MotionSequencePlan){0};
+    standaloneStoppedRun = false;
     comparisonRunIndex = 0U;
     for (uint32_t i = 0U; i < MOTION_SEQUENCE_FUSION_TEST_RUN_COUNT; ++i)
     {
@@ -544,9 +663,16 @@ void MotionSequenceFusionTestRun(void)
     motionSequenceFusionTestLogPeriodMs = MotionSequenceFusionTest_IsAccuracyExperiment()
         ? FUSION_FILTER_LOG_PERIOD_MS : FUSION_TIMING_LOG_PERIOD_MS;
     fusionMotionConfig = motionControllerConfig;
+    if (motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING)
+    {
+        task2ArcConfig = arcMotionConfig;
+        task2ArcConfig.positivePoints = task2PositiveFeedforwardPoints;
+        task2ArcConfig.positivePointCount = (uint32_t)(sizeof(task2PositiveFeedforwardPoints) /
+            sizeof(task2PositiveFeedforwardPoints[0]));
+        fusionMotionConfig.arcConfig = &task2ArcConfig;
+    }
     fusionMotionConfig.useMatchedYawRateReferenceFilter = false;
-    if (MotionSequenceFusionTest_IsAccuracyExperiment())
-        fusionMotionConfig.arcYawRateFilterTauSec = 0.10f;
+    fusionMotionConfig.arcYawRateFilterTauSec = 0.10f;
     fusionMotionConfig.straightAccelerationMmps2 = 3000.0f;
     fusionMotionConfig.straightDecelerationMmps2 = 3000.0f;
     fusionMotionConfig.arcAccelerationMmps2 = 2000.0f;

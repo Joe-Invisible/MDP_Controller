@@ -32,8 +32,8 @@ def plot(csv_path, output):
     matplotlib.rcParams["svg.hashsalt"] = "task2-fused-course"
     fig, ax = plt.subplots(figsize=(12, 5.8), layout="constrained")
     for stopped, color, width, label in (
-        (1, "#ed9e29", 4, "B: stopped at each segment"),
-        (0, "#1b63a5", 1.7, "A: fused (up to 200 mm blends)"),
+        (1, "#ed9e29", 4, "B: standalone stops, yaw-priority arc exits"),
+        (0, "#1b63a5", 1.7, "A: frozen tuning, 500 mm blends"),
     ):
         x, y = zip(*paths[stopped])
         ax.plot(x, y, color=color, linewidth=width, label=label)
@@ -48,9 +48,9 @@ def plot(csv_path, output):
     ax.text(-250, -190, "Start / park\n(-250, 0)", ha="center", fontsize=9)
     ax.text(-250, 365, "Park: 500 deep\n× 600 wide", ha="center", fontsize=9)
     for point, offset, text in (
-        ((1100, 275), (0, 145), "1 · first left →"),
-        ((2250, -475), (0, -135), "2 · second right →"),
-        ((1800, 433), (0, 125), "3 · one straight return ↙"),
+        ((1100, 480), (0, 105), "1 · first left →"),
+        ((2250, -550), (0, -135), "2 · second right →"),
+        ((1800, 450), (0, 150), "3 · one straight return ↙"),
     ):
         ax.text(point[0] + offset[0], point[1] + offset[1], text, ha="center", fontsize=9)
     # The assumed centred footprint at the fused finish is entirely parked.
@@ -70,7 +70,7 @@ def plot(csv_path, output):
     ax.set(xlim=(-600, 3300), ylim=(-850, 850), aspect="equal",
            xlabel="x [mm] — car-park mouth at 0; initial heading +x",
            ylabel="y [mm] — positive to the left",
-           title="Task 2 outward S + straight return · 7.73 m · 10 forward segments")
+           title="Task 2 broad arcs + straight return · 7.81 m · 4 primitives, all longer than 1 m")
     ax.legend(loc="upper right", fontsize=8, framealpha=1)
     ax.grid(alpha=0.12)
     fused_x, fused_y = paths[0][-1]
@@ -78,7 +78,7 @@ def plot(csv_path, output):
     if abs(stopped_y) < 0.0005:
         stopped_y = 0.0
     ax.text(0.5, -0.19,
-            "Compact layout: 500 mm second obstacle, 1600 mm clear width; both face-to-face gaps remain 1050 mm.\n"
+            "Three broad arcs, then one straight return; full 500 mm blends at all three fused junctions.\n500 mm second obstacle, 1600 mm clear width; both face-to-face gaps remain 1050 mm.\n"
             f"Nominal endpoints: stopped ({stopped_x:.0f}, {stopped_y:.0f}); "
             f"fused ({fused_x:.1f}, {fused_y:+.1f}) mm, heading {math.degrees(heading):.1f}°. Physical parking requires a trial.",
             transform=ax.transAxes, ha="center", va="top", fontsize=9)
