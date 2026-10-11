@@ -30,10 +30,11 @@ static bool Configure(void)
 {
     motionResponseConfig = motionControllerConfig;
     motionResponseConfig.useLegacyStraightSteering = false;
-    motionResponseConfig.straightYawRateKp = motionResponseConfig.arcYawRateKp = 0;
+    motionResponseConfig.straightYawRateKp = motionResponseConfig.arcYawRateKp = 50.0f;
     motionResponseConfig.straightYawRateKi = motionResponseConfig.arcYawRateKi = 0;
     motionResponseConfig.straightYawRateKd = motionResponseConfig.arcYawRateKd = 0;
-    motionResponseConfig.straightHeadingKpPerSec = motionResponseConfig.arcHeadingKpPerSec = 0;
+    motionResponseConfig.straightHeadingKpPerSec = motionResponseConfig.arcHeadingKpPerSec = 0.5f;
+    motionResponseConfig.maxArcSteeringCommandCorrection = 3.0f;
     motionResponseConfig.arcYawRateFilterTauSec = .1f;
     motionResponseConfig.useMatchedYawRateReferenceFilter = true;
     motionResponseConfig.straightAccelerationMmps2 = motionResponseConfig.arcAccelerationMmps2 =
@@ -177,8 +178,7 @@ static void Run(void)
         UpdateEstimatedPose();
         rawRate=(fixture.steeringController.command-previousRaw)/(interval*.001f);
         previousRaw=fixture.steeringController.command;
-        if (motionResponseResult.status != MOTIONCONTROLLER_STATUS_OK ||
-            fabsf(fixture.motionController.arcSteeringCorrectionCommand) > .0001f)
+        if (motionResponseResult.status != MOTIONCONTROLLER_STATUS_OK)
         {
             motionResponseResult.outcome=RESPONSE_CONTROLLER_ERROR;
             MotionController_Stop(&fixture.motionController); break;

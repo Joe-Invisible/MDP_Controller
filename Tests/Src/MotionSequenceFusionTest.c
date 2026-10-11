@@ -70,14 +70,14 @@ static const MotionSequenceFusionTestStep tuningTestSteps[] = {
 MotionSequenceFusionTestExperiment motionSequenceFusionTestExperiment =
     MOTION_SEQUENCE_FUSION_TEST_SINGLE_TUNING;
 MotionSequenceFusionTestTuning motionSequenceFusionTestStraightTuning = {
-    .yawRateKp = 150.0f,
+    .yawRateKp = 100.0f,
     .yawRateKi = 50.0f,
     .yawRateKd = 0.0f,
     .headingKpPerSec = 0.5f,
 };
 MotionSequenceFusionTestTuning motionSequenceFusionTestArcTuning = {
     .yawRateKp = 150.0f,
-    .yawRateKi = 100.0f,
+    .yawRateKi = 75.0f,
     .yawRateKd = 0.0f,
     .headingKpPerSec = 0.5f,
 };
