@@ -8,6 +8,7 @@ const MotionSequenceConfig motionSequenceConfig = {
     .blendLengthMm = 200.0f,
     .junctionSpeedCps = 8000.0f,
     .steeringCommandRatePerSec = 480.0f,
+    .allowBlendOverlap = false,
 };
 
 static bool MotionSequencePlan_IsRunBoundary(const MotionSequencePlan *plan, uint32_t i)
@@ -15,6 +16,69 @@ static bool MotionSequencePlan_IsRunBoundary(const MotionSequencePlan *plan, uin
     return plan->segments[i].stopAfter ||
            ((plan->segments[i].signedDistanceMm > 0.0f) !=
             (plan->segments[i + 1U].signedDistanceMm > 0.0f));
+}
+
+/* Partition a continuous run at all ramp endpoints. Overlap is additive:
+ * k(s) = k0 + sum(delta_k * ramp(s)); ramps stay ordered, so the equivalent
+ * segment weights are nonnegative. Each interval has constant dk/ds. */
+static uint32_t MotionSequencePlan_OverlapEdges(
+    const MotionSequenceRun *run, float *edges)
+{
+    const MotionSequencePlan *plan = run->plan;
+    uint32_t count = 1U;
+    edges[0] = 0.0f;
+    float position = 0.0f;
+    for (uint32_t i = run->first; i <= run->last; ++i)
+    {
+        position += fabsf(plan->segments[i].signedDistanceMm);
+        if (i < run->last)
+        {
+            float half = plan->junctionHalfLengthMm[i];
+            edges[count++] = position - half;
+            edges[count++] = position + half;
+        }
+    }
+    edges[count++] = position;
+    for (uint32_t i = 1U; i < count; ++i)
+    {
+        float value = edges[i];
+        uint32_t j = i;
+        while (j > 0U && edges[j - 1U] > value)
+        {
+            edges[j] = edges[j - 1U];
+            --j;
+        }
+        edges[j] = value;
+    }
+    return count;
+}
+
+static float MotionSequencePlan_OverlapIntervalLimit(
+    const MotionSequenceRun *run, float position)
+{
+    const MotionSequencePlan *plan = run->plan;
+    float boundary = 0.0f, slope = 0.0f, cap = INFINITY;
+    for (uint32_t i = run->first; i < run->last; ++i)
+    {
+        boundary += fabsf(plan->segments[i].signedDistanceMm);
+        float half = plan->junctionHalfLengthMm[i];
+        if (position > boundary - half && position < boundary + half)
+        {
+            cap = fminf(cap, fminf(plan->segments[i].speedCps,
+                                   plan->segments[i + 1U].speedCps));
+            float change = plan->segments[i + 1U].curvaturePerMm -
+                           plan->segments[i].curvaturePerMm;
+            if (change != 0.0f)
+                cap = fminf(cap, plan->junctionSpeedCeilingCps);
+            slope += change / (2.0f * half);
+        }
+    }
+    /* Cap the SUM of active derivatives. Limiting each ramp separately can
+     * exceed the feedforward slew budget when overlapping changes add up. */
+    if (slope != 0.0f && plan->feedforwardSlopeBound > 0.0f)
+        cap = fminf(cap, 0.5f * plan->steeringRatePerSec /
+            (plan->feedforwardSlopeBound * fabsf(slope) * plan->mmPerCount));
+    return cap;
 }
 
 bool MotionSequencePlan_Prepare(
@@ -57,6 +121,10 @@ bool MotionSequencePlan_Prepare(
     plan->straightDecelerationMmps2 = straightDecelerationMmps2;
     plan->arcAccelerationMmps2 = arcAccelerationMmps2;
     plan->arcDecelerationMmps2 = arcDecelerationMmps2;
+    plan->requestedBlendLengthMm = config->blendLengthMm;
+    plan->allowBlendOverlap = config->allowBlendOverlap;
+    plan->junctionSpeedCeilingCps = config->junctionSpeedCps;
+    plan->feedforwardSlopeBound = rawSlopeBound;
     for (uint32_t i = 0U; i < plan->count; ++i)
     {
         const MotionSequenceSegment *segment = &plan->segments[i];
@@ -87,6 +155,7 @@ bool MotionSequencePlan_Prepare(
     float effectiveRawRatePerSec = config->steeringCommandRatePerSec > 0.0f
                                       ? config->steeringCommandRatePerSec
                                       : rawRatePerSec;
+    plan->steeringRatePerSec = effectiveRawRatePerSec;
 
     /* Size each blend and cap its speed using the same slew budget as execution. */
     for (uint32_t i = 0U; i + 1U < plan->count; ++i)
@@ -102,6 +171,19 @@ bool MotionSequencePlan_Prepare(
             0.25f * fminf(
                         fabsf(previousSegment->signedDistanceMm),
                         fabsf(nextSegment->signedDistanceMm)));
+        if (config->allowBlendOverlap)
+        {
+            float before = 0.0f, after = 0.0f;
+            uint32_t first = i;
+            while (first > 0U && !MotionSequencePlan_IsRunBoundary(plan, first - 1U))
+                --first;
+            uint32_t last = MotionSequencePlan_RunEnd(plan, i);
+            for (uint32_t j = first; j <= i; ++j)
+                before += fabsf(plan->segments[j].signedDistanceMm);
+            for (uint32_t j = i + 1U; j <= last; ++j)
+                after += fabsf(plan->segments[j].signedDistanceMm);
+            halfLengthMm = fminf(0.5f * config->blendLengthMm, fminf(before, after));
+        }
         float curvatureChangePerMm =
             fabsf(nextSegment->curvaturePerMm - previousSegment->curvaturePerMm);
         float speedLimitCps = fminf(previousSegment->speedCps, nextSegment->speedCps);
@@ -128,6 +210,34 @@ bool MotionSequencePlan_Prepare(
         plan->junctionSpeedCps[i] = speedLimitCps;
     }
 
+    if (config->allowBlendOverlap)
+    {
+        for (uint32_t first = 0U; first < plan->count;)
+        {
+            MotionSequenceRun run = {plan, first, MotionSequencePlan_RunEnd(plan, first)};
+            float edges[2U * MOTION_SEQUENCE_CAPACITY];
+            uint32_t count = MotionSequencePlan_OverlapEdges(&run, edges);
+            float boundary = 0.0f;
+            for (uint32_t i = first; i < run.last; ++i)
+            {
+                boundary += fabsf(plan->segments[i].signedDistanceMm);
+                float half = plan->junctionHalfLengthMm[i];
+                float cap = INFINITY;
+                for (uint32_t j = 0U; j + 1U < count; ++j)
+                {
+                    if (edges[j + 1U] > edges[j] &&
+                        edges[j] < boundary + half && edges[j + 1U] > boundary - half)
+                        cap = fminf(cap, MotionSequencePlan_OverlapIntervalLimit(
+                            &run, 0.5f * (edges[j] + edges[j + 1U])));
+                }
+                if (!isfinite(cap) || cap <= 0.0f)
+                    return false;
+                plan->junctionSpeedCps[i] = cap; /* Worst cap in this ramp, for diagnostics. */
+            }
+            first = run.last + 1U;
+        }
+    }
+
     plan->prepared = true;
     return true;
 }
@@ -152,6 +262,9 @@ static float MotionSequencePlan_DecelerationIntegral(
     const MotionSequenceRun *run, float fromMm, float toMm)
 {
     const MotionSequencePlan *plan = run->plan;
+    if (plan->allowBlendOverlap)
+        return fminf(plan->straightDecelerationMmps2, plan->arcDecelerationMmps2) *
+               fmaxf(0.0f, toMm - fromMm);
     float positionMm = 0.0f;
     float integral = 0.0f;
     for (uint32_t i = run->first; i <= run->last; ++i)
@@ -189,6 +302,73 @@ static float MotionSequencePlan_GetApproachSpeedCps(
            plan->mmPerCount;
 }
 
+static bool MotionSequencePlan_EvaluateOverlap(
+    const MotionSequenceRun *run, float progress, float length, MotionPathSample *sample)
+{
+    const MotionSequencePlan *plan = run->plan;
+    *sample = (MotionPathSample){0};
+    sample->profileLimitsProvided = true;
+    float boundary = 0.0f, previousFraction = 1.0f;
+    float heading = plan->segments[run->first].curvaturePerMm * progress;
+    for (uint32_t i = run->first; i <= run->last; ++i)
+    {
+        float fraction = 0.0f;
+        if (i < run->last)
+        {
+            boundary += fabsf(plan->segments[i].signedDistanceMm);
+            float half = plan->junctionHalfLengthMm[i];
+            float offset = progress - (boundary - half);
+            fraction = fmaxf(0.0f, fminf(1.0f, offset / (2.0f * half)));
+            float area = offset <= 0.0f ? 0.0f :
+                offset < 2.0f * half ? offset * offset / (4.0f * half) :
+                progress - boundary;
+            heading += (plan->segments[i + 1U].curvaturePerMm -
+                        plan->segments[i].curvaturePerMm) * area;
+        }
+        float weight = fmaxf(0.0f, previousFraction - fraction);
+        sample->curvaturePerMm += weight * plan->segments[i].curvaturePerMm;
+        if (plan->segments[i].curvaturePerMm == 0.0f)
+            sample->straightTuningWeight += weight;
+        previousFraction = fraction;
+    }
+    sample->desiredYawRad = heading *
+        (plan->segments[run->first].signedDistanceMm > 0.0f ? 1.0f : -1.0f);
+    sample->straightTuningWeight = fminf(1.0f, sample->straightTuningWeight);
+    bool pureStraight = sample->straightTuningWeight >= 1.0f;
+    sample->accelerationMmps2 = pureStraight ? plan->straightAccelerationMmps2 :
+        fminf(plan->straightAccelerationMmps2, plan->arcAccelerationMmps2);
+    /* Conservative braking across overlapping straight/arc contributions. */
+    sample->decelerationMmps2 =
+        fminf(plan->straightDecelerationMmps2, plan->arcDecelerationMmps2);
+
+    float cap = INFINITY, position = 0.0f;
+    for (uint32_t i = run->first; i <= run->last; ++i)
+    {
+        float end = position + fabsf(plan->segments[i].signedDistanceMm);
+        if (progress <= end || i == run->last)
+            cap = fminf(cap, MotionSequencePlan_GetApproachSpeedCps(
+                run, plan->segments[i].speedCps, progress, fmaxf(progress, position)));
+        position = end;
+    }
+    float edges[2U * MOTION_SEQUENCE_CAPACITY];
+    uint32_t count = MotionSequencePlan_OverlapEdges(run, edges);
+    for (uint32_t i = 0U; i + 1U < count; ++i)
+    {
+        if (edges[i + 1U] <= edges[i] || progress > edges[i + 1U])
+            continue;
+        float intervalCap = MotionSequencePlan_OverlapIntervalLimit(
+            run, 0.5f * (edges[i] + edges[i + 1U]));
+        if (isfinite(intervalCap))
+            cap = fminf(cap, MotionSequencePlan_GetApproachSpeedCps(
+                run, intervalCap, progress, fmaxf(progress, edges[i])));
+    }
+    sample->speedLimitCps = cap;
+    sample->brakingSpeedLimitCps =
+        MotionSequencePlan_GetApproachSpeedCps(run, 0.0f, progress, length);
+    return isfinite(cap) && cap > 0.0f &&
+           isfinite(sample->curvaturePerMm) && isfinite(sample->desiredYawRad);
+}
+
 bool MotionSequencePlan_Evaluate(
     const void *context, float progressMm, MotionPathSample *sample)
 {
@@ -209,6 +389,8 @@ bool MotionSequencePlan_Evaluate(
     }
 
     float clampedProgressMm = fmaxf(0.0f, fminf(progressMm, runLengthMm));
+    if (plan->allowBlendOverlap)
+        return MotionSequencePlan_EvaluateOverlap(run, clampedProgressMm, runLengthMm, sample);
     float sectionStartMm = 0.0f;
     float integratedCurvatureRad = 0.0f;
     float speedLimitCps = plan->segments[run->first].speedCps;

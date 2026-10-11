@@ -1,6 +1,8 @@
 # Experimental fused motion sequence
 
-Branch: `experiment/task2-fused-stopped-comparison`.
+Branch: `experiment/task2-overlap-single-arc`.
+Based on `160a37040e16a47c9ce4ed92cf542d5b15130306`; the previous
+`experiment/task2-fused-stopped-comparison` branch is preserved.
 Forked from pre-response-planner commit `6d7f13767d18302bd84225aff0fe9a0db66db205`.
 The later measured-response planner (`fe9704f`) and its validation harness are
 not used. The original experiment branch is preserved.
@@ -13,10 +15,12 @@ The separate production UART and IMU-hardening changes are not included.
 
 `TestMain.c` selects `MotionSequenceFusionTestRun()`, with
 `MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING` as the default selector. It uses the
-seven primitives described in [Task 2 comparison](#task-2-comparison).
+five primitives described in [Task 2 comparison](#task-2-comparison).
 A freezes the last logged pre-response-planner tuning (longblend runs 15/16);
 B uses the confirmed Task 1 stopped tuning and standalone yaw-priority arc exits.
-Shared production controller and planner defaults are unchanged.
+Task 2 A now removes the neighbour-segment blend-length cap and allows
+overlapping curvature ramps. Its requested length remains 500 mm. Shared
+production controller and planner defaults are unchanged.
 
 ## Optional historical single tuning run
 
@@ -118,7 +122,7 @@ Other experiments remain available by changing the selector before the run:
   existing versus matched filtering on the short path.
 - `MOTION_SEQUENCE_FUSION_TEST_TASK1_GAINS`: P100/0/0 versus Task 1 P270/I150/D0,
   heading zero and matched filtering on both runs.
-- `MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING`: the current default seven-primitive
+- `MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING`: the current default five-primitive
   Task 2 course, frozen fused tuning versus established stopped tuning.
 
 The two short A/B modes retain the original 300 mm / R525 semicircle / 600 mm
@@ -164,7 +168,7 @@ actual controller configuration and both wheel PID configurations.
 `MotionSequence` owns the batch, lookahead, blend/stop policy and completion.
 It uses the new `MotionController_FollowProfile()` capability for each continuous
 run. The original straight/arc APIs and their tuning/terminal behaviour are
-retained. No heap allocation; capacity is 20 nonzero segments (the current Task 2 course needs 7).
+retained. No heap allocation; capacity is 20 nonzero segments (the current Task 2 course needs 5).
 
 Each curvature change gets a symmetric linear curvature ramp. Its full length
 is at most `blendLengthMm`; each neighbour supplies at most one quarter of its
@@ -239,7 +243,8 @@ Defaults in `Controllers/Src/MotionSequencePlan.c`:
 
 | Setting | Value |
 | --- | ---: |
-| Maximum full blend length | 200 mm |
+| Requested full blend length | 200 mm |
+| Allow overlapping blends | false |
 | Curvature-changing junction speed ceiling | 8000 CPS |
 | Fused-profile raw steering slew limit | 480 raw units/s |
 | Feedforward allocation of configured raw slew rate | 50% |
@@ -379,7 +384,8 @@ position relative to the rear axle are assumptions, pending a measured chassis
 footprint. There is no obstacle-2 back-clearance constraint.
 
 `Tests/Host/plan_task2_route.py` uses SciPy SLSQP from three seeds to minimise
-nominal forward travel within a seven-primitive tangent-circle family, with
+nominal forward travel within a five-primitive tangent-circle family (selected
+with `--single-back-arc`), with
 radius at least 275 mm. It checks exact rectangle separation and side/park
 bounds. This is the shortest densely verified candidate found within that
 family; **global optimality is not proven**. `Tests/task2_route_plan.json` records
@@ -394,35 +400,88 @@ only on the nominal centre path. No termination tuning is changed.
 
 | Primitive | Distance (mm) | Radius (mm) | Heading change |
 | ---: | ---: | ---: | ---: |
-| 1: Broad departure left | 1167.02 | +2102.56 | +31.80° |
-| 2: Right sweep around obstacle 1 | 670.93 | -452.29 | -84.99° |
-| 3: Diagonal crossover | 796.40 | straight | 0° |
-| 4: Lower turn around obstacle 2 | 996.45 | +392.61 | +145.42° |
-| 5: Pass behind obstacle 2 | 436.78 | straight | 0° |
-| 6: Upper turn onto return | 562.48 | +342.93 | +93.98° |
-| 7: Broad return arc into park | 2568.09 | +10718.59 | +13.73° |
+| 1: Broad departure left | 1177.64 | +2102.58 | +32.09° |
+| 2: Right sweep around obstacle 1 | 711.29 | -429.69 | -94.85° |
+| 3: Diagonal crossover | 474.84 | straight | +0.00° |
+| 4: Single arc around obstacle 2 | 2561.47 | +585.85 | +250.51° |
+| 5: Broad return arc into park | 2460.42 | +11919.89 | +11.83° |
 
-Total nominal travel is **7198.15 mm**, 611.33 mm (**7.8%**) shorter than the
-former 7809.48 mm route. The shortest primitive is 436.78 mm. All travel remains
-forward. One broad right arc carries the departure heading around obstacle 1;
-the final broad left arc returns directly into the park. Final nominal heading
-is **199.93°**, 19.93° oblique to the inward axis.
+Total nominal travel is **7385.66 mm**, 187.51 mm (**2.6%**) longer than the
+previous seven-primitive route. The shortest primitive is 474.84 mm; there is
+no minimum-length requirement. One **585.85 mm radius** arc combines the lower
+turn, pass behind obstacle 2 and upper turn. Removing two stops reduces ideal B
+time from **14774 to 14081 ms** (693 ms, **4.7%**) despite the longer travel.
+All travel remains forward. Final nominal heading is **199.58°**, 19.58° oblique
+to the inward axis.
 
 At at most 1 mm spacing, production-planner geometry checks both obstacle
 passes in each direction, exact body-to-obstacle distance, side boundaries,
 park walls and body intersections with the mouth. Nominal B minimum obstacle
-clearance is **221.91 mm**, side-boundary margin **34.77 mm**. It ends at
-**(-250, 0)**. Nominal A clearance is **202.18 mm**, side margin **37.73 mm**,
-endpoint approximately **(-225.19, +15.50)**. Both nominal bodies fit in the park.
-A remains secondary; its requested 500 mm blends are shortened by the existing
-quarter-segment bound. There is no full-blend requirement on this route.
+clearance is **221.91 mm**, side-boundary margin **47.83 mm**. It ends at
+**(-250, 0)**. With overlapping 500 mm ramps, nominal A clearance is
+**201.86 mm**, side margin **44.16 mm**, and endpoint approximately
+**(-204.03, +13.16)**. Both nominal bodies fit in the park. A has only 1.86 mm
+nominal clearance reserve beyond the required 200 mm; observed physical
+tracking error can consume that reserve.
 
 The ideal encoder/gyro execution of B is tracked at every 1 ms fixture tick,
 including steering preparation, standalone arc termination and braking. Its
-minimum body clearance is **210.59 mm**, side margin **35.04 mm**, and final pose
-**(-253.07, +80.27)** at **198.33°**. The whole body fits in the park and crosses
+minimum body clearance is **210.58 mm**, side margin **38.63 mm**, and final pose
+**(-251.34, +10.05)** at **199.59°**. The whole body fits in the park and crosses
 the mouth without touching a wall. This is a software fixture with ideal wheel
 speed and curvature response; it does not establish physical tracking accuracy.
+
+### Overlapping blends and length sweep
+
+Only Task 2 A enables `MotionSequenceConfig.allowBlendOverlap`. Each ramp's
+half length is limited by the requested half length and the distance to the
+continuous run's start/end. The old quarter-neighbour-length cap is removed.
+Explicit stops and direction reversals still separate runs; ramps never cross
+them. There is no additional maximum request, and long ramps may span several
+primitives and overlap several other ramps.
+
+Curvature is the first primitive's curvature plus the sum of each junction's
+curvature change multiplied by its linear ramp. Tuning uses the corresponding
+convex weights. Analytic integration preserves terminal nominal yaw, but the
+smoothed x/y path changes. Speed limits use the **combined active curvature
+slope**, including addition or cancellation between overlapping ramps. The
+feedforward allocation remains half the same 480 raw units/s software budget.
+Overlap braking uses the smaller straight/arc deceleration throughout the run.
+No physical servo-response model is introduced.
+
+All four default ramps now use the full **500 mm** request. The two adjacent to
+the 474.84 mm crossover overlap by **25.16 mm**. On the same five-primitive
+route, bounded 500 mm ramps take A **13597 ms**; removing the neighbour cap and
+allowing overlap reduces that to **12651 ms**, a 946 ms improvement. B remains
+**14081 ms**, giving ideal savings of **1430 ms / 10.2%**.
+
+The longer-request sweep keeps the same route, gains and steering-rate budget:
+
+| A blend request (mm) | Ideal A time (ms) | Nominal body clearance (mm) | Whole body parked | Nominal geometry passes |
+| ---: | ---: | ---: | :---: | :---: |
+| 500 | 12651 | 201.86 | Yes | Yes |
+| 600 | 12321 | 191.87 | Yes | No |
+| 700 | 12046 | 179.87 | No | No |
+| 800 | 11859 | 164.60 | No | No |
+| 1000 | 11738 | 129.35 | No | No |
+| 1500 | 11661 | 26.67 | No | No |
+
+The 1500 mm request also crosses the worst-case side boundary. Larger requests
+improve ideal scheduling but do not qualify on this route. Full results are in
+`Tests/task2_overlap_sweep.json`. The 500 mm request is the default experiment;
+physical improvement remains unproven, particularly given A's thin clearance
+reserve and the earlier measured collisions/negative savings.
+
+Set these test-local controls **before starting the harness** in GDB:
+
+```text
+set variable motionSequenceFusionTestTask2BlendLengthMm = 500.0
+set variable motionSequenceFusionTestTask2AllowBlendOverlap = 1
+```
+
+Set the overlap flag to 0 to repeat the bounded baseline. The OLED displays
+`Overlap:500mm` or `Bounded:500mm` on A's ready screen. Other historical modes
+and global planner defaults retain bounded blending. B always remains stopped.
 
 ### Frozen operating points and termination
 
@@ -432,10 +491,10 @@ speed and curvature response; it does not establish physical tracking accuracy.
 | Arc P / I / D; heading gain | 150 / 75 / 0; 0.5 s⁻¹ | 270 / 150 / 0; 0 |
 | Geometric yaw-rate reference | matched LPF(curvature × measured speed) | curvature × filtered speed |
 | Gyro/speed filter time constant | 100 ms | 100 ms |
-| Execution | one continuous profile | seven standalone primitives |
+| Execution | one continuous profile | five standalone primitives |
 | Intermediate arc completion | continuous junctions | yaw-priority exit at every arc |
 | Steering rate | 480 raw units/s profile override | normal 120 raw units/s |
-| Requested blend length | 500 mm | no blends |
+| Requested blend length | 500 mm, overlap enabled | no blends |
 
 A's tuning is pinned in `MotionSequenceFusionTest_RunPattern()`, independently
 of the optional historical single-run tuning variables. B's confirmed production
@@ -452,9 +511,10 @@ These points affect the planner's slope-based junction caps and A's transitions;
 the original finite-curvature points used by B are unchanged. The shared
 production table is not modified.
 A's junction ceiling remains 8000 CPS, bounded by the 5000 CPS requests and
-feedforward slew budget. The prepared plan/export records all six actual blend
-lengths and junction caps. The shorter primitives deliberately shorten blends;
-route optimisation for B takes priority over A's transition geometry.
+feedforward slew budget. The prepared plan/export records the requested length,
+overlap flag, all four actual ramp lengths and their worst junction caps. In
+overlap mode the active speed cap depends on the combined slope in each
+interval, so a recorded ramp-wide worst cap need not apply throughout the ramp.
 B keeps the same speed and motion limits for this comparison,
 rather than the older production candidate's single 2500/1000 limit pair.
 
@@ -492,7 +552,8 @@ mctrl-fusion-export task2_compare_run01.txt
 
 Enter the measured battery voltage and choose a fresh filename; export appends
 if it already exists. The export includes both actual operating points, elapsed
-times, nominal/measured travel and yaw, policy flags, A's prepared blend lengths/junction speed caps, the route
+times, nominal/measured travel and yaw, policy flags, requested blend length and overlap flag, A's prepared blend
+lengths/junction speed caps, the route
 description and frozen feedforward table, all recorded stopped arc exits and both runs' tagged samples. It does not resume
 the target or initiate motion.
 
@@ -515,19 +576,25 @@ truncation and retains the last sample; summary results and arc-exit records
 remain available. The longer sampling period accommodates the full A/B course;
 it offers less detail of ringing than the earlier 20 ms short tuning exports.
 
-The ideal encoder/gyro host harness reports **A=16556 ms, B=14774 ms**;
-B completes **1782 ms earlier** (12.1% of B's duration). These are software
-scheduling times with ideal signals, not physical time predictions. The test
-also verifies cancellation/timeout in either run, standalone modes on B,
-yaw-triggered exits, distance-guard diagnostics with moving encoders but a
-stationary gyro, manual-wait exclusion and per-trace logs. A will eventually be
-removed; it remains available for this comparison and is not the planning target.
+The ideal encoder/gyro host harness reports **A=12651 ms, B=14081 ms**.
+These are software scheduling times with ideal signals, not physical time
+predictions. The test also verifies overlap integration, aggregate steering
+slew, braking, stops/reversals, cancellation/timeout in either run, standalone
+modes on B, yaw-triggered exits, distance-guard diagnostics with moving encoders
+but a stationary gyro, manual-wait exclusion and per-trace logs. A remains
+available for this final comparison; B remains the planning target.
+
+To reproduce the sweep, set `TASK2_BLEND_MM` and `TASK2_BLEND_OVERLAP` when
+running `test_fused_motion.py`. For deliberately invalid A requests,
+`TASK2_REPORT_INVALID_A=1` reports their geometry without requiring A to pass;
+B's geometry checks remain enforced. This reporting option does not qualify
+an invalid route.
 
 To rerun the numerical search and regenerate the on-target table and plan record
 (requires numpy/scipy), then verify it before using the route:
 
 ```sh
-python3 Tests/Host/plan_task2_route.py --output Tests/task2_route_plan.json --write-route
+python3 Tests/Host/plan_task2_route.py --single-back-arc --output Tests/task2_route_plan.json --write-route
 python3 Tests/Host/test_fused_motion.py
 ```
 

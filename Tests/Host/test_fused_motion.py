@@ -109,6 +109,80 @@ static void testBlendGeometry(void)
     }
 }
 
+/* Independently integrate overlapping ramps; verify the aggregate slew
+ * constraint, forward/reverse heading, convex weights and run boundaries. */
+static void testOverlappingBlends(void)
+{
+    for (int direction = -1; direction <= 1; direction += 2) {
+        Fixture f; MotionSequence s;
+        begin(&f,&s);
+        s.config.allowBlendOverlap = true;
+        s.config.blendLengthMm = 800;
+        assert(MotionSequence_AddStraight(&s,direction*300,7800,false)==0);
+        assert(MotionSequence_AddArc(&s,direction*100,500,7800,false)==0);
+        assert(MotionSequence_AddArc(&s,direction*300,300,7800,false)==0);
+        assert(MotionSequencePlan_Prepare(&s.plan,&s.config,mmPerCount(),
+                                         3000,3000,2000,2000,900000,480));
+        MotionSequenceRun run = {&s.plan,0,2};
+        near(s.plan.junctionHalfLengthMm[0],300,0);
+        near(s.plan.junctionHalfLengthMm[1],300,0);
+        MotionPathSample a,b;
+        assert(MotionSequencePlan_Evaluate(&run,300,&a));
+        near(a.curvaturePerMm,0.002f*0.5f+(1/300.0f-0.002f)/3,1e-8f);
+        near(a.desiredYawRad,direction*(0.15f+(1/300.0f-0.002f)*40000/1200),1e-6f);
+        near(a.straightTuningWeight,0.5f,1e-6f);
+        double integral = 0;
+        for (unsigned j = 0; j < 7000; ++j) {
+            float d = (j+0.5f)*0.1f;
+            assert(MotionSequencePlan_Evaluate(&run,d,&a));
+            assert(a.curvaturePerMm >= -1e-8f && a.curvaturePerMm <= 1/300.0f+1e-8f);
+            assert(a.straightTuningWeight >= 0 && a.straightTuningWeight <= 1);
+            integral += 0.1*a.curvaturePerMm;
+            float slope = (d<600 ? 0.002f/600 : 0)+(d>100 ? (1/300.0f-0.002f)/600 : 0);
+            assert(900000*fabsf(slope)*a.speedLimitCps*mmPerCount() <= 240.001f);
+            assert(MotionSequencePlan_Evaluate(&run,d+0.1f,&b));
+            float va=a.speedLimitCps*mmPerCount(),vb=b.speedLimitCps*mmPerCount();
+            assert(va*va <= vb*vb+2*2000*0.1f+0.1f);
+        }
+        near((float)integral,1.2f,1e-5f);
+        assert(MotionSequencePlan_Evaluate(&run,700,&a));
+        near(a.desiredYawRad,direction*1.2f,1e-6f);
+        near(a.curvaturePerMm,1/300.0f,1e-8f);
+        near(a.brakingSpeedLimitCps,0,0);
+        /* A huge request remains contained by the run, without a segment cap. */
+        s.config.blendLengthMm = 1000000;
+        assert(MotionSequencePlan_Prepare(&s.plan,&s.config,mmPerCount(),
+                                         3000,3000,2000,2000,900000,480));
+        near(s.plan.junctionHalfLengthMm[0],300,0);
+        near(s.plan.junctionHalfLengthMm[1],300,0);
+        s.plan.segments[1].stopAfter = true;
+        assert(MotionSequencePlan_Prepare(&s.plan,&s.config,mmPerCount(),
+                                         3000,3000,2000,2000,900000,480));
+        near(s.plan.junctionHalfLengthMm[0],100,0);
+        near(s.plan.junctionHalfLengthMm[1],0,0);
+        run.last = 1;
+        assert(MotionSequencePlan_Evaluate(&run,400,&a));
+        near(a.desiredYawRad,direction*0.2f,1e-6f);
+        run.first = run.last = 2;
+        assert(MotionSequencePlan_Evaluate(&run,0,&a));
+        near(a.curvaturePerMm,1/300.0f,1e-8f);
+    }
+    /* Opposite derivative signs must cancel, rather than introducing a jump. */
+    Fixture f; MotionSequence s;
+    begin(&f,&s); s.config.allowBlendOverlap=true;s.config.blendLengthMm=800;
+    assert(MotionSequence_AddStraight(&s,300,7800,false)==0);
+    assert(MotionSequence_AddArc(&s,100,500,7800,false)==0);
+    assert(MotionSequence_AddStraight(&s,300,7800,false)==0);
+    assert(MotionSequencePlan_Prepare(&s.plan,&s.config,mmPerCount(),3000,3000,2000,2000,900000,480));
+    MotionSequenceRun run={&s.plan,0,2};MotionPathSample a,b;
+    assert(MotionSequencePlan_Evaluate(&run,300,&a));
+    assert(MotionSequencePlan_Evaluate(&run,500,&b));
+    near(a.curvaturePerMm,b.curvaturePerMm,1e-8f);
+    near(a.curvaturePerMm,0.002f/6,1e-8f);
+    assert(MotionSequencePlan_Evaluate(&run,700,&a));
+    near(a.desiredYawRad,0.2f,1e-6f);
+}
+
 static void testSeparateProfileLimits(void)
 {
     for (int direction = -1; direction <= 1; direction += 2) {
@@ -758,7 +832,10 @@ static void testRandomPlans(void)
             p.segments[i] = (MotionSequenceSegment){direction * (5 + randUnit() * 500),
                 kappa, 500 + randUnit() * 2000, randUnit() < 0.2f};
         }
-        assert(MotionSequencePlan_Prepare(&p, &motionSequenceConfig, mmPerCount(),
+        MotionSequenceConfig config = motionSequenceConfig;
+        config.allowBlendOverlap = trial % 2 != 0;
+        if (config.allowBlendOverlap) config.blendLengthMm = 1000;
+        assert(MotionSequencePlan_Prepare(&p, &config, mmPerCount(),
                                           1500, 1000, 1500, 1000, 60000, 120));
         float total = 0, yaw = 0;
         for (unsigned first = 0; first < p.count;) {
@@ -868,10 +945,11 @@ static double task2BodyObstacleDistance(double x, double y, double yaw,
 static void testTask2RouteGeometry(void)
 {
     MotionSequencePlan plan = motionSequenceFusionTestSequence.plan;
-    assert(plan.count == 7);
+    assert(plan.count == 5);
     assert(MotionSequencePlan_Prepare(&plan, &motionSequenceFusionTestSequence.config,
         mmPerCount(), 3000, 3000, 2000, 2000, 0, 480));
     bool stopped = plan.segments[0].stopAfter;
+    bool reportOnlyA = !stopped && getenv("TASK2_REPORT_INVALID_A");
     const double arenaHalfWidth = 250 + 500;
     double minSideMargin = INFINITY, minObstacleGap = INFINITY;
     double x = -250, y = 0, yaw = 0;
@@ -909,22 +987,22 @@ static void testTask2RouteGeometry(void)
                 cornerX[j] = x + front[j]*150*cos(yaw) - side[j]*100*sin(yaw);
                 cornerY[j] = y + front[j]*150*sin(yaw) + side[j]*100*cos(yaw);
                 minSideMargin = fmin(minSideMargin,arenaHalfWidth-fabs(cornerY[j]));
-                assert(minSideMargin > 0);
-                if (cornerX[j] < 0)
+                if (!reportOnlyA) assert(minSideMargin > 0);
+                if (cornerX[j] < 0 && !reportOnlyA)
                     assert(cornerX[j] > -500 && fabs(cornerY[j]) < 300);
             }
             for (unsigned obstacle = 0; obstacle < 2; ++obstacle) {
                 double gap = task2BodyObstacleDistance(x,y,yaw,cornerX,cornerY,
                     obstacle == 0 ? 1100 : 2250, obstacle == 0 ? 50 : 250);
                 minObstacleGap = fmin(minObstacleGap,gap);
-                assert(gap > (stopped ? 200 : 20));
+                if (!reportOnlyA) assert(gap > 200);
             }
             for (unsigned j = 0; j < 4; ++j) {
                 unsigned next = (j + 1) % 4;
                 if ((cornerX[j] < 0) != (cornerX[next] < 0)) {
                     double fraction = -cornerX[j] / (cornerX[next] - cornerX[j]);
                     double mouthY = cornerY[j] + fraction*(cornerY[next] - cornerY[j]);
-                    assert(fabs(mouthY) < 300);
+                    if (!reportOnlyA) assert(fabs(mouthY) < 300);
                 }
             }
             if (trace) fprintf(trace, "%u,%.6f,%.6f,%.6f\n", stopped, x, y, yaw);
@@ -943,20 +1021,22 @@ static void testTask2RouteGeometry(void)
         int side = j % 2 ? 1 : -1;
         double cx = x + front*150*cos(yaw) - side*100*sin(yaw);
         double cy = y + front*150*sin(yaw) + side*100*cos(yaw);
-        assert(cx > -500 && cx < 0 && fabs(cy) < 300);
+        if (!reportOnlyA) assert(cx > -500 && cx < 0 && fabs(cy) < 300);
     }
     if (stopped) { near((float)x, -250, 0.01f); near((float)y, 0, 0.01f); }
     /* The broad final arc returns directly to park; no lane-reset turn. */
-    assert(plan.segments[6].curvaturePerMm > 0);
-    assert(plan.segments[6].signedDistanceMm > 2000);
+    assert(plan.segments[4].curvaturePerMm > 0);
+    assert(plan.segments[4].signedDistanceMm > 2000);
     for (unsigned i = 0; i < plan.count; ++i) {
         assert(plan.segments[i].signedDistanceMm > 0);
-        if (i + 1 < plan.count) {
+        if (i + 1 < plan.count && !plan.allowBlendOverlap) {
             float half = stopped ? 0 : fminf(250,0.25f*fminf(
                 plan.segments[i].signedDistanceMm,plan.segments[i+1].signedDistanceMm));
             near(plan.junctionHalfLengthMm[i],half,0.001f);
         }
     }
+    printf("Task 2 %s requested blend=%.0f mm, overlap=%u\n",stopped ? "stopped" : "fused",
+           plan.requestedBlendLengthMm,(unsigned)plan.allowBlendOverlap);
     printf("Task 2 %s body clearance=%.2f mm, side-boundary margin=%.2f mm\n",
            stopped ? "stopped" : "fused",minObstacleGap,minSideMargin);
     printf("Task 2 %s nominal endpoint: x=%.2f y=%.2f mm, heading=%.2f deg\n",
@@ -1044,7 +1124,7 @@ void SW1_WaitForPressAndRelease(void)
         }
         assert(strstr(oledRows[4], "Reset +x"));
     } else if (hardwareScenario == 0) {
-        assert(strstr(oledRows[1], "Task2: 7.20m"));
+        assert(strstr(oledRows[1], "Task2: 7.39m"));
         assert(strstr(oledRows[4], "Park +x"));
         testTask2RouteGeometry();
     }
@@ -1100,7 +1180,7 @@ static void testRobotHarness(void)
             near(hardwareFixture->leftWheelController.pid.kp, 0.03f, 0);
             near(hardwareFixture->rightWheelController.pid.kp, 0.03f, 0);
             assert(!a->stopAfterEachSegment && b->stopAfterEachSegment);
-            assert(a->completedRuns == 1 && b->completedRuns == 7);
+            assert(a->completedRuns == 1 && b->completedRuns == 5);
             assert(!a->usesStandalonePrimitives && !a->yawPriorityArcExits);
             assert(b->usesStandalonePrimitives && b->yawPriorityArcExits);
             assert(a->useMatchedYawRateReferenceFilter && !b->useMatchedYawRateReferenceFilter);
@@ -1115,7 +1195,17 @@ static void testRobotHarness(void)
             near(b->arcTuning.yawRateKi, 150, 0);
             near(b->arcTuning.headingKpPerSec, 0, 0);
             const MotionSequencePlan *fusedPlan = &motionSequenceFusionTestFusedPlan;
-            assert(fusedPlan->prepared && fusedPlan->count == 7);
+            assert(fusedPlan->prepared && fusedPlan->count == 5);
+            assert(fusedPlan->allowBlendOverlap == motionSequenceFusionTestTask2AllowBlendOverlap);
+            assert(a->allowBlendOverlap == fusedPlan->allowBlendOverlap && !b->allowBlendOverlap);
+            near(fusedPlan->requestedBlendLengthMm, motionSequenceFusionTestTask2BlendLengthMm, 0);
+            near(a->blendLengthMm, fusedPlan->requestedBlendLengthMm, 0);
+            if (fusedPlan->allowBlendOverlap && fusedPlan->requestedBlendLengthMm == 500.0f) {
+                for (unsigned i = 0; i < 4; ++i)
+                    near(fusedPlan->junctionHalfLengthMm[i], 250.0f, 0);
+                near(fusedPlan->junctionHalfLengthMm[1] + fusedPlan->junctionHalfLengthMm[2] -
+                     fabsf(fusedPlan->segments[2].signedDistanceMm), 25.1597f, 0.001f);
+            }
             const MotionControllerArcConfig *arcConfig = hardwareFixture->motionController.config->arcConfig;
             assert(arcConfig->positivePointCount == 8);
             near(arcConfig->positivePoints[0].curvaturePerMm, 0.000054f, 0);
@@ -1123,12 +1213,12 @@ static void testRobotHarness(void)
             near(arcConfig->positivePoints[2].curvaturePerMm, 0.000436f, 0);
             for (unsigned i = 0; i + 1 < fusedPlan->count; ++i) {
                 assert(fusedPlan->junctionHalfLengthMm[i] > 0 &&
-                       fusedPlan->junctionHalfLengthMm[i] <= 250);
+                       fusedPlan->junctionHalfLengthMm[i] <= 0.5f*motionSequenceFusionTestTask2BlendLengthMm);
                 assert(fusedPlan->junctionSpeedCps[i] > 0 && fusedPlan->junctionSpeedCps[i] <= 5000);
             }
-            assert(motionSequenceFusionTestArcExitCount == 5);
+            assert(motionSequenceFusionTestArcExitCount == 4);
             unsigned arcIndex = 0;
-            for (unsigned i = 0; i < 7; ++i) {
+            for (unsigned i = 0; i < 5; ++i) {
                 const MotionSequenceSegment *seg = &motionSequenceFusionTestSequence.plan.segments[i];
                 near(seg->speedCps,5000,0);
                 assert(seg->stopAfter && seg->signedDistanceMm > 0);
@@ -1226,7 +1316,7 @@ static void testStoppedArcDistanceGuards(void)
     MotionSequenceFusionTestRun();
     assert(motionSequenceFusionTestResultCount == 2);
     assert(motionSequenceFusionTestResults[1].passed);
-    assert(motionSequenceFusionTestArcExitCount == 5);
+    assert(motionSequenceFusionTestArcExitCount == 4);
     for (unsigned i = 0; i < motionSequenceFusionTestArcExitCount; ++i) {
         const MotionSequenceFusionTestArcExit *exit = &motionSequenceFusionTestArcExits[i];
         assert(!exit->yawPredictedReached && exit->distanceLimitReached);
@@ -1438,11 +1528,16 @@ static void testSingleTuningHarness(void)
 
 int main(void)
 {
+    const char *blend = getenv("TASK2_BLEND_MM");
+    if (blend) motionSequenceFusionTestTask2BlendLengthMm = strtof(blend,NULL);
+    const char *overlap = getenv("TASK2_BLEND_OVERLAP");
+    if (overlap) motionSequenceFusionTestTask2AllowBlendOverlap = atoi(overlap) != 0;
     /* Keep existing preparation helper compiled and exercised too. */
     Fixture f; setup(&f, false);
     assert(MotionController_MoveStraight(&f.motion, 100, 500) == 0);
     prepare(&f, MOTIONCONTROLLER_STRAIGHT_PREPARING, MOTIONCONTROLLER_STRAIGHT);
     testBlendGeometry();
+    testOverlappingBlends();
     testSeparateProfileLimits();
     testContinuityAndCompletion();
     testMatchedYawRateReference();
@@ -1459,7 +1554,7 @@ int main(void)
     testStoppedArcDistanceGuards();
     testAccuracyRobotHarness(MOTION_SEQUENCE_FUSION_TEST_REFERENCE_FILTER);
     testAccuracyRobotHarness(MOTION_SEQUENCE_FUSION_TEST_TASK1_GAINS);
-    puts("PASS: fused geometry/heading area, lookahead, forward/reverse continuity, "
+    puts("PASS: fused/overlapping geometry, aggregate slew/braking, lookahead, forward/reverse continuity, "
          "Task 2 obstacle/park geometry, FF bridge, separate limits/stopping envelopes, gain scheduling, slew, stops/reversals, cancellation, faults, 150 random plans, robot harness, final-arc yaw priority");
     return 0;
 }

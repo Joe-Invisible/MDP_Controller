@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Numerically minimise nominal forward travel for a stopped Task 2 route.
 
-Requires numpy/scipy. Optimises a seven-primitive tangent-circle family, not
-all possible bounded-curvature routes. Robot: assumed centred 300 x 200 mm.
+Requires numpy/scipy. Optimises a five- or seven-primitive tangent-circle
+family, not all possible bounded-curvature routes. Robot: assumed centred 300 x 200 mm.
 Obstacle/body clearance: 200 mm. Only obstacle 2's end gaps are constrained
 (500 mm); there is no assumed limit behind obstacle 2. Dense production-planner
 verification remains in test_fused_motion.py.
@@ -37,6 +37,8 @@ def tangent(a, ra, sa, b, rb, sb):
 
 
 def build(v, samples=129):
+    if len(v) == 7:
+        return build_single_back_arc(v,samples)
     x1, y1, r1, x2, y2, r2, x3, y3, r3, exit_yaw = v
     c1, c2, c3 = (np.array([x, y]) for x, y in ((x1,y1),(x2,y2),(x3,y3)))
     rd = ((x1+250)**2 + y1*y1 - r1*r1) / (2*(y1+r1))
@@ -83,6 +85,47 @@ def build(v, samples=129):
     return np.concatenate(points), np.concatenate(yaws), steps, end_yaw
 
 
+
+def build_single_back_arc(v, samples):
+    x1,y1,r1,xb,yb,rb,exit_yaw = v
+    c1,cb = np.array([x1,y1]),np.array([xb,yb])
+    rd = ((x1+250)**2+y1*y1-r1*r1)/(2*(y1+r1))
+    if rd <= 0:
+        raise ValueError('Invalid departure')
+    first_yaw = math.atan2(x1+250,rd-y1)
+    cross_yaw,cross_length = tangent(c1,r1,-1,cb,rb,1)
+    start_return = cb-rb*normal(exit_yaw)
+    delta = START-start_return
+    denominator = 2*np.dot(delta,normal(exit_yaw))
+    if denominator <= 0:
+        raise ValueError('Invalid return')
+    rr = np.dot(delta,delta)/denominator
+    cr = start_return+rr*normal(exit_yaw)
+    end_yaw = math.atan2(START[0]-cr[0],-(START[1]-cr[1]))
+    if end_yaw < exit_yaw:
+        end_yaw += 2*math.pi
+    sections = ((np.array([-250.,rd]),rd,0.,first_yaw),
+                (c1,-r1,first_yaw,cross_yaw),
+                (None,0.,cross_yaw,cross_length),
+                (cb,rb,cross_yaw,exit_yaw),
+                (cr,rr,exit_yaw,end_yaw))
+    points,yaws,steps = [],[],[]
+    pos = START.copy()
+    for i,(centre,radius,a,b) in enumerate(sections):
+        if radius:
+            angle = (b-a)*np.sign(radius)
+            if angle <= 0 or angle > (2*math.pi if i == 3 else math.pi):
+                raise ValueError('Invalid arc angle')
+            yaw = np.linspace(a,b,samples)
+            xy = centre[None,:]-radius*np.column_stack((-np.sin(yaw),np.cos(yaw)))
+            length = abs(radius)*angle
+        else:
+            length = b
+            yaw = np.full(samples,a)
+            xy = pos+np.linspace(0,length,samples)[:,None]*np.array([math.cos(a),math.sin(a)])
+        points.append(xy);yaws.append(yaw);steps.append((length,radius));pos=xy[-1]
+    return np.concatenate(points),np.concatenate(yaws),steps,end_yaw
+
 def body_clearances(xy, yaw):
     t = np.column_stack((np.cos(yaw), np.sin(yaw)))
     n = np.column_stack((-np.sin(yaw), np.cos(yaw)))
@@ -108,6 +151,7 @@ def body_clearances(xy, yaw):
     return np.concatenate(gaps), np.concatenate((bounds.ravel(),rear.ravel()))
 
 
+
 def objective(v):
     try:
         _,_,steps,_ = build(v)
@@ -120,23 +164,32 @@ def constraints(v):
     try:
         xy,yaw,steps,_ = build(v)
         obstacles,bounds = body_clearances(xy,yaw)
-        return np.r_[obstacles-PLANNING_CLEARANCE_MM, bounds-2., abs(steps[0][1])-MIN_RADIUS,
-                     abs(steps[-1][1])-MIN_RADIUS]
+        result = np.r_[obstacles-PLANNING_CLEARANCE_MM, bounds-2., abs(steps[0][1])-MIN_RADIUS,
+                       abs(steps[-1][1])-MIN_RADIUS]
+        return result
     except ValueError:
-        return np.full(2*7*129+2*7*129*4+2,-1e5)
+        return np.full(10*(5 if len(v)==7 else 7)*129+2,-1e5)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output',type=Path)
     parser.add_argument('--write-route',action='store_true')
+    parser.add_argument('--single-back-arc',action='store_true',
+                        help='Replace the two back arcs and straight with one arc (5 primitives)')
     args = parser.parse_args()
     initial = [1100,50,355,2250,-250,355,2250,250,355,math.pi]
     bounds = [(900,1500),(-400,250),(275,1200),(2050,3000),(-450,100),(275,750),
               (2050,4000),(0,350),(275,750),(math.radians(160),math.radians(195))]
+    if args.single_back_arc:
+        initial = [1100,0,400,2250,0,620,math.pi+0.05]
+        bounds = [(900,1500),(-400,250),(275,1200),(2050,3200),(-100,100),
+                  (275,750),(math.radians(165),math.radians(195))]
     candidates = []
     for shift in (0.,30.,-30.):
-        seed = initial.copy(); seed[3] += shift; seed[6] += shift
+        seed = initial.copy(); seed[3] += shift
+        if not args.single_back_arc:
+            seed[6] += shift
         result = minimize(objective,seed,method='SLSQP',bounds=bounds,
                           constraints=[{'type':'ineq','fun':constraints}],
                           options={'maxiter':180,'ftol':1e-9})
@@ -147,7 +200,8 @@ def main():
     if not candidates:
         raise RuntimeError('No densely verified candidate; leave the route unchanged')
     length,result,steps,end_yaw,obstacle_margin,boundary_margin = min(candidates,key=lambda r:r[0])
-    data = {'family':'seven forward primitives; tangent circles and a broad return arc',
+    data = {'family':('five forward primitives; single obstacle-2 back arc and broad return'
+                      if args.single_back_arc else 'seven forward primitives; tangent circles and a broad return arc'),
             'global_optimum_proven':False,
             'required_body_clearance_mm':200.,
             'planned_body_clearance_mm':PLANNING_CLEARANCE_MM,'solver_success':bool(result.success),

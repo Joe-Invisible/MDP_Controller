@@ -53,6 +53,8 @@ MotionSequenceFusionTestTuning motionSequenceFusionTestArcTuning = {
     .headingKpPerSec = 0.5f,
 };
 uint32_t motionSequenceFusionTestLogPeriodMs;
+float motionSequenceFusionTestTask2BlendLengthMm = 500.0f;
+bool motionSequenceFusionTestTask2AllowBlendOverlap = true;
 
 static bool MotionSequenceFusionTest_IsSingleRun(void)
 {
@@ -340,13 +342,11 @@ static MotionControllerStatus MotionSequenceFusionTest_BuildPattern(bool stopAft
      * 200 mm body clearance; only the side gaps at obstacle 2 are 500 mm.
      * There is no minimum primitive length or back-boundary assumption. */
     const MotionSequenceFusionTestStep fusionTestSteps[] = {
-        {1167.023359f, 2102.563162f, FUSION_SPEED_CPS},
-        {670.928973f, -452.293365f, FUSION_SPEED_CPS},
-        {796.402193f, 0.000000f, FUSION_SPEED_CPS},
-        {996.446114f, 392.613070f, FUSION_SPEED_CPS},
-        {436.781079f, 0.000000f, FUSION_SPEED_CPS},
-        {562.475041f, 342.932104f, FUSION_SPEED_CPS},
-        {2568.094649f, 10718.585566f, FUSION_SPEED_CPS},
+        {1177.644340f, 2102.575115f, FUSION_SPEED_CPS},
+        {711.288258f, -429.686391f, FUSION_SPEED_CPS},
+        {474.840304f, 0.000000f, FUSION_SPEED_CPS},
+        {2561.468011f, 585.845538f, FUSION_SPEED_CPS},
+        {2460.422929f, 11919.893421f, FUSION_SPEED_CPS},
     };
     _Static_assert(sizeof(fusionTestSteps) / sizeof(fusionTestSteps[0]) <=
                        MOTION_SEQUENCE_CAPACITY, "Task 2 course exceeds sequence capacity");
@@ -362,6 +362,11 @@ static MotionControllerStatus MotionSequenceFusionTest_BuildPattern(bool stopAft
     if (MotionSequenceFusionTest_IsSingleRun() ||
         motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING)
         sequenceConfig.blendLengthMm = FUSION_TUNING_BLEND_LENGTH_MM;
+    if (motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING && !stopAfter)
+    {
+        sequenceConfig.blendLengthMm = motionSequenceFusionTestTask2BlendLengthMm;
+        sequenceConfig.allowBlendOverlap = motionSequenceFusionTestTask2AllowBlendOverlap;
+    }
     MotionSequence *sequence = &motionSequenceFusionTestSequence;
     MotionControllerStatus status = MotionSequence_Begin(
         sequence, &fixture.motionController, &sequenceConfig);
@@ -495,6 +500,9 @@ static bool MotionSequenceFusionTest_RunPattern(bool stopAfter)
     }
     if (MotionSequenceFusionTest_IsSingleRun())
         OLED_Printf(0, 2, "5000 CPS; B:%gmm", (double)motionSequenceFusionTestSequence.config.blendLengthMm);
+    else if (task2 && !stopAfter)
+        OLED_Printf(0, 2, "%s:%gmm", motionSequenceFusionTestTask2AllowBlendOverlap ?
+                    "Overlap" : "Bounded", (double)motionSequenceFusionTestTask2BlendLengthMm);
     else
         OLED_Printf(0, 2, "%s", standaloneStoppedRun ? "Arc exits: yaw first" :
                     task2 ? "5000 CPS; B:500mm" : "5000 CPS requested");
@@ -596,6 +604,8 @@ static bool MotionSequenceFusionTest_RunPattern(bool stopAfter)
     result->measuredYawRad = sequence->completedMeasuredYawRad;
     result->nominalTravelMm = sequence->plan.totalTravelMm;
     result->nominalYawRad = sequence->plan.nominalFinalYawRad;
+    result->allowBlendOverlap = sequence->config.allowBlendOverlap;
+    result->blendLengthMm = sequence->config.blendLengthMm;
     ++motionSequenceFusionTestResultCount;
     return result->passed;
 }

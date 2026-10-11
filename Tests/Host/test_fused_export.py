@@ -30,17 +30,21 @@ float motionSequenceFusionTestSavedPercent = EXPERIMENT_MODE == 3 ? 0 : 25;
 MotionSequenceFusionTestResult motionSequenceFusionTestResults[2] = {
     {.stopAfterEachSegment = false, .useMatchedYawRateReferenceFilter = EXPERIMENT_MODE >= 2, .passed = true, .elapsedMs = 3000, .completedRuns = 1,
      .straightTuning = {EXPERIMENT_MODE == 3 ? 150 : 100,EXPERIMENT_MODE == 3 ? 50 : 0,0,EXPERIMENT_MODE == 3 ? 0.5 : 0}, .arcTuning = {EXPERIMENT_MODE == 3 ? 150 : 100,EXPERIMENT_MODE == 3 ? 100 : 0,0,EXPERIMENT_MODE == 3 ? 0.5 : 0}},
-    {.stopAfterEachSegment = !EXPERIMENT_MODE, .useMatchedYawRateReferenceFilter = EXPERIMENT_MODE != 0, .passed = true, .elapsedMs = 4000, .completedRuns = EXPERIMENT_MODE ? 1 : 4,
+    {.stopAfterEachSegment = !EXPERIMENT_MODE, .useMatchedYawRateReferenceFilter = EXPERIMENT_MODE != 0, .passed = true, .elapsedMs = 4000, .completedRuns = EXPERIMENT_MODE ? 1 : 5,
      .straightTuning = {EXPERIMENT_MODE == 2 ? 270 : 100, EXPERIMENT_MODE == 2 ? 150 : 0, 0, 0},
      .arcTuning = {EXPERIMENT_MODE == 2 ? 270 : 100, EXPERIMENT_MODE == 2 ? 150 : 0, 0, 0}}
 };
-uint32_t motionSequenceFusionTestArcExitCount = EXPERIMENT_MODE == 0 ? 1 : 0;
+uint32_t motionSequenceFusionTestArcExitCount = EXPERIMENT_MODE == 0 ? 4 : 0;
 MotionSequencePlan motionSequenceFusionTestFusedPlan = {
-    .count=4, .junctionHalfLengthMm={250,250,250}, .junctionSpeedCps={3500,3000,5000}
+    .count=5, .allowBlendOverlap=true, .requestedBlendLengthMm=500,
+    .junctionHalfLengthMm={250,250,250,250}, .junctionSpeedCps={3500,3000,5000,5000}
 };
 MotionSequenceFusionTestArcExit motionSequenceFusionTestArcExits[MOTION_SEQUENCE_CAPACITY] = {
     {.segmentIndex=0, .nominalDistanceMm=1015, .measuredDistanceMm=1016,
-     .nominalYawRad=0.67f, .measuredYawRad=0.67f, .yawPredictedReached=true}
+     .nominalYawRad=0.67f, .measuredYawRad=0.67f, .yawPredictedReached=true},
+    {.segmentIndex=1,.measuredDistanceMm=705,.yawPredictedReached=true},
+    {.segmentIndex=3,.measuredDistanceMm=2555,.yawPredictedReached=true},
+    {.segmentIndex=4,.measuredDistanceMm=2454,.yawPredictedReached=true}
 };
 MotionSequenceFusionTestSample motionSequenceFusionTestLog[2] = {
     {.timeMs = 20, .comparisonRunIndex = 0, .steeringCommand = 12, .sequenceTravelMm = 123, .accelerationLimitMmps2=3000, .decelerationLimitMmps2=3000},
@@ -119,24 +123,28 @@ def main():
                 if valid_results:
                     assert "straightTuning = {yawRateKp = 150, yawRateKi = 50, yawRateKd = 0, headingKpPerSec = 0.5}" in log
                     assert "arcTuning = {yawRateKp = 150, yawRateKi = 100, yawRateKd = 0, headingKpPerSec = 0.5}" in log
-                assert "completedRuns = 4" not in log
+                assert "completedRuns = 5" not in log
             elif experiment_mode == 2:
                 assert "A/B tuning comparison" in log
                 assert "MOTION_SEQUENCE_FUSION_TEST_TASK1_GAINS" in log
                 assert "straightTuning = {yawRateKp = 270, yawRateKi = 150, yawRateKd = 0, headingKpPerSec = 0}" in log
                 assert "arcTuning = {yawRateKp = 270, yawRateKi = 150, yawRateKd = 0, headingKpPerSec = 0}" in log
-                assert "completedRuns = 4" not in log
+                assert "completedRuns = 5" not in log
             elif experiment_mode == 1:
                 assert "A/B reference filter comparison" in log
                 assert "MOTION_SEQUENCE_FUSION_TEST_REFERENCE_FILTER" in log
                 assert "useMatchedYawRateReferenceFilter = true" in log
-                assert "completedRuns = 4" not in log
+                assert "completedRuns = 5" not in log
             else:
                 assert "A/B Task 2 comparison" in log
                 assert "MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING" in log
-                assert "completedRuns = 4" in log
+                assert "completedRuns = 5" in log
                 assert "A prepared fused plan" in log
                 assert "junctionHalfLengthMm = {250, 250, 250" in log
+                assert "allowBlendOverlap = true" in log
+                assert "requestedBlendLengthMm = 500" in log
+                assert "segmentIndex = 4" in log
+                assert "measuredDistanceMm = 2454" in log
                 assert "yawPredictedReached = true" in log
                 assert "measuredDistanceMm = 1016" in log
             if count == 2:

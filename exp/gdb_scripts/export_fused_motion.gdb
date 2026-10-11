@@ -30,7 +30,7 @@ define mctrl-fusion-export
             if motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_REFERENCE_FILTER
                 echo === A/B reference filter comparison (0=existing, 1=matched; both fused) ===\n
             else
-                echo === A/B Task 2 comparison (0=frozen fusion, 1=standalone stopped; yaw-priority arc exits) ===\n
+                echo === A/B Task 2 comparison (0=overlap fusion, 1=standalone stopped; yaw-priority arc exits) ===\n
             end
         end
     end

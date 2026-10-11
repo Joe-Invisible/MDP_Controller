@@ -22,6 +22,10 @@ typedef struct
     float junctionSpeedCps;
     /* Raw units/s for this sequence only; zero inherits steering calibration. */
     float steeringCommandRatePerSec;
+    /* Experimental: preserve the requested length across short neighbours.
+     * Independent curvature ramps may overlap; stop/reversal boundaries still
+     * contain every ramp. False retains the established quarter-segment bound. */
+    bool allowBlendOverlap;
 } MotionSequenceConfig;
 
 typedef struct
@@ -37,6 +41,11 @@ typedef struct
     float straightDecelerationMmps2;
     float arcAccelerationMmps2;
     float arcDecelerationMmps2;
+    float requestedBlendLengthMm;
+    float junctionSpeedCeilingCps;
+    float feedforwardSlopeBound;
+    float steeringRatePerSec;
+    bool allowBlendOverlap;
     bool prepared;
 } MotionSequencePlan;
 

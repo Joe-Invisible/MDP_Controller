@@ -17,6 +17,9 @@ typedef enum
 /* Set before MotionSequenceFusionTestRun(). Default: Task 2 A/B. */
 extern MotionSequenceFusionTestExperiment motionSequenceFusionTestExperiment;
 extern uint32_t motionSequenceFusionTestLogPeriodMs;
+/* Task 2 A-only controls; B remains standalone. Set before Run(). */
+extern float motionSequenceFusionTestTask2BlendLengthMm;
+extern bool motionSequenceFusionTestTask2AllowBlendOverlap;
 
 typedef struct
 {
@@ -36,6 +39,8 @@ typedef struct
     bool usesStandalonePrimitives;
     bool yawPriorityArcExits;
     bool useMatchedYawRateReferenceFilter;
+    bool allowBlendOverlap;
+    float blendLengthMm;
     bool passed;
     bool timedOut;
     bool cancelled;

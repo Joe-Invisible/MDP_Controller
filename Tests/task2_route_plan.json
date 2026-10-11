@@ -1,54 +1,43 @@
 {
-  "family": "seven forward primitives; tangent circles and a broad return arc",
+  "family": "five forward primitives; single obstacle-2 back arc and broad return",
   "global_optimum_proven": false,
   "required_body_clearance_mm": 200.0,
   "planned_body_clearance_mm": 222.0,
   "solver_success": true,
   "solver_message": "Optimization terminated successfully",
   "parameters": [
-    1096.3686316479468,
-    -68.7459784529807,
-    452.2933653493262,
-    2249.9977472848936,
-    -200.13547915499413,
-    392.6130696258923,
-    2282.67946743687,
-    238.2454219048188,
-    342.9321037619675,
-    3.249833268186395
+    1095.3087571347276,
+    -42.76697457869717,
+    429.6863906495924,
+    2215.5542800049448,
+    -0.00739742411399057,
+    585.8455383819197,
+    3.276988454335567
   ],
-  "distance_mm": 7198.1514077788,
-  "final_yaw_deg": 199.92937979155536,
-  "minimum_body_obstacle_distance_mm": 221.94739259132757,
-  "minimum_body_boundary_margin_mm": 34.92027135378771,
+  "distance_mm": 7385.6638401450855,
+  "final_yaw_deg": 199.5842111424421,
+  "minimum_body_obstacle_distance_mm": 221.94549518718281,
+  "minimum_body_boundary_margin_mm": 47.93594471704387,
   "steps": [
     {
-      "distance_mm": 1167.0233590454613,
-      "radius_mm": 2102.5631624703046
+      "distance_mm": 1177.6443396638685,
+      "radius_mm": 2102.5751154478135
     },
     {
-      "distance_mm": 670.9289729938888,
-      "radius_mm": -452.2933653493262
+      "distance_mm": 711.2882575991249,
+      "radius_mm": -429.6863906495924
     },
     {
-      "distance_mm": 796.4021932902215,
+      "distance_mm": 474.8403037514201,
       "radius_mm": 0.0
     },
     {
-      "distance_mm": 996.4461135970464,
-      "radius_mm": 392.6130696258923
+      "distance_mm": 2561.4680105428374,
+      "radius_mm": 585.8455383819197
     },
     {
-      "distance_mm": 436.7810788907105,
-      "radius_mm": 0.0
-    },
-    {
-      "distance_mm": 562.4750414339412,
-      "radius_mm": 342.9321037619675
-    },
-    {
-      "distance_mm": 2568.0946485275294,
-      "radius_mm": 10718.585566129948
+      "distance_mm": 2460.4229285878346,
+      "radius_mm": 11919.893420791665
     }
   ]
 }

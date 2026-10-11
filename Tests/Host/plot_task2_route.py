@@ -41,7 +41,7 @@ def plot(csv_path, output):
     matplotlib.rcParams['svg.hashsalt'] = 'task2-stopped-body-clearance'
     fig,ax = plt.subplots(figsize=(12,5.8),layout='constrained')
     for stopped,color,width,label in ((1,'#ed9e29',3.5,'B: stopped primitives; yaw-priority arc exits'),
-                                      (0,'#1b63a5',1.3,'A: secondary fused comparison')):
+                                      (0,'#1b63a5',1.3,'A: 500 mm blends; neighbour cap removed, overlap allowed')):
         ax.plot(*zip(*[(x,y) for x,y,h in paths[stopped]]),color=color,linewidth=width,label=label)
     for ox,hh,label in ((1100,50,'1: 100 × 100'),(2250,250,'2: 100 × 500')):
         ax.add_patch(Rectangle((ox-50,-hh),100,2*hh,facecolor='#495567',zorder=5))
@@ -62,7 +62,7 @@ def plot(csv_path, output):
                     arrowprops={'arrowstyle':'<->','color':'#80629d'})
         ax.text(2520,side*705,'500 mm worst-case space',ha='left',va='center',fontsize=8,
                 color='#684582',bbox={'facecolor':'white','edgecolor':'none','alpha':.9})
-    ax.text(2820,100,'No specified back limit',fontsize=8,color='#687487',ha='center',
+    ax.text(2870,100,'One back arc; no back limit',fontsize=8,color='#687487',ha='center',
             bbox={'facecolor':'white','edgecolor':'none','alpha':.9})
     ax.plot([0,-500,-500,0],[300,300,-300,-300],color='#495567',linewidth=3)
     ax.scatter([-250],[0],color='#19835c',s=35,zorder=8)
@@ -89,7 +89,7 @@ def plot(csv_path, output):
     ax.set(xlim=(-600,3300),ylim=(-820,820),aspect='equal',
            xlabel='x [mm] — car-park mouth at 0; initial heading +x',
            ylabel='y [mm] — positive to the left',
-           title=f"Task 2: stopped-route optimisation · {plan['distance_mm']/1000:.2f} m · 7 primitives")
+           title=f"Task 2: stopped-route optimisation · {plan['distance_mm']/1000:.2f} m · {len(plan['steps'])} primitives")
     ax.grid(alpha=.12)
     ax.text(.5,-.18,
             'B is the planning target: 200 mm body clearance; no minimum primitive length.\n'
