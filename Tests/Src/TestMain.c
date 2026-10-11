@@ -22,6 +22,7 @@
 #include "MotionControllerArcTest.h"
 #include "MotionControllerSequenceTest.h"
 #include "MotionSequenceFusionTest.h"
+#include "SteeringRampResponseTest.h"
 #include "MotionControllerStraightFeedforwardTest.h"
 #include "MotionControllerTest.h"
 #include "oled.h"
@@ -33,13 +34,9 @@ void InvokeTest() {
 
 	LED_On();
 
-	/* Select this separate harness for straight feedforward calibration:
-	 * MotionControllerStraightFeedforwardTestRun();
-	 * The original arc harness retains the pending raw +95 setup. */
-	/* Experimental branch: one matched, fused tuning run at 150/0/0, heading 0.
-     * The selector retains the previous A/B experiments.
-     * Restore MotionControllerSequenceTestRun() for the original harness. */
-    MotionSequenceFusionTestRun();
+    /* Open-loop steering response sweep; export once after all three trials.
+     * Restore MotionSequenceFusionTestRun() to resume the fusion experiment. */
+    SteeringRampResponseTestRun();
 
 	while (1) {
 		// Test ended. Loop forever.
