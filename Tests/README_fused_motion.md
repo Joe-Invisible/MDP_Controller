@@ -1,5 +1,9 @@
 # Experimental fused motion sequence
 
+The current branch defaults to the parameterised eight-primitive harness.
+See [its configuration and route guide](README_task2_anchored.md). The five-primitive
+experiment documented below is preserved as selector 0.
+
 Branch: `experiment/task2-overlap-single-arc`.
 Based on `160a37040e16a47c9ce4ed92cf542d5b15130306`; the previous
 `experiment/task2-fused-stopped-comparison` branch is preserved.
@@ -11,10 +15,10 @@ Base: `90fa9d3b4d37080a7bf035abe1c3439fd2361ffb` on
 `feature/motion-profile-limits` commit `df2fc280541868bff87ff8813cf36dc48462deb0`.
 The separate production UART and IMU-hardening changes are not included.
 
-## Current default: Task 2 fused versus standalone stopped
+## Historical default: Task 2 fused versus standalone stopped
 
 `TestMain.c` selects `MotionSequenceFusionTestRun()`, with
-`MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING` as the default selector. It uses the
+`MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING` as the historical selector. It uses the
 five primitives described in [Task 2 comparison](#task-2-comparison).
 A freezes the last logged pre-response-planner tuning (longblend runs 15/16);
 B uses the confirmed Task 1 stopped tuning and standalone yaw-priority arc exits.

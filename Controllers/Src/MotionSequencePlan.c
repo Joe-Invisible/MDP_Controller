@@ -130,7 +130,9 @@ bool MotionSequencePlan_Prepare(
         const MotionSequenceSegment *segment = &plan->segments[i];
         if (!isfinite(segment->signedDistanceMm) || segment->signedDistanceMm == 0.0f ||
             !isfinite(segment->curvaturePerMm) || !isfinite(segment->speedCps) ||
-            segment->speedCps <= 0.0f)
+            segment->speedCps <= 0.0f ||
+            !isfinite(plan->junctionBlendLimitMm[i]) ||
+            plan->junctionBlendLimitMm[i] < 0.0f)
         {
             return false;
         }
@@ -166,8 +168,11 @@ bool MotionSequencePlan_Prepare(
         }
         const MotionSequenceSegment *previousSegment = &plan->segments[i];
         const MotionSequenceSegment *nextSegment = &plan->segments[i + 1U];
+        float blendLengthMm = config->blendLengthMm;
+        if (plan->junctionBlendLimitMm[i] > 0.0f)
+            blendLengthMm = fminf(blendLengthMm, plan->junctionBlendLimitMm[i]);
         float halfLengthMm = fminf(
-            0.5f * config->blendLengthMm,
+            0.5f * blendLengthMm,
             0.25f * fminf(
                         fabsf(previousSegment->signedDistanceMm),
                         fabsf(nextSegment->signedDistanceMm)));
@@ -182,7 +187,7 @@ bool MotionSequencePlan_Prepare(
                 before += fabsf(plan->segments[j].signedDistanceMm);
             for (uint32_t j = i + 1U; j <= last; ++j)
                 after += fabsf(plan->segments[j].signedDistanceMm);
-            halfLengthMm = fminf(0.5f * config->blendLengthMm, fminf(before, after));
+            halfLengthMm = fminf(0.5f * blendLengthMm, fminf(before, after));
         }
         float curvatureChangePerMm =
             fabsf(nextSegment->curvaturePerMm - previousSegment->curvaturePerMm);

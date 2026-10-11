@@ -42,7 +42,7 @@ with tempfile.TemporaryDirectory(prefix='camera-controller-') as directory:
     (work / 'test.c').write_text(h)
     (work / 'MotionSequenceFusionTest.c').write_text(s)
     sources = ['MotionController', 'MotionControllerConfig', 'SteeringController', 'SteeringControllerConfig', 'PIDController', 'MotionProfile', 'RobotKinematics', 'MotionSequencePlan', 'MotionSequence']
-    command = shlex.split(os.environ.get('CC', 'gcc')) + ['-std=c11', '-Wall', '-Wextra', '-Werror', '-pedantic', '-O1', '-fsanitize=address,undefined', '-fno-sanitize-recover=all', f'-I{work}', f"-I{t.ROOT / 'Controllers/Inc'}", f"-I{t.ROOT / 'PeripheralDrivers/Inc'}", f"-I{t.ROOT / 'Tests/Inc'}", f"-I{t.ROOT / 'Tests/Common'}", str(work / 'test.c'), str(work / 'MotionSequenceFusionTest.c')] + [str(t.ROOT / f'Controllers/Src/{n}.c') for n in sources] + ['-lm', '-o', str(work / 'test')]
+    command = shlex.split(os.environ.get('CC', 'gcc')) + ['-std=c11', '-Wall', '-Wextra', '-Werror', '-pedantic', '-O1', '-fsanitize=address,undefined', '-fno-sanitize-recover=all', f'-I{work}', f"-I{t.ROOT / 'Controllers/Inc'}", f"-I{t.ROOT / 'PeripheralDrivers/Inc'}", f"-I{t.ROOT / 'Tests/Inc'}", f"-I{t.ROOT / 'Tests/Common'}", str(work / 'test.c'), str(work / 'MotionSequenceFusionTest.c'), str(t.ROOT / 'Tests/Src/Task2Route.c')] + [str(t.ROOT / f'Controllers/Src/{n}.c') for n in sources] + ['-lm', '-o', str(work / 'test')]
     subprocess.run(command, check=True)
     env = os.environ.copy()
     env['ASAN_OPTIONS'] = 'detect_leaks=0'

@@ -39,7 +39,7 @@ static const MotionSequenceFusionTestStep tuningTestSteps[] = {
     {1000.0f, 0.0f, FUSION_SPEED_CPS},
 };
 MotionSequenceFusionTestExperiment motionSequenceFusionTestExperiment =
-    MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING;
+    MOTION_SEQUENCE_FUSION_TEST_TASK2_PARAMETERISED;
 MotionSequenceFusionTestTuning motionSequenceFusionTestStraightTuning = {
     .yawRateKp = 150.0f,
     .yawRateKi = 50.0f,
@@ -55,6 +55,12 @@ MotionSequenceFusionTestTuning motionSequenceFusionTestArcTuning = {
 uint32_t motionSequenceFusionTestLogPeriodMs;
 float motionSequenceFusionTestTask2BlendLengthMm = 500.0f;
 bool motionSequenceFusionTestTask2AllowBlendOverlap = true;
+
+static bool MotionSequenceFusionTest_IsTask2(void)
+{
+    return motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING ||
+        motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_PARAMETERISED;
+}
 
 static bool MotionSequenceFusionTest_IsSingleRun(void)
 {
@@ -104,6 +110,10 @@ static const MotionControllerArcFeedforwardPoint task2PositiveFeedforwardPoints[
     {1.0f / 275.0f, -81.7f},
 };
 static MotionControllerArcConfig task2ArcConfig;
+/* Test-local endpoint for very gentle negative return arcs. It lies exactly
+ * on the existing profile interpolation from centre to the nearest measured
+ * negative point; this is a derived value, not a new calibration measurement. */
+static MotionControllerArcFeedforwardPoint task2NegativeFeedforwardPoints[8];
 #define FUSION_WHEEL_KP 0.03f
 MotionSequence motionSequenceFusionTestSequence;
 MotionSequenceFusionTestSample motionSequenceFusionTestLog[FUSION_LOG_CAPACITY];
@@ -128,6 +138,44 @@ static bool standaloneStoppedRun;
 MotionSequenceFusionTestArcExit motionSequenceFusionTestArcExits[MOTION_SEQUENCE_CAPACITY];
 uint32_t motionSequenceFusionTestArcExitCount;
 MotionSequencePlan motionSequenceFusionTestFusedPlan;
+Task2Route motionSequenceFusionTestTask2Routes[MOTION_SEQUENCE_FUSION_TEST_RUN_COUNT];
+static Task2RoutePose estimatedPose;
+static float previousPoseTravelMm;
+static float previousPoseYawRad;
+
+/* Keep one encoder/gyro pose frame through primitive resets and braking.
+ * This is an estimate for diagnostics, not an absolute-position guarantee. */
+static void MotionSequenceFusionTest_UpdatePose(void)
+{
+    const MotionSequence *sequence = &motionSequenceFusionTestSequence;
+    const MotionController *controller = sequence->controller;
+    bool included = sequence->state == MOTION_SEQUENCE_COMPLETE ||
+                    sequence->state == MOTION_SEQUENCE_ABORTED;
+    float travel = sequence->completedMeasuredTravelMm +
+        (included ? 0.0f : fabsf(controller->travelledDistanceMm));
+    float yaw = sequence->completedMeasuredYawRad +
+        (included ? 0.0f : controller->yawDeg * FUSION_PI / 180.0f);
+    float distance = travel - previousPoseTravelMm;
+    float middleHeading = 0.5f * (previousPoseYawRad + yaw);
+    estimatedPose.xMm += distance * cosf(middleHeading);
+    estimatedPose.yMm += distance * sinf(middleHeading);
+    estimatedPose.yawRad = yaw;
+    previousPoseTravelMm = travel;
+    previousPoseYawRad = yaw;
+
+    if (motionSequenceFusionTestExperiment != MOTION_SEQUENCE_FUSION_TEST_TASK2_PARAMETERISED)
+        return;
+    MotionSequenceFusionTestResult *result = &motionSequenceFusionTestResults[comparisonRunIndex];
+    float exitProgress = sequence->plan.junctionHalfLengthMm[3];
+    for (unsigned i = 0U; i < 4U; ++i)
+        exitProgress += sequence->plan.segments[i].signedDistanceMm;
+    bool afterFirst = standaloneStoppedRun ? sequence->completedRuns >= 4U : travel >= exitProgress;
+    if (afterFirst && !result->obstacle1ExitPoseEstimateValid)
+    {
+        result->obstacle1ExitPoseEstimateValid = true;
+        result->obstacle1ExitPoseEstimate = estimatedPose;
+    }
+}
 
 /* Test-local stopped executor: use the established standalone APIs, including
  * yaw-priority arc termination and their normal steering preparation/rate.
@@ -154,7 +202,7 @@ static MotionControllerStatus MotionSequenceFusionTest_Execute(void)
     if (!standaloneStoppedRun)
     {
         MotionControllerStatus status = MotionSequence_Execute(sequence);
-        if (motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING)
+        if (MotionSequenceFusionTest_IsTask2())
             motionSequenceFusionTestFusedPlan = sequence->plan;
         return status;
     }
@@ -281,6 +329,7 @@ static void MotionSequenceFusionTest_LogSample(uint32_t elapsedMs)
     sample->accelerationLimitMmps2 = controller->motionProfile.accelerationMmps2;
     sample->decelerationLimitMmps2 = controller->motionProfile.decelerationMmps2;
     sample->brakingSpeedLimitCps = controller->pathSample.brakingSpeedLimitCps;
+
 }
 
 __attribute__((noinline)) void MotionSequenceFusionTestFinished(void)
@@ -367,9 +416,28 @@ static MotionControllerStatus MotionSequenceFusionTest_BuildPattern(bool stopAft
         sequenceConfig.blendLengthMm = motionSequenceFusionTestTask2BlendLengthMm;
         sequenceConfig.allowBlendOverlap = motionSequenceFusionTestTask2AllowBlendOverlap;
     }
+    if (motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_PARAMETERISED)
+    {
+        sequenceConfig.blendLengthMm = motionSequenceFusionTestTask2BlendLengthMm;
+        sequenceConfig.allowBlendOverlap = !stopAfter && motionSequenceFusionTestTask2AllowBlendOverlap;
+    }
     MotionSequence *sequence = &motionSequenceFusionTestSequence;
     MotionControllerStatus status = MotionSequence_Begin(
         sequence, &fixture.motionController, &sequenceConfig);
+    if (motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_PARAMETERISED)
+    {
+        const Task2Route *route = &motionSequenceFusionTestTask2Routes[comparisonRunIndex];
+        for (unsigned i = 0U; i < TASK2_ROUTE_STEP_COUNT && status == MOTIONCONTROLLER_STATUS_OK; ++i)
+        {
+            const MotionSequenceSegment *step = &route->steps[i];
+            status = step->curvaturePerMm == 0.0f
+                ? MotionSequence_AddStraight(sequence, step->signedDistanceMm, step->speedCps, stopAfter)
+                : MotionSequence_AddArc(sequence, step->signedDistanceMm,
+                                        1.0f / step->curvaturePerMm, step->speedCps, stopAfter);
+            sequence->plan.junctionBlendLimitMm[i] = route->blendLimitMm[i];
+        }
+        return status;
+    }
     for (size_t stepIndex = 0U;
          stepIndex < stepCount &&
          status == MOTIONCONTROLLER_STATUS_OK; ++stepIndex)
@@ -391,7 +459,7 @@ static MotionControllerStatus MotionSequenceFusionTest_BuildPattern(bool stopAft
 
 static bool MotionSequenceFusionTest_RunPattern(bool stopAfter)
 {
-    const bool task2 = motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING;
+    const bool task2 = MotionSequenceFusionTest_IsTask2();
     standaloneStoppedRun = task2 && stopAfter;
     MotionSequenceFusionTestResult *result =
         &motionSequenceFusionTestResults[comparisonRunIndex];
@@ -470,6 +538,9 @@ static bool MotionSequenceFusionTest_RunPattern(bool stopAfter)
     motionSequenceFusionTestElapsedMs = 0U;
     motionSequenceFusionTestTimedOut = false;
     motionSequenceFusionTestCancelled = false;
+    estimatedPose = (Task2RoutePose){TASK2_ROUTE_START_X_MM, 0.0f, 0.0f};
+    previousPoseTravelMm = 0.0f;
+    previousPoseYawRad = 0.0f;
     /* Validate each run's actual config and initialize PI gains/history before
      * its ready screen. Reuse the initialized hardware and IMU calibration. */
     motionSequenceFusionTestStatus = MotionController_Init(
@@ -509,6 +580,12 @@ static bool MotionSequenceFusionTest_RunPattern(bool stopAfter)
     OLED_Printf(0, 3, "%s", MotionSequenceFusionTest_IsSingleRun()
         ? "Path: 2.0 x 1.6m" : MotionSequenceFusionTest_IsAccuracyExperiment()
         ? "Path: 1.6 x 1.5m" : "A/D S:3000 C:2000");
+    if (motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_PARAMETERISED)
+    {
+        const Task2RouteConfig *config = &motionSequenceFusionTestTask2Routes[comparisonRunIndex].config;
+        OLED_Printf(0, 3, "O1:%c O2:%c W:%g", config->firstArrow == TASK2_ARROW_LEFT ? 'L' : 'R',
+                    config->secondArrow == TASK2_ARROW_LEFT ? 'L' : 'R', (double)config->obstacle2WidthMm);
+    }
     OLED_Printf(0, 4, "%s", MotionSequenceFusionTest_IsAccuracyExperiment()
         ? "Reset +x; SW1 start" : "Park +x; SW1 start");
     OLED_Printf(0, 5, "SW1 running: cancel");
@@ -570,6 +647,7 @@ static bool MotionSequenceFusionTest_RunPattern(bool stopAfter)
         {
             motionSequenceFusionTestStatus =
                 MotionSequenceFusionTest_Update((nowMs - previousUpdateMs) / 1000.0f);
+            MotionSequenceFusionTest_UpdatePose();
         }
         previousUpdateMs = nowMs;
         if (nowMs - lastLogMs >= motionSequenceFusionTestLogPeriodMs)
@@ -624,6 +702,8 @@ void MotionSequenceFusionTestRun(void)
     motionSequenceFusionTestSavedPercent = 0.0f;
     motionSequenceFusionTestArcExitCount = 0U;
     motionSequenceFusionTestFusedPlan = (MotionSequencePlan){0};
+    for (unsigned i = 0U; i < MOTION_SEQUENCE_FUSION_TEST_RUN_COUNT; ++i)
+        motionSequenceFusionTestTask2Routes[i] = (Task2Route){0};
     standaloneStoppedRun = false;
     comparisonRunIndex = 0U;
     for (uint32_t i = 0U; i < MOTION_SEQUENCE_FUSION_TEST_RUN_COUNT; ++i)
@@ -632,6 +712,7 @@ void MotionSequenceFusionTestRun(void)
     }
     motionSequenceFusionTestStatus = MOTIONCONTROLLER_STATUS_NOT_INITIALIZED;
     if (motionSequenceFusionTestExperiment != MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING &&
+        motionSequenceFusionTestExperiment != MOTION_SEQUENCE_FUSION_TEST_TASK2_PARAMETERISED &&
         motionSequenceFusionTestExperiment != MOTION_SEQUENCE_FUSION_TEST_REFERENCE_FILTER &&
         motionSequenceFusionTestExperiment != MOTION_SEQUENCE_FUSION_TEST_TASK1_GAINS &&
         !MotionSequenceFusionTest_IsSingleRun())
@@ -643,7 +724,7 @@ void MotionSequenceFusionTestRun(void)
     motionSequenceFusionTestLogPeriodMs = MotionSequenceFusionTest_IsAccuracyExperiment()
         ? FUSION_FILTER_LOG_PERIOD_MS : FUSION_TIMING_LOG_PERIOD_MS;
     fusionMotionConfig = motionControllerConfig;
-    if (motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING)
+    if (MotionSequenceFusionTest_IsTask2())
     {
         task2ArcConfig = arcMotionConfig;
         task2ArcConfig.positivePoints = task2PositiveFeedforwardPoints;
@@ -657,6 +738,52 @@ void MotionSequenceFusionTestRun(void)
     fusionMotionConfig.straightDecelerationMmps2 = 3000.0f;
     fusionMotionConfig.arcAccelerationMmps2 = 2000.0f;
     fusionMotionConfig.arcDecelerationMmps2 = 2000.0f;
+    if (motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_PARAMETERISED)
+    {
+        /* Freeze both sides before the first ready screen. No hardware is
+         * initialised and neither run launches when either preflight fails. */
+        MotionSequenceConfig sequenceConfig = motionSequenceConfig;
+        sequenceConfig.blendLengthMm = motionSequenceFusionTestTask2BlendLengthMm;
+        sequenceConfig.allowBlendOverlap = motionSequenceFusionTestTask2AllowBlendOverlap;
+        float mmPerCount = FUSION_PI * fusionMotionConfig.kinematics->rearWheelDiameterMm /
+            fusionMotionConfig.kinematics->rearEncoderCountsPerRev;
+        for (unsigned i = 0U; i < MOTION_SEQUENCE_FUSION_TEST_RUN_COUNT; ++i)
+        {
+            if (!Task2Route_Create(&task2RouteConfig, &sequenceConfig, mmPerCount,
+                                  i == 0U, &motionSequenceFusionTestTask2Routes[i]))
+            {
+                motionSequenceFusionTestStatus = MOTIONCONTROLLER_STATUS_PROFILE_ERROR;
+                MotionSequenceFusionTestFinished();
+                OLED_Printf(0, 5, "%s", motionSequenceFusionTestTask2Routes[i].report.reason);
+                OLED_Refresh_Gram();
+                return;
+            }
+        }
+    }
+    if (motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_PARAMETERISED)
+    {
+        float returnCurvature = motionSequenceFusionTestTask2Routes[1].steps[7].curvaturePerMm;
+        uint32_t count = arcMotionConfig.negativePointCount;
+        const MotionControllerArcFeedforwardPoint *nearCentre =
+            &arcMotionConfig.negativePoints[count - 1U];
+        if (returnCurvature < 0.0f && returnCurvature > nearCentre->curvaturePerMm)
+        {
+            if (count >= sizeof(task2NegativeFeedforwardPoints) / sizeof(task2NegativeFeedforwardPoints[0]))
+            {
+                motionSequenceFusionTestStatus = MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
+                MotionSequenceFusionTestFinished();
+                return;
+            }
+            for (uint32_t i = 0U; i < count; ++i)
+                task2NegativeFeedforwardPoints[i] = arcMotionConfig.negativePoints[i];
+            task2NegativeFeedforwardPoints[count] = (MotionControllerArcFeedforwardPoint){
+                nextafterf(returnCurvature, 0.0f),
+                nearCentre->rawSteeringCommand * nextafterf(returnCurvature, 0.0f) / nearCentre->curvaturePerMm,
+            };
+            task2ArcConfig.negativePoints = task2NegativeFeedforwardPoints;
+            task2ArcConfig.negativePointCount = count + 1U;
+        }
+    }
     if (!RobotTestFixture_InitMotionController(&fixture, &fusionMotionConfig))
     {
         MotionSequenceFusionTestFinished();

@@ -34,7 +34,8 @@ void InvokeTest() {
 
 	LED_On();
 
-    /* Task 2: frozen fusion versus standalone yaw-priority primitives. */
+    /* Parameterised 8-primitive Task 2: edit Task2Route.c's grouped settings.
+     * A is fused; B uses standalone yaw-priority primitives. */
     MotionSequenceFusionTestRun();
 
 	while (1) {

@@ -34,6 +34,13 @@ define mctrl-fusion-export
             end
         end
     end
+    if motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_PARAMETERISED
+        echo === Parameterised eight-primitive Task 2 (instant recognition, anchored arcs) ===\n
+        p task2RouteConfig
+        p task2RouteStepNames
+        echo === Frozen A/B route settings and geometric preflight ===\n
+        p motionSequenceFusionTestTask2Routes
+    end
     p motionSequenceFusionTestResultCount
     set $fusion_result_capacity = sizeof(motionSequenceFusionTestResults) / sizeof(motionSequenceFusionTestResults[0])
     if motionSequenceFusionTestResultCount > 0 && motionSequenceFusionTestResultCount <= $fusion_result_capacity
@@ -44,7 +51,7 @@ define mctrl-fusion-export
     p motionSequenceFusionTestComparisonValid
     p motionSequenceFusionTestSavedTimeMs
     p motionSequenceFusionTestSavedPercent
-    if motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING
+    if motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING || motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_PARAMETERISED
         echo === A prepared fused plan (actual blends and speed caps) ===\n
         p motionSequenceFusionTestFusedPlan
     end
@@ -60,7 +67,7 @@ define mctrl-fusion-export
     p motionSequenceFusionTestSequence
     if motionSequenceFusionTestSequence.controller != 0
         p *motionSequenceFusionTestSequence.controller->config
-        if motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING
+        if motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING || motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_PARAMETERISED
             echo === Frozen arc feedforward calibration ===\n
             p *motionSequenceFusionTestSequence.controller->config->arcConfig
             p motionSequenceFusionTestSequence.controller->config->arcConfig->positivePoints[0] @ motionSequenceFusionTestSequence.controller->config->arcConfig->positivePointCount

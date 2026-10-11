@@ -16,6 +16,12 @@ SOURCE = r'''
 MotionSequenceFusionTestExperiment motionSequenceFusionTestExperiment =
     EXPERIMENT_MODE;
 uint32_t motionSequenceFusionTestLogPeriodMs = EXPERIMENT_MODE ? 20 : 100;
+Task2RouteConfig task2RouteConfig = {.parkToObstacle1Mm=600, .obstacleFaceGapMm=1050, .obstacle2WidthMm=500};
+const char *const task2RouteStepNames[8] = {"Approach O1", "O1 depart", "O1 bypass", "O1 centre", "Approach O2", "O2 depart", "O2 back", "Return park"};
+Task2Route motionSequenceFusionTestTask2Routes[2] = {
+    {.config={.firstArrow=TASK2_ARROW_LEFT, .secondArrow=TASK2_ARROW_RIGHT, .obstacle2WidthMm=500}, .report={.valid=true, .reason="OK", .minimumObstacleGapMm=123}},
+    {.config={.firstArrow=TASK2_ARROW_LEFT, .secondArrow=TASK2_ARROW_RIGHT, .obstacle2WidthMm=500}, .report={.valid=true, .reason="OK", .minimumObstacleGapMm=117}}
+};
 bool motionSequenceFusionTestPassed = true;
 MotionControllerStatus motionSequenceFusionTestStatus = MOTIONCONTROLLER_STATUS_PROFILE_ERROR;
 bool motionSequenceFusionTestTimedOut = true;
@@ -78,7 +84,7 @@ def main():
         (work / "stm32f4xx_hal.h").write_text(HAL_STUB)
         (work / "fixture.c").write_text(SOURCE)
         cases = [(mode, count, 1 if mode == 3 else 2)
-                 for mode in (0, 1, 2, 3) for count in (0, 2, 3)]
+                 for mode in (0, 1, 2, 3, 4) for count in (0, 2, 3)]
         cases += [(3, 2, 0), (3, 2, 3)]
         for experiment_mode, count, result_count in cases:
             elf = work / "fixture"
@@ -124,6 +130,15 @@ def main():
                     assert "straightTuning = {yawRateKp = 150, yawRateKi = 50, yawRateKd = 0, headingKpPerSec = 0.5}" in log
                     assert "arcTuning = {yawRateKp = 150, yawRateKi = 100, yawRateKd = 0, headingKpPerSec = 0.5}" in log
                 assert "completedRuns = 5" not in log
+            elif experiment_mode == 4:
+                assert "Parameterised eight-primitive Task 2" in log
+                assert "MOTION_SEQUENCE_FUSION_TEST_TASK2_PARAMETERISED" in log
+                assert "parkToObstacle1Mm = 600" in log
+                assert "obstacleFaceGapMm = 1050" in log
+                assert "minimumObstacleGapMm = 123" in log
+                assert "minimumObstacleGapMm = 117" in log
+                assert "Return park" in log and "Frozen A/B route settings" in log
+                assert "A prepared fused plan" in log
             elif experiment_mode == 2:
                 assert "A/B tuning comparison" in log
                 assert "MOTION_SEQUENCE_FUSION_TEST_TASK1_GAINS" in log

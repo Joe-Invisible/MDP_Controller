@@ -31,6 +31,9 @@ typedef struct
 typedef struct
 {
     MotionSequenceSegment segments[MOTION_SEQUENCE_CAPACITY];
+    /* Optional full-length ceiling after each segment; zero inherits config.
+     * Set while building. Stops still disable their junction entirely. */
+    float junctionBlendLimitMm[MOTION_SEQUENCE_CAPACITY];
     float junctionHalfLengthMm[MOTION_SEQUENCE_CAPACITY];
     float junctionSpeedCps[MOTION_SEQUENCE_CAPACITY];
     uint32_t count;

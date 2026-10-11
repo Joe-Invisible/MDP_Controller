@@ -2,6 +2,7 @@
 #define MOTION_SEQUENCE_FUSION_TEST_H
 
 #include "MotionSequence.h"
+#include "Task2Route.h"
 
 /* Result capacity for optional A/B modes; single tuning uses only index 0. */
 #define MOTION_SEQUENCE_FUSION_TEST_RUN_COUNT 2U
@@ -12,9 +13,11 @@ typedef enum
     MOTION_SEQUENCE_FUSION_TEST_REFERENCE_FILTER,
     MOTION_SEQUENCE_FUSION_TEST_TASK1_GAINS,
     MOTION_SEQUENCE_FUSION_TEST_SINGLE_TUNING,
+    MOTION_SEQUENCE_FUSION_TEST_TASK2_PARAMETERISED,
 } MotionSequenceFusionTestExperiment;
 
-/* Set before MotionSequenceFusionTestRun(). Default: Task 2 A/B. */
+/* Set before Run(). Default: parameterised 8-primitive Task 2 A/B.
+ * TASK2_TIMING retains the historical fixed 5-primitive experiment. */
 extern MotionSequenceFusionTestExperiment motionSequenceFusionTestExperiment;
 extern uint32_t motionSequenceFusionTestLogPeriodMs;
 /* Task 2 A-only controls; B remains standalone. Set before Run(). */
@@ -55,6 +58,8 @@ typedef struct
     /* Actual per-run configuration; final controller config belongs to last run. */
     MotionSequenceFusionTestTuning straightTuning;
     MotionSequenceFusionTestTuning arcTuning;
+    bool obstacle1ExitPoseEstimateValid;
+    Task2RoutePose obstacle1ExitPoseEstimate; /* Encoder/gyro estimate, no error bound. */
 } MotionSequenceFusionTestResult;
 
 /* Side B exits, including braking drift. A distance guard alone does not
@@ -74,6 +79,8 @@ extern MotionSequenceFusionTestArcExit motionSequenceFusionTestArcExits[MOTION_S
 extern uint32_t motionSequenceFusionTestArcExitCount;
 /* Preserve A's prepared blend lengths/speed caps after B replaces the route. */
 extern MotionSequencePlan motionSequenceFusionTestFusedPlan;
+/* Frozen route/config/preflight for both sides, preserved after B replaces A. */
+extern Task2Route motionSequenceFusionTestTask2Routes[MOTION_SEQUENCE_FUSION_TEST_RUN_COUNT];
 
 typedef struct
 {
