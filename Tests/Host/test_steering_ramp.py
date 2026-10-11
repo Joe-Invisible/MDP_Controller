@@ -118,7 +118,7 @@ static void checkProfile(const SteeringRampProfile *p)
         assert(sample.straightTuningWeight >= 0 && sample.straightTuningWeight <= 1);
         assert(!sample.profileLimitsProvided);
         float raw;
-        assert(MotionController_GetProfileFeedforward(steeringRampController,
+        assert(MotionController_GetProfileFeedforward(&robot->motionController,
                     sample.curvaturePerMm, &raw) == 0);
         near(raw, SteeringRampProfile_RawCommand(p, distance), .0001f);
         if (i < steps) {
@@ -195,11 +195,11 @@ static void checkSuccess(void)
     SteeringRampProfile invalid;
     SteeringRampTrial trial = steeringRampTrials[0];
     trial.nominalRawRatePerSec = 0;
-    assert(!SteeringRampProfile_Build(&invalid, steeringRampController, &trial));
+    assert(!SteeringRampProfile_Build(&invalid, &robot->motionController, &trial));
     trial = steeringRampTrials[0]; trial.arcRadiusMm = -525;
-    assert(!SteeringRampProfile_Build(&invalid, steeringRampController, &trial));
+    assert(!SteeringRampProfile_Build(&invalid, &robot->motionController, &trial));
     trial.arcRadiusMm = 10;
-    assert(!SteeringRampProfile_Build(&invalid, steeringRampController, &trial));
+    assert(!SteeringRampProfile_Build(&invalid, &robot->motionController, &trial));
 }
 static void reset(unsigned selected)
 {
@@ -239,13 +239,18 @@ int main(void)
 
 EXPORT_FIXTURE = r'''
 #include "SteeringRampResponseTest.h"
+#include "RobotTestFixture.h"
 const SteeringRampTrial steeringRampTrials[3] = {{4500,50,525,350,300,350,150}};
 SteeringRampProfile steeringRampProfiles[3] = {{.rampLengthMm=541.5f}};
 MotionControllerConfig steeringRampMotionConfig = {.kinematics=&kinematics, .arcConfig=&arcMotionConfig};
-static WheelSpeedController left = {.pid={.kp=.03f}}, right = {.pid={.kp=.03f}};
-static MotionController motion = {.initialized=INITIALIZED, .config=&steeringRampMotionConfig,
-    .leftWheel=&left, .rightWheel=&right, .pathProfile={.steeringCommandRatePerSec=480}};
-MotionController *const steeringRampController = &motion;
+static RobotTestFixture fixture = {
+    .leftWheelController={.pid={.kp=.03f}}, .rightWheelController={.pid={.kp=.03f}},
+    .motionController={.initialized=INITIALIZED, .config=&steeringRampMotionConfig,
+        .leftWheel=&fixture.leftWheelController, .rightWheel=&fixture.rightWheelController,
+        .pathProfile={.steeringCommandRatePerSec=480}}
+};
+/* Deliberately unused: reproduce the original target linker failure. */
+MotionController *const steeringRampController = &fixture.motionController;
 SteeringRampResponseSample steeringRampLog[STEERING_RAMP_LOG_CAPACITY] = {
     {.trialIndex=0, .rawCommandRatePerSec=-50},
     {.trialIndex=1, .rawCommandRatePerSec=-100},
@@ -259,22 +264,32 @@ SteeringRampResponseResult steeringRampResults[3] = {
 uint32_t steeringRampLogCount = LOG_COUNT, steeringRampResultCount = RESULT_COUNT;
 uint32_t steeringRampLogPeriodMs = 10;
 bool steeringRampFinished = true, steeringRampBatchComplete = true;
-int main(void) {return 0;}
+static const void *volatile exportRoots[8];
+int main(void) {
+    exportRoots[0]=&fixture; exportRoots[1]=steeringRampTrials;
+    exportRoots[2]=steeringRampProfiles; exportRoots[3]=steeringRampLog;
+    exportRoots[4]=steeringRampResults; exportRoots[5]=&steeringRampLogCount;
+    exportRoots[6]=&steeringRampResultCount; exportRoots[7]=&steeringRampLogPeriodMs;
+    return steeringRampFinished && steeringRampBatchComplete;
+}
 '''
 
 
 def check_export(gdb, work):
     # Read initialized ELF data directly: no ptrace, target or motion required.
-    (work/'export-fixture.c').write_text(EXPORT_FIXTURE)
+    (work/'SteeringRampResponseTest.c').write_text(EXPORT_FIXTURE)
     for count, results, initialized in [(3, 3, 1), (0, 0, 1), (1501, 4, 1), (3, 3, 0)]:
         elf, export = work/'export-fixture', work/'export.txt'
         command = shlex.split(os.environ.get('CC', 'gcc')) + [
             '-std=c11', '-g', '-O0', '-fno-pie', '-no-pie',
+            '-ffunction-sections', '-fdata-sections', '-Wl,--gc-sections',
             f'-DLOG_COUNT={count}', f'-DRESULT_COUNT={results}', f'-DINITIALIZED={initialized}',
             f'-I{work}', f'-I{ROOT/"Controllers/Inc"}', f'-I{ROOT/"PeripheralDrivers/Inc"}',
-            f'-I{ROOT/"Tests/Inc"}', f'-I{ROOT/"Tests/Common"}', str(work/'export-fixture.c'),
+            f'-I{ROOT/"Tests/Inc"}', f'-I{ROOT/"Tests/Common"}', str(work/'SteeringRampResponseTest.c'),
             str(ROOT/'Controllers/Src/MotionControllerConfig.c'), '-o', str(elf)]
         subprocess.run(command, check=True)
+        symbols = subprocess.check_output(['nm', str(elf)], text=True)
+        assert 'steeringRampController' not in symbols
         export.unlink(missing_ok=True)
         result = subprocess.run([gdb, '-q', '--nx', '-batch', str(elf),
             '-ex', 'set pagination off',

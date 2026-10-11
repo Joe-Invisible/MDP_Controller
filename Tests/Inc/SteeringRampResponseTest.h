@@ -61,7 +61,6 @@ typedef struct
 extern const SteeringRampTrial steeringRampTrials[STEERING_RAMP_TRIAL_COUNT];
 extern SteeringRampProfile steeringRampProfiles[STEERING_RAMP_TRIAL_COUNT];
 extern MotionControllerConfig steeringRampMotionConfig;
-extern MotionController *const steeringRampController;
 extern SteeringRampResponseSample steeringRampLog[STEERING_RAMP_LOG_CAPACITY];
 extern SteeringRampResponseResult steeringRampResults[STEERING_RAMP_TRIAL_COUNT];
 extern uint32_t steeringRampLogCount;

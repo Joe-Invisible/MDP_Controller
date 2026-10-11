@@ -75,6 +75,12 @@ steering-ramp-export steering_ramp_run01.txt
 The voltage above is an example, not a measurement taken by the firmware.
 The script exports the entire sweep, actual calibration/configuration,
 profiles, result codes and samples. It appends if the filename already exists.
+If the original exporter reports a missing `steeringRampController` symbol,
+update just the script while keeping the target suspended: the linker removed
+that unused export-only pointer, not the sample data. Run `set logging enabled
+off`, source the updated script and export to a fresh filename. Reflashing or
+repeating the trials is unnecessary. The fixed exporter accesses the live
+fixture using its source-file-qualified debugger name.
 `steeringRampBatchComplete` means all three trials completed with a complete
 log; it does not mean that tracking was accurate or the steering settled.
 
@@ -144,4 +150,5 @@ sanitizers. It checks integrated yaw and continuity, inverse feedforward,
 encoder wrap, displays, the three-trial lifecycle, cancellation, faults,
 log bounds and the brake watchdog. `--gdb /path/to/gdb` additionally exercises
 the real export script and invalid-count guards. Hardware response remains to
-be measured on the robot.
+be measured on the robot. Export fixtures use section garbage collection and
+verify that the unused pointer is absent, matching the target link behavior.

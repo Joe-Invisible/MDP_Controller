@@ -26,7 +26,6 @@ const SteeringRampTrial steeringRampTrials[STEERING_RAMP_TRIAL_COUNT] = {
 };
 
 static RobotTestFixture fixture;
-MotionController *const steeringRampController = &fixture.motionController;
 static MotionControllerArcConfig rampArcConfig;
 static MotionControllerArcFeedforwardPoint positivePoints[STEERING_RAMP_KNOT_CAPACITY];
 SteeringRampProfile steeringRampProfiles[STEERING_RAMP_TRIAL_COUNT];

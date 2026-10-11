@@ -24,21 +24,24 @@ define steering-ramp-export
     end
     echo === ACTUAL CONFIGURATION AND CALIBRATION ===\n
     p steeringRampMotionConfig
-    if steeringRampController->initialized
-        p *steeringRampController->config->kinematics
-        p *steeringRampController->config->arcConfig
-        set $ramp_arc = steeringRampController->config->arcConfig
+    # File qualification selects this harness's live fixture. An unused C
+    # pointer exported only for GDB can be removed by --gc-sections.
+    set $ramp_controller = &'SteeringRampResponseTest.c'::fixture.motionController
+    if $ramp_controller->initialized
+        p *$ramp_controller->config->kinematics
+        p *$ramp_controller->config->arcConfig
+        set $ramp_arc = $ramp_controller->config->arcConfig
         if $ramp_arc->positivePointCount > 0 && $ramp_arc->positivePointCount <= 16
             p $ramp_arc->positivePoints[0] @ $ramp_arc->positivePointCount
         end
         if $ramp_arc->negativePointCount > 0 && $ramp_arc->negativePointCount <= 16
             p $ramp_arc->negativePoints[0] @ $ramp_arc->negativePointCount
         end
-        p steeringRampController->leftWheel->pid
-        p steeringRampController->rightWheel->pid
-        p steeringRampController->leftWheel->calibration
-        p steeringRampController->rightWheel->calibration
-        p steeringRampController->pathProfile
+        p $ramp_controller->leftWheel->pid
+        p $ramp_controller->rightWheel->pid
+        p $ramp_controller->leftWheel->calibration
+        p $ramp_controller->rightWheel->calibration
+        p $ramp_controller->pathProfile
     end
     echo === SAMPLES (TIME RESTARTS AT EACH TRIAL) ===\n
     p steeringRampLogCount
