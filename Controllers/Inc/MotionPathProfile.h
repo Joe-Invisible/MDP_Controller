@@ -16,6 +16,13 @@ typedef struct
     float desiredYawRad;
     float speedLimitCps;
     float straightTuningWeight;
+    /* Opt-in actuator schedule for a characterized response. Body curvature
+     * and heading above describe predicted motion; they must not be inverted
+     * through the static steering table to recreate the actuator command.
+     * Zero-initialized paths retain the ordinary geometric references. */
+    bool actuationProvided;
+    float steeringFeedforwardCommand;
+    float wheelReferenceCurvaturePerMm;
     /* Optional distance-aware speed profile. When supplied, both local limits
      * must be positive and brakingSpeedLimitCps is sqrt(2*integral(d ds)) from
      * this point to the run end. Blends use arc limits, including zero curvature

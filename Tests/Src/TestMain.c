@@ -23,6 +23,7 @@
 #include "MotionControllerSequenceTest.h"
 #include "MotionSequenceFusionTest.h"
 #include "SteeringRampResponseTest.h"
+#include "MotionResponseTest.h"
 #include "MotionControllerStraightFeedforwardTest.h"
 #include "MotionControllerTest.h"
 #include "oled.h"
@@ -34,9 +35,8 @@ void InvokeTest() {
 
 	LED_On();
 
-    /* Open-loop steering response sweep; export once after all three trials.
-     * Restore MotionSequenceFusionTestRun() to resume the fusion experiment. */
-    SteeringRampResponseTestRun();
+    /* Response-based endpoint validation: one run per export. */
+    MotionResponseTestRun();
 
 	while (1) {
 		// Test ended. Loop forever.

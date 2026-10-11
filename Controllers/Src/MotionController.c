@@ -88,7 +88,17 @@ static float MotionController_GetWheelReferenceCurvaturePerMm(
             steeringAngleRad);
     }
 
-    /* Both unified paths coordinate wheels from the same IMU motion request. */
+    if ((controller->mode == MOTIONCONTROLLER_PROFILE ||
+         controller->mode == MOTIONCONTROLLER_PROFILE_PREPARING) &&
+        controller->pathSample.actuationProvided)
+    {
+        float speedMmps = controller->targetSpeedCps * MotionController_GetMmPerCount(controller);
+        float headingCurvature = speedMmps != 0.0f
+            ? controller->arcHeadingYawRateCorrectionRadPerSec / speedMmps : 0.0f;
+        return controller->pathSample.wheelReferenceCurvaturePerMm + headingCurvature;
+    }
+
+    /* Ordinary unified paths use the same geometric request for both wheels. */
     return controller->arcCommandedCurvaturePerMm;
 }
 
@@ -291,10 +301,27 @@ static bool MotionController_ValidPathSample(const MotionPathSample *sample)
            isfinite(sample->speedLimitCps) && sample->speedLimitCps > 0.0f &&
            isfinite(sample->straightTuningWeight) &&
            sample->straightTuningWeight >= 0.0f && sample->straightTuningWeight <= 1.0f &&
+           (!sample->actuationProvided ||
+            (isfinite(sample->steeringFeedforwardCommand) &&
+             sample->steeringFeedforwardCommand >= SERVO_STEER_MIN &&
+             sample->steeringFeedforwardCommand <= SERVO_STEER_MAX &&
+             isfinite(sample->wheelReferenceCurvaturePerMm))) &&
            (!sample->profileLimitsProvided ||
             (isfinite(sample->accelerationMmps2) && sample->accelerationMmps2 > 0.0f &&
              isfinite(sample->decelerationMmps2) && sample->decelerationMmps2 > 0.0f &&
              isfinite(sample->brakingSpeedLimitCps) && sample->brakingSpeedLimitCps >= 0.0f));
+}
+
+/* Keep predicted body curvature out of the static actuator inversion. */
+static MotionControllerStatus MotionController_GetSampleFeedforward(
+    const MotionController *controller, const MotionPathSample *sample, float *rawCommand)
+{
+    if (sample->actuationProvided)
+    {
+        *rawCommand = sample->steeringFeedforwardCommand;
+        return MOTIONCONTROLLER_STATUS_OK;
+    }
+    return MotionController_GetProfileFeedforward(controller, sample->curvaturePerMm, rawCommand);
 }
 
 static void MotionController_SelectPathLimits(
@@ -939,8 +966,8 @@ MotionControllerStatus MotionController_FollowProfile(
     }
 
     /* Validate both endpoints before starting or moving the steering. */
-    MotionPathSample initialSample;
-    MotionPathSample finalSample;
+    MotionPathSample initialSample = {0};
+    MotionPathSample finalSample = {0};
     float initialRawCommand;
     float finalRawCommand;
     if (!profile->evaluate(profile->context, 0.0f, &initialSample) ||
@@ -960,15 +987,15 @@ MotionControllerStatus MotionController_FollowProfile(
         return MOTIONCONTROLLER_STATUS_PROFILE_ERROR;
     }
 
-    status = MotionController_GetProfileFeedforward(
-        controller, initialSample.curvaturePerMm, &initialRawCommand);
+    status = MotionController_GetSampleFeedforward(
+        controller, &initialSample, &initialRawCommand);
     if (status != MOTIONCONTROLLER_STATUS_OK)
     {
         return status;
     }
 
-    status = MotionController_GetProfileFeedforward(
-        controller, finalSample.curvaturePerMm, &finalRawCommand);
+    status = MotionController_GetSampleFeedforward(
+        controller, &finalSample, &finalRawCommand);
     if (status != MOTIONCONTROLLER_STATUS_OK)
     {
         return status;
@@ -1502,7 +1529,7 @@ static MotionControllerStatus MotionController_UpdateProfile(
     /* Sample the path at measured progress; freeze the final yaw on overrun. */
     float progressMm =
         fmaxf(0.0f, controller->motionDirection * controller->travelledDistanceMm);
-    MotionPathSample sample;
+    MotionPathSample sample = {0};
     float referenceProgressMm =
         controller->pathProfile.terminalYawPriority
             ? fminf(progressMm, controller->targetDistanceMm)
@@ -1519,8 +1546,8 @@ static MotionControllerStatus MotionController_UpdateProfile(
     }
 
     float rawSteeringCommand;
-    MotionControllerStatus status = MotionController_GetProfileFeedforward(
-        controller, sample.curvaturePerMm, &rawSteeringCommand);
+    MotionControllerStatus status = MotionController_GetSampleFeedforward(
+        controller, &sample, &rawSteeringCommand);
     if (status != MOTIONCONTROLLER_STATUS_OK)
     {
         MotionController_Stop(controller);
