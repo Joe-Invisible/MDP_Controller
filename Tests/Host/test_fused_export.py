@@ -29,7 +29,7 @@ int32_t motionSequenceFusionTestSavedTimeMs = EXPERIMENT_MODE == 3 ? 0 : 1000;
 float motionSequenceFusionTestSavedPercent = EXPERIMENT_MODE == 3 ? 0 : 25;
 MotionSequenceFusionTestResult motionSequenceFusionTestResults[2] = {
     {.stopAfterEachSegment = false, .useMatchedYawRateReferenceFilter = EXPERIMENT_MODE >= 2, .passed = true, .elapsedMs = 3000, .completedRuns = 1,
-     .straightTuning = {EXPERIMENT_MODE == 3 ? 150 : 100,0,0,0}, .arcTuning = {EXPERIMENT_MODE == 3 ? 150 : 100,0,0,0}},
+     .straightTuning = {EXPERIMENT_MODE == 3 ? 150 : 100,EXPERIMENT_MODE == 3 ? 50 : 0,0,EXPERIMENT_MODE == 3 ? 0.5 : 0}, .arcTuning = {EXPERIMENT_MODE == 3 ? 150 : 100,EXPERIMENT_MODE == 3 ? 100 : 0,0,EXPERIMENT_MODE == 3 ? 0.5 : 0}},
     {.stopAfterEachSegment = !EXPERIMENT_MODE, .useMatchedYawRateReferenceFilter = EXPERIMENT_MODE != 0, .passed = true, .elapsedMs = 4000, .completedRuns = EXPERIMENT_MODE ? 1 : 10,
      .straightTuning = {EXPERIMENT_MODE == 2 ? 270 : 100, EXPERIMENT_MODE == 2 ? 150 : 0, 0, 0},
      .arcTuning = {EXPERIMENT_MODE == 2 ? 270 : 100, EXPERIMENT_MODE == 2 ? 150 : 0, 0, 0}}
@@ -108,8 +108,8 @@ def main():
                 assert "Single tuning run" in log and "A/B" not in log
                 assert "MOTION_SEQUENCE_FUSION_TEST_SINGLE_TUNING" in log
                 if valid_results:
-                    assert "straightTuning = {yawRateKp = 150, yawRateKi = 0, yawRateKd = 0, headingKpPerSec = 0}" in log
-                    assert "arcTuning = {yawRateKp = 150, yawRateKi = 0, yawRateKd = 0, headingKpPerSec = 0}" in log
+                    assert "straightTuning = {yawRateKp = 150, yawRateKi = 50, yawRateKd = 0, headingKpPerSec = 0.5}" in log
+                    assert "arcTuning = {yawRateKp = 150, yawRateKi = 100, yawRateKd = 0, headingKpPerSec = 0.5}" in log
                 assert "completedRuns = 10" not in log
             elif experiment_mode == 2:
                 assert "A/B tuning comparison" in log

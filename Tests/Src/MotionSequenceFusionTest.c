@@ -58,19 +58,28 @@ static const MotionSequenceFusionTestStep filterTestSteps[] = {
     {525.0f * FUSION_PI, 525.0f, FUSION_SPEED_CPS},
     {600.0f, 0.0f, FUSION_SPEED_CPS},
 };
+/* Longer transition experiment: each neighbour is at least 1000 mm, so
+ * the existing quarter-segment bound permits two complete 500 mm blends.
+ * Keep the original short geometry for the optional historical A/B modes. */
+#define FUSION_TUNING_BLEND_LENGTH_MM 500.0f
+static const MotionSequenceFusionTestStep tuningTestSteps[] = {
+    {1000.0f, 0.0f, FUSION_SPEED_CPS},
+    {525.0f * FUSION_PI, 525.0f, FUSION_SPEED_CPS},
+    {1000.0f, 0.0f, FUSION_SPEED_CPS},
+};
 MotionSequenceFusionTestExperiment motionSequenceFusionTestExperiment =
     MOTION_SEQUENCE_FUSION_TEST_SINGLE_TUNING;
 MotionSequenceFusionTestTuning motionSequenceFusionTestStraightTuning = {
     .yawRateKp = 150.0f,
-    .yawRateKi = 0.0f,
+    .yawRateKi = 50.0f,
     .yawRateKd = 0.0f,
-    .headingKpPerSec = 0.0f,
+    .headingKpPerSec = 0.5f,
 };
 MotionSequenceFusionTestTuning motionSequenceFusionTestArcTuning = {
     .yawRateKp = 150.0f,
-    .yawRateKi = 0.0f,
+    .yawRateKi = 100.0f,
     .yawRateKd = 0.0f,
-    .headingKpPerSec = 0.0f,
+    .headingKpPerSec = 0.5f,
 };
 uint32_t motionSequenceFusionTestLogPeriodMs;
 
@@ -276,14 +285,20 @@ static MotionControllerStatus MotionSequenceFusionTest_BuildPattern(bool stopAft
     };
     _Static_assert(sizeof(fusionTestSteps) / sizeof(fusionTestSteps[0]) <=
                        MOTION_SEQUENCE_CAPACITY, "Task 2 course exceeds sequence capacity");
-    const MotionSequenceFusionTestStep *steps = MotionSequenceFusionTest_IsAccuracyExperiment()
+    const MotionSequenceFusionTestStep *steps = MotionSequenceFusionTest_IsSingleRun()
+        ? tuningTestSteps : MotionSequenceFusionTest_IsAccuracyExperiment()
         ? filterTestSteps : fusionTestSteps;
-    const size_t stepCount = MotionSequenceFusionTest_IsAccuracyExperiment()
+    const size_t stepCount = MotionSequenceFusionTest_IsSingleRun()
+        ? sizeof(tuningTestSteps) / sizeof(tuningTestSteps[0])
+        : MotionSequenceFusionTest_IsAccuracyExperiment()
         ? sizeof(filterTestSteps) / sizeof(filterTestSteps[0])
         : sizeof(fusionTestSteps) / sizeof(fusionTestSteps[0]);
+    MotionSequenceConfig sequenceConfig = motionSequenceConfig;
+    if (MotionSequenceFusionTest_IsSingleRun())
+        sequenceConfig.blendLengthMm = FUSION_TUNING_BLEND_LENGTH_MM;
     MotionSequence *sequence = &motionSequenceFusionTestSequence;
     MotionControllerStatus status = MotionSequence_Begin(
-        sequence, &fixture.motionController, &motionSequenceConfig);
+        sequence, &fixture.motionController, &sequenceConfig);
     for (size_t stepIndex = 0U;
          stepIndex < stepCount &&
          status == MOTIONCONTROLLER_STATUS_OK; ++stepIndex)
@@ -393,8 +408,12 @@ static bool MotionSequenceFusionTest_RunPattern(bool stopAfter)
         OLED_Printf(0, 0, "%s pattern ready", stopAfter ? "B stopped" : "A fused");
         OLED_Printf(0, 1, "Task2 S: %.2fm", (double)(estimatedTravelMm / 1000.0f));
     }
-    OLED_Printf(0, 2, "5000 CPS requested");
-    OLED_Printf(0, 3, "%s", MotionSequenceFusionTest_IsAccuracyExperiment()
+    if (MotionSequenceFusionTest_IsSingleRun())
+        OLED_Printf(0, 2, "5000 CPS; B:%gmm", (double)motionSequenceFusionTestSequence.config.blendLengthMm);
+    else
+        OLED_Printf(0, 2, "5000 CPS requested");
+    OLED_Printf(0, 3, "%s", MotionSequenceFusionTest_IsSingleRun()
+        ? "Path: 2.0 x 1.6m" : MotionSequenceFusionTest_IsAccuracyExperiment()
         ? "Path: 1.6 x 1.5m" : "A/D S:3000 C:2000");
     OLED_Printf(0, 4, "%s", MotionSequenceFusionTest_IsAccuracyExperiment()
         ? "Reset +x; SW1 start" : "Park +x; SW1 start");
