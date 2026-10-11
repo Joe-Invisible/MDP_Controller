@@ -13,7 +13,7 @@ The separate production UART and IMU-hardening changes are not included.
 
 `TestMain.c` selects `MotionSequenceFusionTestRun()`, with
 `MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING` as the default selector. It uses the
-four long primitives described in [Task 2 comparison](#task-2-comparison).
+seven primitives described in [Task 2 comparison](#task-2-comparison).
 A freezes the last logged pre-response-planner tuning (longblend runs 15/16);
 B uses the confirmed Task 1 stopped tuning and standalone yaw-priority arc exits.
 Shared production controller and planner defaults are unchanged.
@@ -118,7 +118,7 @@ Other experiments remain available by changing the selector before the run:
   existing versus matched filtering on the short path.
 - `MOTION_SEQUENCE_FUSION_TEST_TASK1_GAINS`: P100/0/0 versus Task 1 P270/I150/D0,
   heading zero and matched filtering on both runs.
-- `MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING`: the current default four-primitive
+- `MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING`: the current default seven-primitive
   Task 2 course, frozen fused tuning versus established stopped tuning.
 
 The two short A/B modes retain the original 300 mm / R525 semicircle / 600 mm
@@ -127,7 +127,7 @@ between runs. The remaining course description applies to the optional timing mo
 
 ## Wheel-performance settings
 
-The optional timing A/B harness requests 5000 CPS on a Task 2 outward-S / straight-return course
+The optional timing A/B harness requests 5000 CPS on a Task 2 outward route / broad-arc-return course
 that returns to the car park. Both traces use one experiment-local configuration:
 
 | Motion | Acceleration (mm/s²) | Deceleration (mm/s²) |
@@ -164,7 +164,7 @@ actual controller configuration and both wheel PID configurations.
 `MotionSequence` owns the batch, lookahead, blend/stop policy and completion.
 It uses the new `MotionController_FollowProfile()` capability for each continuous
 run. The original straight/arc APIs and their tuning/terminal behaviour are
-retained. No heap allocation; capacity is 20 nonzero segments (the current Task 2 course needs 10).
+retained. No heap allocation; capacity is 20 nonzero segments (the current Task 2 course needs 7).
 
 Each curvature change gets a symmetric linear curvature ramp. Its full length
 is at most `blendLengthMm`; each neighbour supplies at most one quarter of its
@@ -353,10 +353,12 @@ project. This is a fixed-route physical trial representing Task 2, with first
 arrow left and second arrow right. It does not yet implement arrow recognition,
 obstacle measurement, or vision/IR approach stops.
 
-![Task 2 broad arcs and straight return](task2_route.svg)
+![Task 2 stopped route and body clearances](task2_route.svg)
 
-### Layout and long primitives
+### Layout, body clearance and route optimisation
 
+B is the planning target. The former requirement that every primitive exceed
+1 m has been removed; the route is no longer shaped around A's blend lengths.
 Coordinates are millimetres, x along the initial forward direction, positive y
 left. Both face-to-face gaps remain 1050 mm.
 
@@ -366,48 +368,61 @@ left. Both face-to-face gaps remain 1050 mm.
 | Initial rear-axle midpoint | (-250, 0), heading +x |
 | Obstacle 1 | centre (1100, 0), 100 × 100 |
 | Obstacle 2 | centre (2250, 0), 100 along x × 500 along y |
-| Assumed arena | x=-500…3300, y=-800…800; 3.8 × 1.6 m |
-| Final left-turn circle | centre (2400, 0), radius 575 |
+| Worst-case side boundaries | y=-750…750: exactly 500 mm beyond obstacle 2's ends |
+| Space behind obstacle 2 | No stated limit; no far x boundary is imposed |
+| Assumed body | Centred 300 × 200 mm rectangle |
+| Required body-to-obstacle clearance | 200 mm, measured from the outer body |
+
+The graph marks the **200 mm obstacle buffer**, which the entire body must stay
+outside, and the **500 mm worst-case end gaps**. The body dimensions and its
+position relative to the rear axle are assumptions, pending a measured chassis
+footprint. There is no obstacle-2 back-clearance constraint.
+
+`Tests/Host/plan_task2_route.py` uses SciPy SLSQP from three seeds to minimise
+nominal forward travel within a seven-primitive tangent-circle family, with
+radius at least 275 mm. It checks exact rectangle separation and side/park
+bounds. This is the shortest densely verified candidate found within that
+family; **global optimality is not proven**. `Tests/task2_route_plan.json` records
+the solver outcome, parameters and generated distances/radii.
+
+The unchanged standalone yaw predictor stops arcs about 7–8 mm early in the
+ideal fixture. A nominally 201.9 mm-clear route therefore executed with only
+189.6 mm clearance. The final search includes a **20 mm terminal-exit reserve**
+and 2 mm sampling/numeric reserve: planned body separation is 222 mm. The host
+then independently verifies the actual stopped execution, rather than relying
+only on the nominal centre path. No termination tuning is changed.
 
 | Primitive | Distance (mm) | Radius (mm) | Heading change |
 | ---: | ---: | ---: | ---: |
-| 1: broad departure left | 1015.11 | +1500 | +38.77° |
-| 2: sweep past obstacle 1 and cross over | 1472.47 | -710.31 | -118.77° |
-| 3: pass obstacle 2 and turn onto return | 2735.03 | +575 | +272.53° |
-| 4: one straight return into park | 2586.87 | straight | 0° |
+| 1: Broad departure left | 1167.02 | +2102.56 | +31.80° |
+| 2: Right sweep around obstacle 1 | 670.93 | -452.29 | -84.99° |
+| 3: Diagonal crossover | 796.40 | straight | 0° |
+| 4: Lower turn around obstacle 2 | 996.45 | +392.61 | +145.42° |
+| 5: Pass behind obstacle 2 | 436.78 | straight | 0° |
+| 6: Upper turn onto return | 562.48 | +342.93 | +93.98° |
+| 7: Broad return arc into park | 2568.09 | +10718.59 | +13.73° |
 
-The contained table is computed from tangent circles, not independent rounded
-waypoints. It starts with a shallow arc inside the park rather than a short
-exit stem. One broad right arc carries the departure heading past obstacle 1;
-there is no turn to reset it to a parallel lane. The next broad left arc combines
-the second-obstacle pass with the turnaround. Total nominal travel is
-**7809.48 mm**, net yaw **+192.532°**. All travel is forward.
+Total nominal travel is **7198.15 mm**, 611.33 mm (**7.8%**) shorter than the
+former 7809.48 mm route. The shortest primitive is 436.78 mm. All travel remains
+forward. One broad right arc carries the departure heading around obstacle 1;
+the final broad left arc returns directly into the park. Final nominal heading
+is **199.93°**, 19.93° oblique to the inward axis.
 
-The longer primitives deliberately trade a wider first pass (about y=+486 mm
-stopped / +468 mm fused at obstacle 1) for fewer stops and longer transitions.
-This is a comparison route, not a claim of a globally optimal path. Travel is
-about 1% longer than the former 7.73 m course, with four primitives instead of ten.
+At at most 1 mm spacing, production-planner geometry checks both obstacle
+passes in each direction, exact body-to-obstacle distance, side boundaries,
+park walls and body intersections with the mouth. Nominal B minimum obstacle
+clearance is **221.91 mm**, side-boundary margin **34.77 mm**. It ends at
+**(-250, 0)**. Nominal A clearance is **202.18 mm**, side margin **37.73 mm**,
+endpoint approximately **(-225.19, +15.50)**. Both nominal bodies fit in the park.
+A remains secondary; its requested 500 mm blends are shortened by the existing
+quarter-segment bound. There is no full-blend requirement on this route.
 
-Every primitive exceeds 1000 mm, so the unchanged quarter-segment planner bound
-permits **three complete 500 mm blends**, each using 250 mm from either neighbour.
-The intermediate arcs retain at least half their lengths at constant curvature;
-there are no compressed blends on short straights or small-angle turns. Actual
-junction speeds still obey the existing feedforward slew budget; no planner
-limits have been relaxed. The host tests assert all lengths and blend sizes.
-
-The production planner's nominal stopped path ends at **(-250, 0)**; the fused
-path ends at approximately **(-209.75, +10.43)**, about **41.6 mm** away. Both
-have the same nominal final heading. That displacement is caused by blending,
-not a measured tracking error. Both final assumed bodies fit inside the park,
-about 12.53° oblique to the inward axis. The final straight uses distance
-completion in both strategies.
-
-At at most 1 mm spacing, the geometry check verifies both obstacle passes in
-each direction, body clearance, arena bounds and parking, including the body's
-intersections with the mouth. The footprint is an **assumed centred 300 × 200 mm
-rectangle**, enclosed by a 181 mm radius circle with a further 20 mm obstacle
-margin. This is not a measurement of the rear-axle-to-body offsets. Nominal
-geometry passing does not establish physical collision clearance or parking.
+The ideal encoder/gyro execution of B is tracked at every 1 ms fixture tick,
+including steering preparation, standalone arc termination and braking. Its
+minimum body clearance is **210.59 mm**, side margin **35.04 mm**, and final pose
+**(-253.07, +80.27)** at **198.33°**. The whole body fits in the park and crosses
+the mouth without touching a wall. This is a software fixture with ideal wheel
+speed and curvature response; it does not establish physical tracking accuracy.
 
 ### Frozen operating points and termination
 
@@ -417,7 +432,7 @@ geometry passing does not establish physical collision clearance or parking.
 | Arc P / I / D; heading gain | 150 / 75 / 0; 0.5 s⁻¹ | 270 / 150 / 0; 0 |
 | Geometric yaw-rate reference | matched LPF(curvature × measured speed) | curvature × filtered speed |
 | Gyro/speed filter time constant | 100 ms | 100 ms |
-| Execution | one continuous profile | four standalone primitives |
+| Execution | one continuous profile | seven standalone primitives |
 | Intermediate arc completion | continuous junctions | yaw-priority exit at every arc |
 | Steering rate | 480 raw units/s profile override | normal 120 raw units/s |
 | Requested blend length | 500 mm | no blends |
@@ -436,15 +451,15 @@ The test-local positive table also restores the measured entries used in runs
 These points affect the planner's slope-based junction caps and A's transitions;
 the original finite-curvature points used by B are unchanged. The shared
 production table is not modified.
-A's junction ceiling is 8000 CPS, further bounded by the 5000 CPS requests and
-raw-slew budget. The prepared caps are approximately **4210 / 2775 / 5000 CPS**
-at the three junctions, rather than forcing full speed through them. At those
-speeds, a complete 500 mm blend takes at least about 0.90 / 1.37 / 0.76 s.
+A's junction ceiling remains 8000 CPS, bounded by the 5000 CPS requests and
+feedforward slew budget. The prepared plan/export records all six actual blend
+lengths and junction caps. The shorter primitives deliberately shorten blends;
+route optimisation for B takes priority over A's transition geometry.
 B keeps the same speed and motion limits for this comparison,
 rather than the older production candidate's single 2500/1000 limit pair.
 
 B calls `MotionController_MoveStraight`/`MoveArc` and `MotionController_Update`
-directly. It does **not** execute four stopped profiles through `MotionSequence`:
+directly. It does **not** execute stopped profiles through `MotionSequence`:
 that old comparison used distance completion for intermediate arcs. Sequence
 storage on B merely holds the route, progress and aggregate measurements for
 the shared test logger. Normal centring/steering preparation, PID/filter reset,
@@ -500,12 +515,21 @@ truncation and retains the last sample; summary results and arc-exit records
 remain available. The longer sampling period accommodates the full A/B course;
 it offers less detail of ringing than the earlier 20 ms short tuning exports.
 
-The ideal encoder/gyro host harness reports **A=13091 ms, B=14092 ms**, saving
-**1001 ms (7.1%)**. It checks software scheduling and ideal signals only; it has
-no physical servo/vehicle response model and does not predict real tracking
-accuracy or time savings. It also verifies cancellation/timeout in either run,
-standalone modes on B, yaw-triggered exits, distance-guard diagnostics with
-moving encoders but stationary gyro, manual-wait exclusion and per-trace logs.
+The ideal encoder/gyro host harness reports **A=16556 ms, B=14774 ms**;
+B completes **1782 ms earlier** (12.1% of B's duration). These are software
+scheduling times with ideal signals, not physical time predictions. The test
+also verifies cancellation/timeout in either run, standalone modes on B,
+yaw-triggered exits, distance-guard diagnostics with moving encoders but a
+stationary gyro, manual-wait exclusion and per-trace logs. A will eventually be
+removed; it remains available for this comparison and is not the planning target.
+
+To rerun the numerical search and regenerate the on-target table and plan record
+(requires numpy/scipy), then verify it before using the route:
+
+```sh
+python3 Tests/Host/plan_task2_route.py --output Tests/task2_route_plan.json --write-route
+python3 Tests/Host/test_fused_motion.py
+```
 
 To regenerate the diagram from production planner samples:
 

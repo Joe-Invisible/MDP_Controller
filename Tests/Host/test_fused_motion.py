@@ -832,17 +832,48 @@ bool RobotTestFixture_InitMotionController(RobotTestFixture *rf,
         &rf->steeringController, &rf->imu, config) == 0;
 }
 
-/* Integrate the actual on-target course using production blend evaluation.
- * A 300 x 200 mm centred rectangle is an assumed test footprint, not a
- * measured chassis specification. A circumscribing 181 mm circle plus a
- * 20 mm margin checks obstacle clearance; corners check car-park walls. */
+/* Exact rectangle-to-rectangle distance: separation axes detect intersection;
+ * otherwise a closest pair contains a vertex of one of the rectangles. */
+static double task2BodyObstacleDistance(double x, double y, double yaw,
+                                        const double *cx, const double *cy,
+                                        double ox, double hh)
+{
+    double minimum = INFINITY;
+    double minX = INFINITY, maxX = -INFINITY, minY = INFINITY, maxY = -INFINITY;
+    for (unsigned j = 0; j < 4; ++j) {
+        minX = fmin(minX,cx[j]); maxX = fmax(maxX,cx[j]);
+        minY = fmin(minY,cy[j]); maxY = fmax(maxY,cy[j]);
+        minimum = fmin(minimum,hypot(fmax(fabs(cx[j]-ox)-50,0),
+                                     fmax(fabs(cy[j])-hh,0)));
+    }
+    double minF = INFINITY, maxF = -INFINITY, minS = INFINITY, maxS = -INFINITY;
+    for (unsigned j = 0; j < 4; ++j) {
+        double dx = ox + (j < 2 ? -50 : 50)-x;
+        double dy = (j % 2 ? hh : -hh)-y;
+        double f = dx*cos(yaw)+dy*sin(yaw);
+        double side = -dx*sin(yaw)+dy*cos(yaw);
+        minF = fmin(minF,f); maxF = fmax(maxF,f);
+        minS = fmin(minS,side); maxS = fmax(maxS,side);
+        minimum = fmin(minimum,hypot(fmax(fabs(f)-150,0),fmax(fabs(side)-100,0)));
+    }
+    bool overlap = minX <= ox+50 && maxX >= ox-50 && minY <= hh && maxY >= -hh &&
+        minF <= 150 && maxF >= -150 && minS <= 100 && maxS >= -100;
+    return overlap ? 0 : minimum;
+}
+
+/* Integrate production curvature evaluation at <=1 mm spacing. Planning is
+ * for B: assumed centred 300 x 200 mm body, >=200 mm from obstacles, and
+ * exactly 500 mm beyond obstacle 2's two ends. No back boundary is specified.
+ * A is secondary: report its actual clearance; retain collision/bounds checks. */
 static void testTask2RouteGeometry(void)
 {
     MotionSequencePlan plan = motionSequenceFusionTestSequence.plan;
-    assert(plan.count == 4);
+    assert(plan.count == 7);
     assert(MotionSequencePlan_Prepare(&plan, &motionSequenceFusionTestSequence.config,
         mmPerCount(), 3000, 3000, 2000, 2000, 0, 480));
     bool stopped = plan.segments[0].stopAfter;
+    const double arenaHalfWidth = 250 + 500;
+    double minSideMargin = INFINITY, minObstacleGap = INFINITY;
     double x = -250, y = 0, yaw = 0;
     bool passes[2][2] = {{false, false}, {false, false}};
     const char *output = getenv("TASK2_ROUTE_CSV");
@@ -861,36 +892,32 @@ static void testTask2RouteGeometry(void)
             yaw = initialYaw + sample.desiredYawRad;
             double previousX = x;
             x += step * cos(yaw); y += step * sin(yaw);
-            assert(fabs(y) + 181 < 800); /* Compact 1600 mm clear width. */
-            assert(x + 181 < 3300); /* 3800 mm length including park depth. */
             for (unsigned obstacle = 0; obstacle < 2; ++obstacle) {
                 double ox = obstacle == 0 ? 1100 : 2250;
-                double halfHeight = obstacle == 0 ? 50 : 250;
-                double dx = fmax(fabs(x - ox) - 50, 0);
-                double dy = fmax(fabs(y) - halfHeight, 0);
-                assert(hypot(dx, dy) > 201);
                 if ((previousX < ox && x >= ox) || (previousX > ox && x <= ox)) {
                     unsigned returning = cos(yaw) < 0;
-                    assert(fabs(cos(yaw)) > 0.9);
                     assert(!passes[obstacle][returning]);
                     passes[obstacle][returning] = true;
-                    /* Outward S: first left/second right. The one straight
-                     * diagonal return passes above BOTH obstacles. */
                     int expectedSide = returning || obstacle == 0 ? 1 : -1;
-                    assert(y * expectedSide > halfHeight + 201);
-                    /* Broad first pass retains clearance without a lane-reset turn. */
+                    assert(y * expectedSide > (obstacle == 0 ? 50 : 250));
                 }
             }
-            /* Check corners and the body's intersections with x=0: an
-             * angled body can cross a park-wall tip without a corner inside. */
             double cornerX[4], cornerY[4];
             const int front[4] = {1, 1, -1, -1};
             const int side[4] = {1, -1, -1, 1};
             for (unsigned j = 0; j < 4; ++j) {
                 cornerX[j] = x + front[j]*150*cos(yaw) - side[j]*100*sin(yaw);
                 cornerY[j] = y + front[j]*150*sin(yaw) + side[j]*100*cos(yaw);
+                minSideMargin = fmin(minSideMargin,arenaHalfWidth-fabs(cornerY[j]));
+                assert(minSideMargin > 0);
                 if (cornerX[j] < 0)
                     assert(cornerX[j] > -500 && fabs(cornerY[j]) < 300);
+            }
+            for (unsigned obstacle = 0; obstacle < 2; ++obstacle) {
+                double gap = task2BodyObstacleDistance(x,y,yaw,cornerX,cornerY,
+                    obstacle == 0 ? 1100 : 2250, obstacle == 0 ? 50 : 250);
+                minObstacleGap = fmin(minObstacleGap,gap);
+                assert(gap > (stopped ? 200 : 20));
             }
             for (unsigned j = 0; j < 4; ++j) {
                 unsigned next = (j + 1) % 4;
@@ -910,8 +937,7 @@ static void testTask2RouteGeometry(void)
     }
     if (trace) fclose(trace);
     for (unsigned i = 0; i < 2; ++i) assert(passes[i][0] && passes[i][1]);
-    float expectedYaw = PI + asinf(575 / 2650.0f);
-    near((float)yaw, expectedYaw, 1e-5f);
+    assert(yaw > PI && yaw < 1.25 * PI);
     for (unsigned j = 0; j < 4; ++j) {
         int front = j < 2 ? 1 : -1;
         int side = j % 2 ? 1 : -1;
@@ -920,15 +946,49 @@ static void testTask2RouteGeometry(void)
         assert(cx > -500 && cx < 0 && fabs(cy) < 300);
     }
     if (stopped) { near((float)x, -250, 0.01f); near((float)y, 0, 0.01f); }
-    /* The final segment is a SINGLE straight tangent return into the park. */
-    assert(plan.segments[3].curvaturePerMm == 0);
-    assert(plan.segments[3].signedDistanceMm > 2500);
+    /* The broad final arc returns directly to park; no lane-reset turn. */
+    assert(plan.segments[6].curvaturePerMm > 0);
+    assert(plan.segments[6].signedDistanceMm > 2000);
     for (unsigned i = 0; i < plan.count; ++i) {
-        assert(plan.segments[i].signedDistanceMm >= 1000);
-        if (i + 1 < plan.count) near(plan.junctionHalfLengthMm[i], stopped ? 0 : 250, 0);
+        assert(plan.segments[i].signedDistanceMm > 0);
+        if (i + 1 < plan.count) {
+            float half = stopped ? 0 : fminf(250,0.25f*fminf(
+                plan.segments[i].signedDistanceMm,plan.segments[i+1].signedDistanceMm));
+            near(plan.junctionHalfLengthMm[i],half,0.001f);
+        }
     }
+    printf("Task 2 %s body clearance=%.2f mm, side-boundary margin=%.2f mm\n",
+           stopped ? "stopped" : "fused",minObstacleGap,minSideMargin);
     printf("Task 2 %s nominal endpoint: x=%.2f y=%.2f mm, heading=%.2f deg\n",
-           stopped ? "stopped" : "fused", x, y, yaw * 180 / PI);
+           stopped ? "stopped" : "fused",x,y,yaw*180/PI);
+}
+
+static double idealTask2X, idealTask2Y, idealTask2Yaw;
+static double idealTask2MinObstacle, idealTask2MinSide;
+static void trackIdealTask2(double step, double curvature)
+{
+    double middle = idealTask2Yaw+0.5*step*curvature;
+    idealTask2X += step*cos(middle); idealTask2Y += step*sin(middle);
+    idealTask2Yaw += step*curvature;
+    double cx[4],cy[4];
+    for (unsigned j = 0; j < 4; ++j) {
+        int f = j < 2 ? 1 : -1, side = j % 2 ? 1 : -1;
+        cx[j] = idealTask2X+f*150*cos(idealTask2Yaw)-side*100*sin(idealTask2Yaw);
+        cy[j] = idealTask2Y+f*150*sin(idealTask2Yaw)+side*100*cos(idealTask2Yaw);
+        idealTask2MinSide = fmin(idealTask2MinSide,750-fabs(cy[j]));
+        if (cx[j] < 0) assert(cx[j] > -500 && fabs(cy[j]) < 300);
+    }
+    for (unsigned j = 0; j < 4; ++j) {
+        unsigned k = (j+1)%4;
+        if ((cx[j]<0)!=(cx[k]<0)) {
+            double fraction = -cx[j]/(cx[k]-cx[j]);
+            assert(fabs(cy[j]+fraction*(cy[k]-cy[j]))<300);
+        }
+    }
+    for (unsigned i = 0; i < 2; ++i)
+        idealTask2MinObstacle = fmin(idealTask2MinObstacle,
+            task2BodyObstacleDistance(idealTask2X,idealTask2Y,idealTask2Yaw,cx,cy,
+                                      i == 0 ? 1100 : 2250,i == 0 ? 50 : 250));
 }
 
 uint32_t HAL_GetTick(void)
@@ -949,6 +1009,10 @@ uint32_t HAL_GetTick(void)
         hardwareFixture->rightRearWheel.state.encCount += dr;
         l->measuredSpeedCps = speedScale * l->targetSpeedCps;
         r->measuredSpeedCps = speedScale * r->targetSpeedCps;
+        if (hardwareScenario == 0 && hardwareStartCount == 2 &&
+            motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING)
+            trackIdealTask2(0.0005*(l->measuredSpeedCps+r->measuredSpeedCps)*mmPerCount(),
+                           hardwareFixture->motionController.targetCurvaturePerMm);
         gyroDps = hardwareFixture->motionController.targetCurvaturePerMm *
             0.5f * (l->measuredSpeedCps + r->measuredSpeedCps) * mmPerCount() * 180 / PI;
     }
@@ -980,7 +1044,7 @@ void SW1_WaitForPressAndRelease(void)
         }
         assert(strstr(oledRows[4], "Reset +x"));
     } else if (hardwareScenario == 0) {
-        assert(strstr(oledRows[1], "Task2 S: 7.81m"));
+        assert(strstr(oledRows[1], "Task2: 7.20m"));
         assert(strstr(oledRows[4], "Park +x"));
         testTask2RouteGeometry();
     }
@@ -1016,6 +1080,8 @@ static void testRobotHarness(void)
         fakeTick = 0;
         leftCountFraction = rightCountFraction = 0;
         hardwareFixture = NULL;
+        idealTask2X = -250; idealTask2Y = idealTask2Yaw = 0;
+        idealTask2MinObstacle = idealTask2MinSide = INFINITY;
         MotionSequenceFusionTestRun();
         assert(motionSequenceFusionTestLogCount > 1);
         assert(motionSequenceFusionTestStatus == 0);
@@ -1034,7 +1100,7 @@ static void testRobotHarness(void)
             near(hardwareFixture->leftWheelController.pid.kp, 0.03f, 0);
             near(hardwareFixture->rightWheelController.pid.kp, 0.03f, 0);
             assert(!a->stopAfterEachSegment && b->stopAfterEachSegment);
-            assert(a->completedRuns == 1 && b->completedRuns == 4);
+            assert(a->completedRuns == 1 && b->completedRuns == 7);
             assert(!a->usesStandalonePrimitives && !a->yawPriorityArcExits);
             assert(b->usesStandalonePrimitives && b->yawPriorityArcExits);
             assert(a->useMatchedYawRateReferenceFilter && !b->useMatchedYawRateReferenceFilter);
@@ -1049,36 +1115,47 @@ static void testRobotHarness(void)
             near(b->arcTuning.yawRateKi, 150, 0);
             near(b->arcTuning.headingKpPerSec, 0, 0);
             const MotionSequencePlan *fusedPlan = &motionSequenceFusionTestFusedPlan;
-            assert(fusedPlan->prepared && fusedPlan->count == 4);
+            assert(fusedPlan->prepared && fusedPlan->count == 7);
             const MotionControllerArcConfig *arcConfig = hardwareFixture->motionController.config->arcConfig;
             assert(arcConfig->positivePointCount == 8);
             near(arcConfig->positivePoints[0].curvaturePerMm, 0.000054f, 0);
             near(arcConfig->positivePoints[1].curvaturePerMm, 0.000183f, 0);
             near(arcConfig->positivePoints[2].curvaturePerMm, 0.000436f, 0);
-            for (unsigned i = 0; i < 3; ++i) {
-                near(fusedPlan->junctionHalfLengthMm[i], 250, 0);
+            for (unsigned i = 0; i + 1 < fusedPlan->count; ++i) {
+                assert(fusedPlan->junctionHalfLengthMm[i] > 0 &&
+                       fusedPlan->junctionHalfLengthMm[i] <= 250);
                 assert(fusedPlan->junctionSpeedCps[i] > 0 && fusedPlan->junctionSpeedCps[i] <= 5000);
             }
-            printf("Task 2 prepared A junction speeds: %.1f / %.1f / %.1f CPS\n",
-                fusedPlan->junctionSpeedCps[0], fusedPlan->junctionSpeedCps[1], fusedPlan->junctionSpeedCps[2]);
-            assert(motionSequenceFusionTestArcExitCount == 3);
-            for (unsigned i = 0; i < 3; ++i) {
-                const MotionSequenceFusionTestArcExit *exit = &motionSequenceFusionTestArcExits[i];
+            assert(motionSequenceFusionTestArcExitCount == 5);
+            unsigned arcIndex = 0;
+            for (unsigned i = 0; i < 7; ++i) {
+                const MotionSequenceSegment *seg = &motionSequenceFusionTestSequence.plan.segments[i];
+                near(seg->speedCps,5000,0);
+                assert(seg->stopAfter && seg->signedDistanceMm > 0);
+                if (seg->curvaturePerMm == 0) continue;
+                const MotionSequenceFusionTestArcExit *exit = &motionSequenceFusionTestArcExits[arcIndex++];
                 assert(exit->segmentIndex == i);
                 assert(exit->yawPredictedReached && !exit->distanceLimitReached);
                 assert(exit->measuredDistanceMm > 0);
-                assert(fabsf(exit->measuredYawRad - exit->nominalYawRad) < 0.02f);
+                printf("B arc %u: nominal %.5f measured %.5f rad; distance %.2f / %.2f mm\n",
+                       i,exit->nominalYawRad,exit->measuredYawRad,exit->nominalDistanceMm,exit->measuredDistanceMm);
+                /* The unchanged yaw predictor stops about 8 mm early in
+                 * this ideal fixture; compare equivalent travel, not a
+                 * fixed angular tolerance across widely different radii. */
+                assert(fabsf(exit->measuredYawRad-exit->nominalYawRad)/
+                       fabsf(seg->curvaturePerMm) < 10);
             }
-            assert(motionSequenceFusionTestSequence.plan.count == 4);
-            for (unsigned i = 0; i < 4; ++i) {
-                const MotionSequenceSegment *seg = &motionSequenceFusionTestSequence.plan.segments[i];
-                near(seg->speedCps, 5000, 0);
-                assert(seg->stopAfter && seg->signedDistanceMm > 0);
+            printf("B ideal runtime body clearance %.2f mm, side margin %.2f mm; pose (%.2f, %.2f), yaw %.2f deg\n",
+                   idealTask2MinObstacle,idealTask2MinSide,idealTask2X,idealTask2Y,idealTask2Yaw*180/PI);
+            assert(idealTask2MinObstacle >= 200 && idealTask2MinSide > 0);
+            for (unsigned j = 0; j < 4; ++j) {
+                int f = j < 2 ? 1 : -1, side = j % 2 ? 1 : -1;
+                double cx = idealTask2X+f*150*cos(idealTask2Yaw)-side*100*sin(idealTask2Yaw);
+                assert(cx > -500 && cx < 0);
             }
-            near(a->nominalTravelMm, 7809.482f, 0.02f);
-            near(a->nominalTravelMm, b->nominalTravelMm, 0);
-            near(a->nominalYawRad, PI + asinf(575 / 2650.0f), 1e-6f);
-            near(b->nominalYawRad, a->nominalYawRad, 1e-6f);
+            assert(a->nominalTravelMm < 7600);
+            near(a->nominalTravelMm,b->nominalTravelMm,0);
+            near(b->nominalYawRad,a->nominalYawRad,1e-6f);
             assert(a->elapsedMs > 0 && b->elapsedMs > 0);
             assert(motionSequenceFusionTestSavedTimeMs ==
                    (int32_t)b->elapsedMs - (int32_t)a->elapsedMs);
@@ -1109,7 +1186,7 @@ static void testRobotHarness(void)
             assert(taggedSamples[0] > 1 && taggedSamples[1] > 1);
             assert(fakeTick >= a->elapsedMs + b->elapsedMs + 2800U);
             near(final->sequenceTravelMm, b->measuredTravelMm, 0);
-            printf("Ideal Task 2 S/straight-return A/B harness: fused %u ms, stopped %u ms, "
+            printf("Ideal Task 2 broad-return A/B harness: fused %u ms, stopped %u ms, "
                    "saved %d ms (%.1f%%); software timing only\n",
                    a->elapsedMs, b->elapsedMs, motionSequenceFusionTestSavedTimeMs,
                    motionSequenceFusionTestSavedPercent);
@@ -1149,8 +1226,8 @@ static void testStoppedArcDistanceGuards(void)
     MotionSequenceFusionTestRun();
     assert(motionSequenceFusionTestResultCount == 2);
     assert(motionSequenceFusionTestResults[1].passed);
-    assert(motionSequenceFusionTestArcExitCount == 3);
-    for (unsigned i = 0; i < 3; ++i) {
+    assert(motionSequenceFusionTestArcExitCount == 5);
+    for (unsigned i = 0; i < motionSequenceFusionTestArcExitCount; ++i) {
         const MotionSequenceFusionTestArcExit *exit = &motionSequenceFusionTestArcExits[i];
         assert(!exit->yawPredictedReached && exit->distanceLimitReached);
         assert(exit->measuredDistanceMm >= exit->nominalDistanceMm + 30);

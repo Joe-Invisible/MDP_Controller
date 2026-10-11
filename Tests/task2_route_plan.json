@@ -1,0 +1,54 @@
+{
+  "family": "seven forward primitives; tangent circles and a broad return arc",
+  "global_optimum_proven": false,
+  "required_body_clearance_mm": 200.0,
+  "planned_body_clearance_mm": 222.0,
+  "solver_success": true,
+  "solver_message": "Optimization terminated successfully",
+  "parameters": [
+    1096.3686316479468,
+    -68.7459784529807,
+    452.2933653493262,
+    2249.9977472848936,
+    -200.13547915499413,
+    392.6130696258923,
+    2282.67946743687,
+    238.2454219048188,
+    342.9321037619675,
+    3.249833268186395
+  ],
+  "distance_mm": 7198.1514077788,
+  "final_yaw_deg": 199.92937979155536,
+  "minimum_body_obstacle_distance_mm": 221.94739259132757,
+  "minimum_body_boundary_margin_mm": 34.92027135378771,
+  "steps": [
+    {
+      "distance_mm": 1167.0233590454613,
+      "radius_mm": 2102.5631624703046
+    },
+    {
+      "distance_mm": 670.9289729938888,
+      "radius_mm": -452.2933653493262
+    },
+    {
+      "distance_mm": 796.4021932902215,
+      "radius_mm": 0.0
+    },
+    {
+      "distance_mm": 996.4461135970464,
+      "radius_mm": 392.6130696258923
+    },
+    {
+      "distance_mm": 436.7810788907105,
+      "radius_mm": 0.0
+    },
+    {
+      "distance_mm": 562.4750414339412,
+      "radius_mm": 342.9321037619675
+    },
+    {
+      "distance_mm": 2568.0946485275294,
+      "radius_mm": 10718.585566129948
+    }
+  ]
+}
