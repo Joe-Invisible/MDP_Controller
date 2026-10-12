@@ -374,27 +374,17 @@ Windows PowerShell 5.1, and ST-LINK hardware integration still require local
 verification.
 
 
-## Experimental fused motion sequence (6 Oct 2026)
+## Task 2 execution decision — 12 October 2026
 
-`experiment/fused-motion-sequence` inherits unified-control commit `69a661e`.
-`MotionSequence` generates bounded same-direction profiles above
-`MotionController_FollowProfile`, retaining controller state through virtual
-junctions. Symmetric curvature ramps consume neighbouring distances and
-preserve nominal heading area. Reversals and explicit stops split continuous
-runs. Intermediate stopped profiles and straight-ending batches use distance
-completion; a batch-ending arc uses the inherited yaw-priority terminal approach
-and stopping-yaw predictor against the final fused-run heading. Its turn sign
-comes from the final arc, including zero/opposite-sign net-yaw batches, with
-frozen endpoint references on bounded overrun. Existing braking is retained.
+Fusion is abandoned for Task 2 integration. The reasons are variable clearance
+and parking behaviour, limited timing benefit, steering-transition bottlenecks,
+insufficient time for further tuning, difficulty taking responsibility for the
+new algorithm, and unresolved blend constraints/dynamic route construction.
+Revisit this explicit decision only with new evidence and integration time.
 
-The profile-only near-centre raw feedforward bridge is an experimental model,
-and straight/arc gains are scheduled through blends while preserving integral
-output. Standalone commands retain their existing behaviour. Defaults are a
-200 mm maximum blend and 500 CPS changing-curvature junction ceiling, further
-limited by the configured raw slew rate. Equal curvature has no extra slowdown.
-
-The selected `MotionSequenceFusionTest` logs a straight/arc/straight experiment;
-`FUSION_STOP_EACH_SEGMENT` enables the stopped profile comparison. Host tests
-cover geometry, state continuity, speed lookahead, faults and the harness.
-Full target build and hardware validation remain local. Details and GDB export:
-[Tests/README_fused_motion.md](../Tests/README_fused_motion.md).
+The active test is `Task2MotionTestRun()`: one stopped run using `MoveStraight`
+and `MoveArc`, with yaw-priority arc exits, startup ultrasonic distance, and
+acceleration after simulated O1 recognition. Preflight directly checks circular
+primitives; the experimental sequence planner is not used. Future work is
+standalone primitive planning followed by an IR-based O2 bypass.
+See [the standalone test guide](../Tests/README_task2_motion.md).

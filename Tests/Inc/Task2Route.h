@@ -1,7 +1,8 @@
 #ifndef TASK2_ROUTE_H
 #define TASK2_ROUTE_H
 
-#include "MotionSequencePlan.h"
+#include <stdbool.h>
+#include <stdint.h>
 
 #define TASK2_ROUTE_STEP_COUNT 8U
 #define TASK2_ROUTE_START_X_MM (-250.0f)
@@ -43,9 +44,6 @@ typedef struct
     float secondBackExtraRadiusMm; /* Back radius = W2/2 + this value. */
     float returnJoinHeadingDeg;    /* Magnitude, measured from initial +x. */
 
-    float cameraJunctionBlendMm;
-    float firstBypassBlendMm;
-    float secondBypassBlendMm;
 } Task2RouteConfig;
 
 typedef struct
@@ -62,7 +60,6 @@ typedef struct
     float minimumObstacleGapMm;
     float minimumSideMarginMm;
     float minimumParkWallMarginMm;
-    float secondApproachCorrectionMm;
     /* Earliest eligible centred pose, before steering begins toward an arrow. */
     Task2RoutePose recognitionPose[2];
     float recognitionProgressMm[2];
@@ -71,9 +68,17 @@ typedef struct
 
 typedef struct
 {
-    Task2RouteConfig config; /* Snapshot: A and B use the same input settings. */
-    MotionSequenceSegment steps[TASK2_ROUTE_STEP_COUNT];
-    float blendLimitMm[TASK2_ROUTE_STEP_COUNT];
+    float distanceMm;
+    float radiusMm; /* Zero: straight; positive: left; negative: right. */
+    float speedCps; /* Hard ceiling; first approach uses a soft speed request. */
+} Task2RouteStep;
+
+typedef struct
+{
+    Task2RouteConfig config; /* Frozen inputs for this standalone run. */
+    Task2RouteStep steps[TASK2_ROUTE_STEP_COUNT];
+    float totalTravelMm;
+    float totalYawRad;
     Task2RouteReport report;
 } Task2Route;
 
@@ -81,18 +86,15 @@ typedef struct
 extern Task2RouteConfig task2RouteConfig;
 extern const char *const task2RouteStepNames[TASK2_ROUTE_STEP_COUNT];
 
-/* Pure preflight; no motor/sensor operations. Uses the actual sequence planner
- * at <=1 mm spacing. Infeasible geometry is rejected, never silently clamped. */
-bool Task2Route_Create(const Task2RouteConfig *config,
-    const MotionSequenceConfig *sequenceConfig, float mmPerCount,
-    bool fused, Task2Route *route);
+/* Pure 1 mm swept-footprint preflight of stopped circular/straight primitives. */
+bool Task2Route_Create(const Task2RouteConfig *config, Task2Route *route);
 
 /* Instantaneous recognition simulation: whole horizontal O1 target in view. */
 bool Task2Route_Obstacle1CameraVisible(const Task2RouteConfig *config,
     const Task2RoutePose *pose);
 
 /* Independent footprint checks, also usable for host ideal execution checks. */
-/* Shared footprint geometry for the isolated O1 experiment; ignores O2. */
+/* O1-only footprint check; also useful for host geometry regressions. */
 bool Task2Route_CheckObstacle1Pose(const Task2RouteConfig *config,
     float arenaHalfWidthMm, const Task2RoutePose *pose, Task2RouteReport *report);
 

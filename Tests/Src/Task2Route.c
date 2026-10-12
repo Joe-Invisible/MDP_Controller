@@ -30,7 +30,7 @@ Task2RouteConfig task2RouteConfig = {
     .bodyCenterAheadOfRearAxleMm = 76.5f, /* Front +190, tail -37 mm. */
     .frontProtrusionMm = 20.0f,          /* Ultrasonic face at +210 mm. */
     .cameraBehindFrontMm = 80.0f,
-    .recognitionCameraRangeMm = 500.0f,
+    .recognitionCameraRangeMm = 1000.0f,
     .cameraHorizontalFovDeg = 60.0f,
     .recognitionTargetWidthMm = 100.0f,
 
@@ -45,12 +45,7 @@ Task2RouteConfig task2RouteConfig = {
     .secondBackExtraRadiusMm = 300.0f,
     .returnJoinHeadingDeg = 180.4817f,
 
-    /* Full blend lengths. Camera entries/rejoin must preserve a centred view.
-     * The unchanged 500 mm request still applies to the broad return junction.
-     * Larger values may be rejected by the geometry/camera preflight. */
-    .cameraJunctionBlendMm = 10.0f,
-    .firstBypassBlendMm = 100.0f,
-    .secondBypassBlendMm = 100.0f,
+
 };
 
 const char *const task2RouteStepNames[TASK2_ROUTE_STEP_COUNT] = {
@@ -103,8 +98,6 @@ static bool ValidConfig(const Task2RouteConfig *config)
         config->firstRejoinBeyondFaceMm, config->firstRadiusMm,
         config->secondArcCameraRangeMm, config->secondDepartureRadiusMm,
         config->secondBackExtraRadiusMm, config->returnJoinHeadingDeg,
-        config->cameraJunctionBlendMm, config->firstBypassBlendMm,
-        config->secondBypassBlendMm,
     };
     for (size_t i = 0U; i < sizeof(positive) / sizeof(positive[0]); ++i)
         if (!isfinite(positive[i]) || positive[i] <= 0.0f)
@@ -115,7 +108,7 @@ static bool ValidConfig(const Task2RouteConfig *config)
         isfinite(config->frontProtrusionMm) && config->frontProtrusionMm >= 0.0f &&
         (config->secondArrow == TASK2_ARROW_LEFT || config->secondArrow == TASK2_ARROW_RIGHT) &&
         config->obstacle2WidthMm >= 300.0f && config->parkToObstacle1Mm >= 600.0f &&
-        config->recognitionCameraRangeMm <= 500.0f && config->cameraHorizontalFovDeg < 180.0f &&
+        config->cameraHorizontalFovDeg < 180.0f &&
         isfinite(config->cameraBehindFrontMm) && config->cameraBehindFrontMm >= 0.0f &&
         config->cameraBehindFrontMm <= config->bodyLengthMm &&
         config->firstRadiusMm >= ROUTE_MIN_RADIUS_MM &&
@@ -126,9 +119,9 @@ static bool ValidConfig(const Task2RouteConfig *config)
 
 static void SetStep(Task2Route *route, unsigned index, float length, float radius)
 {
-    route->steps[index] = (MotionSequenceSegment){
-        .signedDistanceMm = length,
-        .curvaturePerMm = radius == 0.0f ? 0.0f : 1.0f / radius,
+    route->steps[index] = (Task2RouteStep){
+        .distanceMm = length,
+        .radiusMm = radius,
         /* O1 launches with a cruise ceiling and a soft approach request;
          * recognition raises that request without changing the primitive.
          * O2 retains the original constant approach-speed policy. */
@@ -196,51 +189,10 @@ static bool BuildSteps(Task2Route *route)
             c->secondArrow * returnRadius);
 
     for (unsigned i = 0U; i < TASK2_ROUTE_STEP_COUNT; ++i)
-        if (!isfinite(route->steps[i].signedDistanceMm) ||
-            route->steps[i].signedDistanceMm <= 0.0f ||
-            !isfinite(route->steps[i].curvaturePerMm))
+        if (!isfinite(route->steps[i].distanceMm) ||
+            route->steps[i].distanceMm <= 0.0f ||
+            !isfinite(route->steps[i].radiusMm))
             return Reject(route, "INVALID_GEOMETRY");
-    route->blendLimitMm[0] = c->cameraJunctionBlendMm;
-    route->blendLimitMm[1] = c->firstBypassBlendMm;
-    route->blendLimitMm[2] = c->firstBypassBlendMm;
-    route->blendLimitMm[3] = c->cameraJunctionBlendMm;
-    route->blendLimitMm[4] = c->cameraJunctionBlendMm;
-    route->blendLimitMm[5] = c->secondBypassBlendMm;
-    return true;
-}
-
-static bool Prepare(const Task2Route *route, const MotionSequenceConfig *config,
-                    float mmPerCount, bool fused, MotionSequencePlan *plan)
-{
-    *plan = (MotionSequencePlan){0};
-    plan->count = TASK2_ROUTE_STEP_COUNT;
-    for (unsigned i = 0U; i < plan->count; ++i)
-    {
-        plan->segments[i] = route->steps[i];
-        plan->segments[i].stopAfter = !fused;
-        plan->junctionBlendLimitMm[i] = route->blendLimitMm[i];
-    }
-    return MotionSequencePlan_Prepare(plan, config, mmPerCount,
-        3000.0f, 3000.0f, 2000.0f, 2000.0f, 0.0f, 480.0f);
-}
-
-static bool Integrate(const MotionSequencePlan *plan, float finishProgress,
-                      Task2RoutePose *pose)
-{
-    *pose = (Task2RoutePose){TASK2_ROUTE_START_X_MM, 0.0f, 0.0f};
-    MotionSequenceRun run = {plan, 0U, TASK2_ROUTE_STEP_COUNT - 1U};
-    for (float d = 0.0f; d < finishProgress;)
-    {
-        float step = fminf(ROUTE_SAMPLE_SPACING_MM, finishProgress - d);
-        MotionPathSample middle, end;
-        if (!MotionSequencePlan_Evaluate(&run, d + 0.5f * step, &middle) ||
-            !MotionSequencePlan_Evaluate(&run, d + step, &end))
-            return false;
-        pose->xMm += step * cosf(middle.desiredYawRad);
-        pose->yMm += step * sinf(middle.desiredYawRad);
-        pose->yawRad = end.desiredYawRad;
-        d += step;
-    }
     return true;
 }
 
@@ -328,7 +280,7 @@ bool Task2Route_CheckObstacle1Pose(const Task2RouteConfig *config,
     return CheckFootprint(config, pose, arenaHalfWidthMm, false, report);
 }
 
-static bool ValidatePath(Task2Route *route, const MotionSequencePlan *plan, bool fused)
+static bool ValidatePath(Task2Route *route)
 {
     Task2RouteReport *report = &route->report;
     report->minimumObstacleGapMm = INFINITY;
@@ -338,96 +290,73 @@ static bool ValidatePath(Task2Route *route, const MotionSequencePlan *plan, bool
     bool seen[2] = {false, false};
     bool crossed[2][2] = {{false, false}, {false, false}};
     float progress = 0.0f;
-    float firstFace = route->config.parkToObstacle1Mm;
-    float secondFace = firstFace + 100.0f + route->config.obstacleFaceGapMm;
-
-    for (unsigned first = 0U; first < plan->count;)
+    float faces[] = {route->config.parkToObstacle1Mm,
+        route->config.parkToObstacle1Mm + 100.0f + route->config.obstacleFaceGapMm};
+    for (unsigned index = 0U; index < TASK2_ROUTE_STEP_COUNT; ++index)
     {
-        MotionSequenceRun run = {plan, first, MotionSequencePlan_RunEnd(plan, first)};
-        float length = 0.0f;
-        for (unsigned i = first; i <= run.last; ++i)
-            length += plan->segments[i].signedDistanceMm;
-        float initialYaw = pose.yawRad;
-        for (float d = 0.0f; d < length;)
+        const Task2RouteStep *primitive = &route->steps[index];
+        for (float distance = 0.0f; distance < primitive->distanceMm;)
         {
-            float step = fminf(ROUTE_SAMPLE_SPACING_MM, length - d);
-            MotionPathSample middle, end;
-            if (!MotionSequencePlan_Evaluate(&run, d + 0.5f * step, &middle) ||
-                !MotionSequencePlan_Evaluate(&run, d + step, &end))
-                return Reject(route, "PROFILE_EVALUATION");
+            float ds = fminf(ROUTE_SAMPLE_SPACING_MM, primitive->distanceMm - distance);
             float previousX = pose.xMm;
-            float heading = initialYaw + middle.desiredYawRad;
-            pose.xMm += step * cosf(heading);
-            pose.yMm += step * sinf(heading);
-            pose.yawRad = initialYaw + end.desiredYawRad;
+            if (primitive->radiusMm == 0.0f)
+            {
+                pose.xMm += ds * cosf(pose.yawRad);
+                pose.yMm += ds * sinf(pose.yawRad);
+            }
+            else
+            {
+                float nextYaw = pose.yawRad + ds / primitive->radiusMm;
+                pose.xMm += primitive->radiusMm * (sinf(nextYaw) - sinf(pose.yawRad));
+                pose.yMm += primitive->radiusMm * (cosf(pose.yawRad) - cosf(nextYaw));
+                pose.yawRad = nextYaw;
+            }
             if (!Task2Route_CheckPose(&route->config, &pose, report))
                 return Reject(route, "CLEARANCE_OR_BOUNDARY");
-
             for (unsigned obstacle = 0U; obstacle < 2U; ++obstacle)
             {
-                float ox = (obstacle == 0U ? firstFace : secondFace) + 50.0f;
-                if ((previousX < ox && pose.xMm >= ox) ||
-                    (previousX > ox && pose.xMm <= ox))
+                float centre = faces[obstacle] + 50.0f;
+                if ((previousX < centre && pose.xMm >= centre) ||
+                    (previousX > centre && pose.xMm <= centre))
                 {
                     unsigned returning = cosf(pose.yawRad) < 0.0f;
-                    int side = obstacle == 0U ? route->config.firstArrow : route->config.secondArrow;
-                    if (returning)
-                        side = -route->config.secondArrow;
-                    if (crossed[obstacle][returning] || pose.yMm * side <= 0.0f)
-                        return Reject(route, "WRONG_OBSTACLE_SIDE");
+                    int side = returning ? -route->config.secondArrow :
+                        obstacle == 0U ? route->config.firstArrow : route->config.secondArrow;
+                    if (side * pose.yMm <= 0.0f)
+                        return Reject(route, "WRONG_BYPASS_SIDE");
                     crossed[obstacle][returning] = true;
                 }
             }
-
-            /* Only a truly centred, forward, zero-curvature approach qualifies.
-             * Direction is assumed available immediately at this first pose. */
-            unsigned approach = 0U;
-            float firstEnd = plan->segments[0].signedDistanceMm;
-            float secondBegin = firstEnd;
-            for (unsigned i = 1U; i < 4U; ++i)
-                secondBegin += plan->segments[i].signedDistanceMm;
-            float secondEnd = secondBegin + plan->segments[4].signedDistanceMm;
-            bool inApproach = progress + step < firstEnd ||
-                (progress + step >= secondBegin && progress + step < secondEnd);
-            if (progress >= secondBegin)
-                approach = 1U;
-            float face = approach == 0U ? firstFace : secondFace;
-            float range = face - pose.xMm - CameraOffset(&route->config);
-            float steeringBegin = approach == 0U ? firstEnd : secondEnd;
-            if (fused)
-                steeringBegin -= plan->junctionHalfLengthMm[approach == 0U ? 0U : 4U];
-            if (inApproach && !seen[approach] && fabsf(pose.yMm) < 0.1f &&
-                fabsf(pose.yawRad) < 0.0001f && fabsf(end.curvaturePerMm) < 1e-8f &&
-                range <= route->config.recognitionCameraRangeMm && range > 0.0f &&
-                0.5f * route->config.recognitionTargetWidthMm <
-                    range * tanf(route->config.cameraHorizontalFovDeg * ROUTE_PI / 360.0f) &&
-                progress + step < steeringBegin - 0.5f)
+            if (index == 0U || index == 4U)
             {
-                seen[approach] = true;
-                report->recognitionPose[approach] = pose;
-                report->recognitionProgressMm[approach] = progress + step;
+                unsigned obstacle = index == 0U ? 0U : 1U;
+                float range = faces[obstacle] - pose.xMm - CameraOffset(&route->config);
+                if (!seen[obstacle] && range > 0.0f && range <= route->config.recognitionCameraRangeMm &&
+                    fabsf(pose.yMm) < 0.1f && fabsf(pose.yawRad) < 0.0001f &&
+                    0.5f * route->config.recognitionTargetWidthMm <
+                        range * tanf(route->config.cameraHorizontalFovDeg * ROUTE_PI / 360.0f))
+                {
+                    seen[obstacle] = true;
+                    report->recognitionPose[obstacle] = pose;
+                    report->recognitionProgressMm[obstacle] = progress + ds;
+                }
             }
-            progress += step;
-            d += step;
+            distance += ds;
+            progress += ds;
         }
-        first = run.last + 1U;
     }
     if (!seen[0] || !seen[1])
         return Reject(route, "NO_CAMERA_HANDOFF");
     for (unsigned i = 0U; i < 2U; ++i)
         if (!crossed[i][0] || !crossed[i][1])
             return Reject(route, "INCOMPLETE_BYPASS");
-    /* Entire final body must fit in the park, including the open-mouth side. */
-    float footprintLength = route->config.bodyLengthMm + route->config.frontProtrusionMm;
+    float length = route->config.bodyLengthMm + route->config.frontProtrusionMm;
     float centre = route->config.bodyCenterAheadOfRearAxleMm + 0.5f * route->config.frontProtrusionMm;
-    float centreX = pose.xMm + centre * cosf(pose.yawRad);
-    float centreY = pose.yMm + centre * sinf(pose.yawRad);
-    float extentX = 0.5f * (footprintLength * fabsf(cosf(pose.yawRad)) +
-                           route->config.bodyWidthMm * fabsf(sinf(pose.yawRad)));
-    float extentY = 0.5f * (footprintLength * fabsf(sinf(pose.yawRad)) +
-                           route->config.bodyWidthMm * fabsf(cosf(pose.yawRad)));
-    if (centreX - extentX <= -500.0f || centreX + extentX >= 0.0f ||
-        fabsf(centreY) + extentY >= 300.0f)
+    float cx = pose.xMm + centre * cosf(pose.yawRad);
+    float cy = pose.yMm + centre * sinf(pose.yawRad);
+    float ex = 0.5f * (length * fabsf(cosf(pose.yawRad)) + route->config.bodyWidthMm * fabsf(sinf(pose.yawRad)));
+    float ey = 0.5f * (length * fabsf(sinf(pose.yawRad)) + route->config.bodyWidthMm * fabsf(cosf(pose.yawRad)));
+    if (cx - ex <= -500.0f || cx + ex >= 0.0f || fabsf(cy) + ey >= 300.0f)
         return Reject(route, "PARKING_FOOTPRINT");
     report->finishPose = pose;
     report->valid = true;
@@ -435,45 +364,24 @@ static bool ValidatePath(Task2Route *route, const MotionSequencePlan *plan, bool
     return true;
 }
 
-bool Task2Route_Create(const Task2RouteConfig *config,
-    const MotionSequenceConfig *sequenceConfig, float mmPerCount,
-    bool fused, Task2Route *route)
+bool Task2Route_Create(const Task2RouteConfig *config, Task2Route *route)
 {
     if (route == NULL)
         return false;
     *route = (Task2Route){0};
     if (config != NULL)
         route->config = *config;
-    if (config == NULL || sequenceConfig == NULL || !ValidConfig(config))
+    if (config == NULL || !ValidConfig(config))
         return Reject(route, "INVALID_PARAMETERS");
     if (!BuildSteps(route))
         return false;
     for (unsigned i = 0U; i < TASK2_ROUTE_STEP_COUNT; ++i)
-        route->steps[i].stopAfter = !fused;
-    MotionSequencePlan plan;
-    if (!Prepare(route, sequenceConfig, mmPerCount, fused, &plan) ||
-        plan.totalTravelMm > ROUTE_MAX_TRAVEL_MM)
-        return Reject(route, "PROFILE_LIMITS");
-    if (fused)
     {
-        /* Symmetric O1 ramps preserve y=0/yaw=0 but change forward displacement.
-         * Compensate only straight 5, keeping the O2 entry anchored physically.
-         * This is nominal blend geometry, not a correction for measured drift. */
-        float afterFirst = plan.junctionHalfLengthMm[3];
-        for (unsigned i = 0U; i < 4U; ++i)
-            afterFirst += plan.segments[i].signedDistanceMm;
-        Task2RoutePose pose;
-        if (!Integrate(&plan, afterFirst, &pose) || fabsf(pose.yMm) > 0.1f ||
-            fabsf(pose.yawRad) > 0.0001f)
-            return Reject(route, "O1_REJOIN_NOT_CENTRED");
-        float expectedX = config->parkToObstacle1Mm + config->firstRejoinBeyondFaceMm +
-                          plan.junctionHalfLengthMm[3];
-        float correction = pose.xMm - expectedX;
-        route->report.secondApproachCorrectionMm = correction;
-        route->steps[4].signedDistanceMm -= correction;
-        if (route->steps[4].signedDistanceMm <= 0.0f ||
-            !Prepare(route, sequenceConfig, mmPerCount, true, &plan))
-            return Reject(route, "NO_CENTRED_APPROACH");
+        route->totalTravelMm += route->steps[i].distanceMm;
+        if (route->steps[i].radiusMm != 0.0f)
+            route->totalYawRad += route->steps[i].distanceMm / route->steps[i].radiusMm;
     }
-    return ValidatePath(route, &plan, fused);
+    if (route->totalTravelMm > ROUTE_MAX_TRAVEL_MM)
+        return Reject(route, "TRAVEL_LIMIT");
+    return ValidatePath(route);
 }

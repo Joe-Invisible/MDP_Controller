@@ -384,8 +384,43 @@ static void testCompletionAndFaults(void)
     near(f.right.targetSpeedCps, 0, 0);
 }
 
+
+static void testStandaloneCruiseRequests(void)
+{
+    for (int direction=-1; direction<=1; direction+=2)
+    for (unsigned arc=0; arc<2; ++arc)
+    {
+        Fixture f; setup(&f,false);
+        assert((arc ? MotionController_MoveArc(&f.motion,direction*4000,500,5000)
+                    : MotionController_MoveStraight(&f.motion,direction*4000,5000)) == 0);
+        assert(MotionController_RequestCruiseSpeed(&f.motion,2000) == 0);
+        prepare(&f,arc ? MOTIONCONTROLLER_ARC_PREPARING : MOTIONCONTROLLER_STRAIGHT_PREPARING,
+            arc ? MOTIONCONTROLLER_ARC : MOTIONCONTROLLER_STRAIGHT);
+        for(unsigned i=0;i<100;++i)update(&f,DT);
+        near(fabsf(f.motion.targetSpeedCps),2000,0.01f);
+        float before=f.motion.motionProfile.targetSpeedMmps;
+        assert(MotionController_RequestCruiseSpeed(&f.motion,5000) == 0);
+        update(&f,DT);
+        near(f.motion.motionProfile.targetSpeedMmps,
+            before+f.motion.motionProfile.accelerationMmps2*DT,0.01f);
+        before=f.motion.motionProfile.targetSpeedMmps;
+        assert(MotionController_RequestCruiseSpeed(&f.motion,1000) == 0);
+        update(&f,DT);
+        near(f.motion.motionProfile.targetSpeedMmps,
+            before-f.motion.motionProfile.decelerationMmps2*DT,0.01f);
+        near(f.motion.targetDistanceMm,4000,0);
+        assert(f.motion.motionDirection == direction);
+        assert(MotionController_RequestCruiseSpeed(&f.motion,0) == MOTIONCONTROLLER_STATUS_INVALID_SPEED);
+        assert(MotionController_RequestCruiseSpeed(&f.motion,5001) == MOTIONCONTROLLER_STATUS_INVALID_SPEED);
+        assert(MotionController_Brake(&f.motion) == 0);
+        assert(MotionController_RequestCruiseSpeed(&f.motion,2000) == MOTIONCONTROLLER_STATUS_INVALID_STATE);
+        MotionController_Stop(&f.motion);
+    }
+}
+
 int main(void)
 {
+    testStandaloneCruiseRequests();
     testStraightSignsAndGeometry();
     testFixedStraightFeedforward();
     testArcAndReverse();

@@ -1,46 +1,13 @@
-/*
- * TestMain.c
- *
- * Test branch entry point.
- *
- *  Created on: 2026年8月24日
- *      Author: Joe
- */
-
-#include <userbutton.h>
-#include "DCMotorTestBasic.h"
-#include "ServoTestBasic.h"
-#include "ICM20948Test.h"
-#include "HCSR04Test.h"
-#include "GP2Y0A21YKTest.h"
-#include "OLEDTest.h"
-#include "WheelSpeedControllerTest.h"
-#include "SteeringControllerTest.h"
-#include "DynamicBrakeMapTest.h"
-#include "MotionProfileTest.h"
-#include "RobotKinematicsTest.h"
-#include "MotionControllerArcTest.h"
-#include "MotionControllerSequenceTest.h"
-#include "MotionSequenceFusionTest.h"
-#include "SteeringRampResponseTest.h"
-#include "MotionControllerStraightFeedforwardTest.h"
-#include "MotionControllerTest.h"
+/* Active standalone Task 2 route test. */
+#include "Task2MotionTest.h"
 #include "oled.h"
 #include "led3.h"
 
-void InvokeTest() {
-	OLED_Init();
-	OLED_Clear();
-
-	LED_On();
-
-    /* Choose mode in MotionSequenceFusionTest.c. Default: isolated O1.
-     * Full-route selector 4 optionally measures O1 once before preflight.
-     * Isolated 4-primitive O1: edit Obstacle1Route.c's grouped settings.
-     * A is fused; B uses standalone yaw-priority primitives. */
-    MotionSequenceFusionTestRun();
-
-	while (1) {
-		// Test ended. Loop forever.
-	}
+void InvokeTest(void)
+{
+    OLED_Init();
+    OLED_Clear();
+    LED_On();
+    Task2MotionTestRun();
+    while (1) { /* Results remain available for export. */ }
 }

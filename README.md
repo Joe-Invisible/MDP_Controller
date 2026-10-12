@@ -6,23 +6,15 @@ The robot uses two independently driven rear DC motors with Hall encoders for pr
 
 > **Status:** Active development. The low-level hardware drivers, rear-wheel speed control, steering control, motion profiling, encoder odometry, dynamic braking, and unified straight/arc motion controller are implemented and have been exercised on hardware. This branch is focused on motion-controller tuning and regression testing before reintegration with the production UART/RPi application layer.
 
-## Experimental Motion Fusion
+## Task 2 standalone route tests
 
-This branch adds `MotionSequence` above the unified controller and
-`MotionController_FollowProfile()` for continuous straight/arc batches. Internal
-curvature ramps preserve nominal total distance and heading area; reversals and
-explicit stop waypoints remain stopped boundaries. A batch-ending arc retains
-yaw-priority completion for camera heading. Near-zero feedforward
-interpolation and physical transition tracking are experimental.
-
-`TestMain.c` selects the new fusion harness. See
-[the fusion experiment guide](Tests/README_fused_motion.md) for API usage,
-software-only tests, endpoint policy, logging and the stopped comparison.
-The fused A/B harness follows an 7.73 m Task 2 outward S around two obstacles
-and a single straight tangent return into the car park, comparing continuous
-motion against 10 stopped segments. It uses straight acceleration/deceleration of 3000 mm/s²,
-arc acceleration/deceleration of 2000 mm/s², and wheel Kp = 0.03. Host checks
-and an ARM Debug build/link pass; physical sequence validation remains pending.
+`TestMain.c` runs `Task2MotionTestRun()` once, using the established stopped
+straight/arc APIs and yaw-priority arc exits. Startup ultrasonic ranging and
+acceleration after simulated arrow-1 recognition are included. The route is a
+parameterised eight-primitive baseline for further path-planning work; O2 width
+is still configured manually. See [the standalone test guide](Tests/README_task2_motion.md)
+for settings, host checks and GDB export. Peripheral/standalone controller tests
+remain available for subsequent IR-based O2 work.
 
 ## Robot Geometry
 

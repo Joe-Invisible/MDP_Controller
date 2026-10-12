@@ -3,7 +3,7 @@
 
 Run: python3 Tests/Host/test_motion_profile_limits.py
 Requires Python 3 and a C compiler (CC, default gcc). Does not validate physical
-tracking performance or fused junction planning.
+tracking performance.
 """
 from test_unified_motion import FIXTURE_HARNESS, run_harness
 
