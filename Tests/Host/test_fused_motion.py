@@ -901,6 +901,18 @@ static uint32_t hardwareTrialStartTick;
 static char oledRows[8][64];
 static float leftCountFraction, rightCountFraction;
 
+/* Startup ranging stub: no ultrasonic plant is implied by the host fixture. */
+static float hostStartupRangeMm = 1150.0f;
+static bool hostStartupRangeOk = true;
+static unsigned hostStartupRangeReads, hostStartupRangeWaits;
+bool RobotTestFixture_ReadUltrasonicMm(float *distanceMm)
+{
+    assert(hardwareFixture == NULL && hardwareStartCount == 0);
+    ++hostStartupRangeReads;
+    *distanceMm = hostStartupRangeMm;
+    return hostStartupRangeOk;
+}
+
 bool RobotTestFixture_InitMotionController(RobotTestFixture *rf,
                                            const MotionControllerConfig *config)
 {
@@ -1110,6 +1122,12 @@ void HAL_Delay(uint32_t ms)
 { for (uint32_t i = 0; i < ms; ++i) (void)HAL_GetTick(); }
 void SW1_WaitForPressAndRelease(void)
 {
+    if (strstr(oledRows[0], "Measure O1 range")) {
+        assert(hardwareFixture == NULL && hardwareStartCount == 0);
+        ++hostStartupRangeWaits;
+        HAL_Delay(1000U);
+        return;
+    }
     if (hardwareScenario == 0 &&
         motionSequenceFusionTestExperiment != MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING) {
         bool single = motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_SINGLE_TUNING;

@@ -23,8 +23,10 @@ Obstacle1RouteConfig obstacle1RouteConfig = {
     .recognitionCameraRangeMm = 1000.0f,
     .minimumApproachCameraRangeMm = 500.0f,
     .recognitionLeadMm = 5.0f,
-    .bodyLengthMm = 300.0f,
+    .bodyLengthMm = 227.0f,
     .bodyWidthMm = 200.0f,
+    .bodyCenterAheadOfRearAxleMm = 76.5f,
+    .frontProtrusionMm = 20.0f,
     .cameraBehindFrontMm = 80.0f,
     .cameraHorizontalFovDeg = 60.0f,
     .recognitionTargetWidthMm = 100.0f,
@@ -52,7 +54,8 @@ static bool Reject(Obstacle1Route *route, const char *reason)
 
 static float CameraOffset(const Obstacle1RouteConfig *config)
 {
-    return 0.5f * config->bodyLengthMm - config->cameraBehindFrontMm;
+    return config->bodyCenterAheadOfRearAxleMm +
+        0.5f * config->bodyLengthMm - config->cameraBehindFrontMm;
 }
 
 float Obstacle1Route_CameraRangeMm(const Obstacle1RouteConfig *config,
@@ -89,6 +92,8 @@ bool Obstacle1Route_CheckPose(const Obstacle1RouteConfig *c,
     const Task2RouteConfig bodyConfig = {
         .parkToObstacle1Mm = c->parkToObstacleMm,
         .bodyLengthMm = c->bodyLengthMm, .bodyWidthMm = c->bodyWidthMm,
+        .bodyCenterAheadOfRearAxleMm = c->bodyCenterAheadOfRearAxleMm,
+        .frontProtrusionMm = c->frontProtrusionMm,
         .obstacleBufferMm = c->obstacleBufferMm,
     };
     Task2RouteReport footprint = {
@@ -117,6 +122,9 @@ static bool ValidConfig(const Obstacle1RouteConfig *c)
         if (!isfinite(positive[i]) || positive[i] <= 0.0f)
             return false;
     return (c->arrow == TASK2_ARROW_LEFT || c->arrow == TASK2_ARROW_RIGHT) &&
+        isfinite(c->bodyCenterAheadOfRearAxleMm) &&
+        fabsf(c->bodyCenterAheadOfRearAxleMm) <= 0.5f * c->bodyLengthMm &&
+        isfinite(c->frontProtrusionMm) && c->frontProtrusionMm >= 0.0f &&
         c->parkToObstacleMm >= 600.0f && c->approachSpeedCps <= c->cruiseSpeedCps &&
         c->recognitionCameraRangeMm <= 1000.0f &&
         c->minimumApproachCameraRangeMm < c->recognitionCameraRangeMm &&
@@ -268,7 +276,8 @@ static bool Validate(Obstacle1Route *route, const MotionSequencePlan *plan, bool
     report->entryBlendExitCameraRangeMm = Obstacle1Route_CameraRangeMm(&route->config, &entry);
     if (report->entryBlendExitCameraRangeMm < route->config.minimumApproachCameraRangeMm)
         return Reject(route, "APPROACH_RANGE");
-    if (pose.xMm < route->config.parkToObstacleMm + 100 + 0.5f * route->config.bodyLengthMm +
+    if (pose.xMm < route->config.parkToObstacleMm + 100 +
+                   0.5f * route->config.bodyLengthMm - route->config.bodyCenterAheadOfRearAxleMm +
                    route->config.obstacleBufferMm ||
         fabsf(pose.yMm) > 0.5f || fabsf(pose.yawRad) > 1e-4f)
         return Reject(route, "EXIT_NOT_CENTRED");

@@ -31,11 +31,12 @@ copies and geometric preflight before hardware initialization or either launch.
 | `exitRadiusMm` | 1500 mm | Loose final arc instead of tight centring followed by a straight. |
 | `entryBlendMm`, `bypassBlendMm` | 500 / 500 mm | Requested full blend lengths; A allows overlap. |
 
-O1 is 100 × 100 mm. The assumed centred body is 300 × 200 mm, the camera is
-80 mm behind its front, horizontal FOV is 60°, and the assumed recognition
-target is 100 mm wide. The rear-axle reference starts at `(-250, 0)` in a
-500 mm deep, 600 mm wide park. The lens therefore starts 70 mm ahead of the axle.
-Update body/camera dimensions if the real mounting differs.
+O1 is 100 × 100 mm. The measured chassis length is 227 mm; width remains the
+assumed 200 mm. The body front is 190 mm ahead of the rear axle and the tail is
+37 mm behind it. Footprint checks conservatively include the 20 mm ultrasonic
+protrusion at full body width. The camera is 80 mm behind the body front,
+therefore 110 mm ahead of the rear axle. Horizontal FOV is 60°; target width is
+an assumed 100 mm. The rear axle starts at `(-250, 0)` in the 500 × 600 mm park.
 
 The dedicated approach requires room before recognition for the full entry
 blend. For example, a 600 mm park-to-face setting is rejected in this mode
@@ -132,9 +133,9 @@ configurations, cancellation and timeout. Existing full-route regressions
 remain separate. The fixture tracks wheel commands and geometric yaw ideally;
 it does not model servo lag, slip, recognition latency or ultrasonic errors.
 
-Default host timing: **A 5446 ms**, **B 6964 ms**, saving **1518 ms (21.8%)**.
-Nominal minimum body gaps are 217.43 mm / 236.60 mm, and A's entry-blend-end
-camera range is 528.37 mm. These results prepare the physical O1 comparison;
+Default host timing: **A 5292 ms**, **B 6810 ms**, saving **1518 ms (22.3%)**.
+Nominal minimum body gaps are 201.47 mm / 218.75 mm, and A's entry-blend-end
+camera range is 537.47 mm. These results prepare the physical O1 comparison;
 they do not establish real-world accuracy or clearance guarantees.
 
 ![Default isolated O1 host paths](obstacle1_bypass.svg)

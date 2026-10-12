@@ -25,8 +25,10 @@ Task2RouteConfig task2RouteConfig = {
      * Both whole approaches use the reduced speed; live speed zones are deferred. */
     .cruiseSpeedCps = 5000.0f,
     .approachSpeedCps = 2000.0f,
-    .bodyLengthMm = 300.0f,
+    .bodyLengthMm = 227.0f,
     .bodyWidthMm = 200.0f,
+    .bodyCenterAheadOfRearAxleMm = 76.5f, /* Front +190, tail -37 mm. */
+    .frontProtrusionMm = 20.0f,          /* Ultrasonic face at +210 mm. */
     .cameraBehindFrontMm = 80.0f,
     .recognitionCameraRangeMm = 500.0f,
     .cameraHorizontalFovDeg = 60.0f,
@@ -34,8 +36,9 @@ Task2RouteConfig task2RouteConfig = {
 
     /* Anchored eight-primitive family. Camera range references the lens,
      * not the ultrasonic transducer. O1 always rejoins at yaw=0, y=0. */
-    .firstArcCameraRangeMm = 430.0f,
-    .firstRejoinBeyondFaceMm = 570.0f,
+    /* Updated for the measured +110 mm camera offset; retain R275 sweeps. */
+    .firstArcCameraRangeMm = 400.0f,
+    .firstRejoinBeyondFaceMm = 535.0f,
     .firstRadiusMm = 275.0f,
     .secondArcCameraRangeMm = 485.0f,
     .secondDepartureRadiusMm = 275.0f,
@@ -64,7 +67,8 @@ static bool Reject(Task2Route *route, const char *reason)
 
 static float CameraOffset(const Task2RouteConfig *config)
 {
-    return 0.5f * config->bodyLengthMm - config->cameraBehindFrontMm;
+    return config->bodyCenterAheadOfRearAxleMm +
+        0.5f * config->bodyLengthMm - config->cameraBehindFrontMm;
 }
 
 static bool ValidConfig(const Task2RouteConfig *config)
@@ -86,6 +90,9 @@ static bool ValidConfig(const Task2RouteConfig *config)
         if (!isfinite(positive[i]) || positive[i] <= 0.0f)
             return false;
     return (config->firstArrow == TASK2_ARROW_LEFT || config->firstArrow == TASK2_ARROW_RIGHT) &&
+        isfinite(config->bodyCenterAheadOfRearAxleMm) &&
+        fabsf(config->bodyCenterAheadOfRearAxleMm) <= 0.5f * config->bodyLengthMm &&
+        isfinite(config->frontProtrusionMm) && config->frontProtrusionMm >= 0.0f &&
         (config->secondArrow == TASK2_ARROW_LEFT || config->secondArrow == TASK2_ARROW_RIGHT) &&
         config->obstacle2WidthMm >= 300.0f && config->parkToObstacle1Mm >= 600.0f &&
         config->recognitionCameraRangeMm <= 500.0f && config->cameraHorizontalFovDeg < 180.0f &&
@@ -221,7 +228,8 @@ static float ObstacleGap(const Task2RouteConfig *c, const Task2RoutePose *p,
     float gap = INFINITY;
     float minX = INFINITY, maxX = -INFINITY, minY = INFINITY, maxY = -INFINITY;
     float minF = INFINITY, maxF = -INFINITY, minS = INFINITY, maxS = -INFINITY;
-    float hf = c->bodyLengthMm * 0.5f, hs = c->bodyWidthMm * 0.5f;
+    float hf = (c->bodyLengthMm + c->frontProtrusionMm) * 0.5f, hs = c->bodyWidthMm * 0.5f;
+    float centre = c->bodyCenterAheadOfRearAxleMm + 0.5f * c->frontProtrusionMm;
     float cosine = cosf(p->yawRad), sine = sinf(p->yawRad);
     for (unsigned j = 0U; j < 4U; ++j)
     {
@@ -231,7 +239,7 @@ static float ObstacleGap(const Task2RouteConfig *c, const Task2RoutePose *p,
                                 fmaxf(fabsf(cy[j]) - halfWidth, 0.0f)));
         float dx = ox + (j < 2U ? -50.0f : 50.0f) - p->xMm;
         float dy = (j % 2U ? halfWidth : -halfWidth) - p->yMm;
-        float forward = dx * cosine + dy * sine;
+        float forward = dx * cosine + dy * sine - centre;
         float side = -dx * sine + dy * cosine;
         minF = fminf(minF, forward); maxF = fmaxf(maxF, forward);
         minS = fminf(minS, side); maxS = fmaxf(maxS, side);
@@ -249,10 +257,11 @@ static bool CheckFootprint(const Task2RouteConfig *c,
 {
     float cx[4], cy[4];
     float cosine = cosf(p->yawRad), sine = sinf(p->yawRad);
-    float hf = 0.5f * c->bodyLengthMm, hs = 0.5f * c->bodyWidthMm;
+    float hf = 0.5f * (c->bodyLengthMm + c->frontProtrusionMm), hs = 0.5f * c->bodyWidthMm;
+    float centre = c->bodyCenterAheadOfRearAxleMm + 0.5f * c->frontProtrusionMm;
     for (unsigned j = 0U; j < 4U; ++j)
     {
-        float f = j < 2U ? hf : -hf;
+        float f = centre + (j < 2U ? hf : -hf);
         float side = (j == 0U || j == 3U) ? hs : -hs;
         cx[j] = p->xMm + f * cosine - side * sine;
         cy[j] = p->yMm + f * sine + side * cosine;
@@ -386,12 +395,16 @@ static bool ValidatePath(Task2Route *route, const MotionSequencePlan *plan, bool
         if (!crossed[i][0] || !crossed[i][1])
             return Reject(route, "INCOMPLETE_BYPASS");
     /* Entire final body must fit in the park, including the open-mouth side. */
-    float extentX = 0.5f * (route->config.bodyLengthMm * fabsf(cosf(pose.yawRad)) +
+    float footprintLength = route->config.bodyLengthMm + route->config.frontProtrusionMm;
+    float centre = route->config.bodyCenterAheadOfRearAxleMm + 0.5f * route->config.frontProtrusionMm;
+    float centreX = pose.xMm + centre * cosf(pose.yawRad);
+    float centreY = pose.yMm + centre * sinf(pose.yawRad);
+    float extentX = 0.5f * (footprintLength * fabsf(cosf(pose.yawRad)) +
                            route->config.bodyWidthMm * fabsf(sinf(pose.yawRad)));
-    float extentY = 0.5f * (route->config.bodyLengthMm * fabsf(sinf(pose.yawRad)) +
+    float extentY = 0.5f * (footprintLength * fabsf(sinf(pose.yawRad)) +
                            route->config.bodyWidthMm * fabsf(cosf(pose.yawRad)));
-    if (pose.xMm - extentX <= -500.0f || pose.xMm + extentX >= 0.0f ||
-        fabsf(pose.yMm) + extentY >= 300.0f)
+    if (centreX - extentX <= -500.0f || centreX + extentX >= 0.0f ||
+        fabsf(centreY) + extentY >= 300.0f)
         return Reject(route, "PARKING_FOOTPRINT");
     report->finishPose = pose;
     report->valid = true;

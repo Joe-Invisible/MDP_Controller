@@ -12,8 +12,8 @@ typedef enum
     TASK2_ARROW_LEFT = 1,
 } Task2Arrow;
 
-/* Test inputs only. Distances and camera poses use an assumed centred body;
- * there is no live camera, ultrasonic endpoint or recognition latency here. */
+/* Test inputs only. Poses reference the rear axle midpoint. Startup ranging
+ * is handled by the harness; there is no live in-motion sensor endpoint here. */
 typedef struct
 {
     Task2Arrow firstArrow;
@@ -28,6 +28,8 @@ typedef struct
     float approachSpeedCps;        /* Whole straight approach, first version. */
     float bodyLengthMm;
     float bodyWidthMm;
+    float bodyCenterAheadOfRearAxleMm;
+    float frontProtrusionMm;       /* Included conservatively at full body width. */
     float cameraBehindFrontMm;
     float recognitionCameraRangeMm;
     float cameraHorizontalFovDeg;

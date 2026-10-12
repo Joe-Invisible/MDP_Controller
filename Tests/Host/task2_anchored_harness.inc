@@ -33,7 +33,7 @@ static void trackAnchoredIdeal(float distance, float curvature)
     {
         const Task2RouteConfig *c = &task2RouteConfig;
         float cosine = cosf(anchoredIdealPose.yawRad), sine = sinf(anchoredIdealPose.yawRad);
-        float offset = 0.5f * c->bodyLengthMm - c->cameraBehindFrontMm;
+        float offset = c->bodyCenterAheadOfRearAxleMm + 0.5f * c->bodyLengthMm - c->cameraBehindFrontMm;
         float cameraX = anchoredIdealPose.xMm + offset * cosine;
         float cameraY = anchoredIdealPose.yMm + offset * sine;
         for (unsigned obstacle = 0; obstacle < 2; ++obstacle)
@@ -93,12 +93,15 @@ static void resetHardwareScenario(unsigned scenario)
 
 static void assertParked(const Task2RouteConfig *config, const Task2RoutePose *pose)
 {
-    float ex = 0.5f * (config->bodyLengthMm * fabsf(cosf(pose->yawRad)) +
+    float ex = 0.5f * ((config->bodyLengthMm + config->frontProtrusionMm) * fabsf(cosf(pose->yawRad)) +
                       config->bodyWidthMm * fabsf(sinf(pose->yawRad)));
-    float ey = 0.5f * (config->bodyLengthMm * fabsf(sinf(pose->yawRad)) +
+    float ey = 0.5f * ((config->bodyLengthMm + config->frontProtrusionMm) * fabsf(sinf(pose->yawRad)) +
                       config->bodyWidthMm * fabsf(cosf(pose->yawRad)));
-    assert(pose->xMm - ex > -500.0f && pose->xMm + ex < 0.0f);
-    assert(fabsf(pose->yMm) + ey < 300.0f);
+    float centre = config->bodyCenterAheadOfRearAxleMm + 0.5f * config->frontProtrusionMm;
+    float centreX = pose->xMm + centre * cosf(pose->yawRad);
+    float centreY = pose->yMm + centre * sinf(pose->yawRad);
+    assert(centreX - ex > -500.0f && centreX + ex < 0.0f);
+    assert(fabsf(centreY) + ey < 300.0f);
 }
 
 
@@ -254,14 +257,105 @@ static void testAnchoredHarness(void)
     task2RouteConfig = original;
 }
 
+
+
+static void testMeasuredBodyFrame(void)
+{
+    Task2RouteConfig c = task2RouteConfig;
+    c.parkToObstacle1Mm = 300;
+    Task2RoutePose p = {0, 0, 0};
+    Task2RouteReport report = {.minimumObstacleGapMm=INFINITY,
+        .minimumSideMarginMm=INFINITY, .minimumParkWallMarginMm=INFINITY};
+    /* Transducer is 210 ahead of axle: O1 at x300 leaves only 90 mm. */
+    assert(!Task2Route_CheckObstacle1Pose(&c, 750, &p, &report));
+    near(report.minimumObstacleGapMm, 90, 0.001f);
+    c.parkToObstacle1Mm = 1050;
+    p = (Task2RoutePose){-250, 0, 0};
+    report = (Task2RouteReport){.minimumObstacleGapMm=INFINITY,
+        .minimumSideMarginMm=INFINITY, .minimumParkWallMarginMm=INFINITY};
+    assert(Task2Route_CheckObstacle1Pose(&c, 750, &p, &report));
+    near(0.5f*c.bodyLengthMm-c.bodyCenterAheadOfRearAxleMm,37,0);
+    /* Actual tail x=-287 => 213 mm from the back wall; side margin is 200. */
+    near(report.minimumParkWallMarginMm,200,0.001f);
+    float camera = c.bodyCenterAheadOfRearAxleMm + 0.5f*c.bodyLengthMm-c.cameraBehindFrontMm;
+    near(camera,110,0);
+    near(motionSequenceFusionTestStartupRangeConfig.sensorAheadOfRearAxleMm,210,0);
+    puts("PASS: measured asymmetric body, forward sensor protrusion, axle frame and camera offset");
+}
+
+/* Measure once before any controller initialization, then freeze for A/B. */
+static void testStartupRange(void)
+{
+    const Task2RouteConfig original = task2RouteConfig;
+    const MotionSequenceFusionTestStartupRangeConfig originalRange =
+        motionSequenceFusionTestStartupRangeConfig;
+    motionSequenceFusionTestExperiment = MOTION_SEQUENCE_FUSION_TEST_TASK2_PARAMETERISED;
+    for (unsigned sample = 0; sample < 3; ++sample)
+    {
+        task2RouteConfig = original;
+        motionSequenceFusionTestStartupRangeConfig.enabled = true;
+        float offset = sample == 2 ? 180 : 210;
+        float parkToFace = sample == 0 ? 600 : 1050;
+        motionSequenceFusionTestStartupRangeConfig.sensorAheadOfRearAxleMm = offset;
+        hostStartupRangeMm = parkToFace - TASK2_ROUTE_START_X_MM - offset;
+        hostStartupRangeOk = true;
+        hostStartupRangeReads = hostStartupRangeWaits = 0;
+        resetHardwareScenario(0);
+        MotionSequenceFusionTestRun();
+        assert(motionSequenceFusionTestPassed && motionSequenceFusionTestComparisonValid);
+        assert(hostStartupRangeReads == 1 && hostStartupRangeWaits == 1);
+        assert(hardwareStartCount == 2);
+        assert(motionSequenceFusionTestStartupRange.attempted &&
+               motionSequenceFusionTestStartupRange.valid);
+        near(task2RouteConfig.parkToObstacle1Mm, parkToFace, 0.001f);
+        near(motionSequenceFusionTestStartupRange.sensorToObstacleMm, hostStartupRangeMm, 0);
+        for (unsigned run = 0; run < 2; ++run)
+            near(motionSequenceFusionTestTask2Routes[run].config.parkToObstacle1Mm, parkToFace, 0);
+    }
+    const float invalid[] = {NAN, INFINITY, 0, 19, 4001, 639, 1090};
+    for (unsigned sample = 0; sample < sizeof(invalid)/sizeof(invalid[0]); ++sample)
+    {
+        task2RouteConfig = original;
+        motionSequenceFusionTestStartupRangeConfig.sensorAheadOfRearAxleMm = 210;
+        hostStartupRangeMm = invalid[sample];
+        hostStartupRangeOk = sample != 6; /* Trigger/echo failure despite stored old range. */
+        hostStartupRangeReads = hostStartupRangeWaits = 0;
+        resetHardwareScenario(0);
+        MotionSequenceFusionTestRun();
+        assert(!motionSequenceFusionTestPassed && !motionSequenceFusionTestComparisonValid);
+        assert(hardwareStartCount == 0 && hardwareFixture == NULL);
+        assert(hostStartupRangeReads == 1 && hostStartupRangeWaits == 1);
+        assert(motionSequenceFusionTestStartupRange.valid == (sample == 5));
+    }
+    motionSequenceFusionTestStartupRangeConfig.sensorAheadOfRearAxleMm = NAN;
+    hostStartupRangeReads = hostStartupRangeWaits = 0;
+    resetHardwareScenario(0);
+    MotionSequenceFusionTestRun();
+    assert(hostStartupRangeReads == 0 && hostStartupRangeWaits == 0 && hardwareStartCount == 0);
+    assert(!motionSequenceFusionTestStartupRange.attempted);
+    /* Manual geometry remains selectable and clears the previous measurement. */
+    task2RouteConfig = original;
+    motionSequenceFusionTestStartupRangeConfig = originalRange;
+    motionSequenceFusionTestStartupRangeConfig.enabled = false;
+    resetHardwareScenario(0);
+    MotionSequenceFusionTestRun();
+    assert(motionSequenceFusionTestPassed && !motionSequenceFusionTestStartupRange.attempted);
+    task2RouteConfig = original;
+    hostStartupRangeOk = true;
+    puts("PASS: startup range conversion, one sample frozen for A/B, mounting offset, manual mode, invalid range/echo/preflight rejection");
+}
+
 int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
+    motionSequenceFusionTestStartupRangeConfig.enabled = false;
+    testMeasuredBodyFrame();
     testJunctionOverrides();
     testAnchoredHarness();
     puts("PASS: 64 anchored A/B combinations, camera views and footprints");
     testRejectedRoutes();
     puts("PASS: rejected routes, cancellation and timeout");
+    testStartupRange();
     motionSequenceFusionTestExperiment = MOTION_SEQUENCE_FUSION_TEST_OBSTACLE1_BYPASS;
     return legacyRegressionMain();
 }

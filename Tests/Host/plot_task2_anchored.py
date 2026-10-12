@@ -48,7 +48,10 @@ def main():
         axis.text(second_face + 50, 0, "O2", color="white", ha="center", va="center", fontsize=8)
         axis.plot([-500, -500, 0], [300, -300, -300], color="#424952")
         axis.plot([-500, 0], [300, 300], color="#424952")
-        axis.add_patch(Rectangle((-400, -100), 300, 200, fill=False,
+        axis.add_patch(Rectangle((-250 + default_number("bodyCenterAheadOfRearAxleMm") - default_number("bodyLengthMm")/2,
+                                  -default_number("bodyWidthMm")/2),
+                                 default_number("bodyLengthMm") + default_number("frontProtrusionMm"),
+                                 default_number("bodyWidthMm"), fill=False,
                                  edgecolor="#5b6978", lw=1))
         for side in (-side_limit, side_limit):
             axis.axhline(side, color="#b33737", ls="--", lw=1)
@@ -73,6 +76,8 @@ def main():
     fig.subplots_adjust(left=0.07, right=0.98, bottom=0.17, top=0.88, wspace=0.12, hspace=0.2)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(args.output, dpi=160, metadata={"Date": None} if args.output.suffix == ".svg" else None)
+    if args.output.suffix == ".svg":
+        args.output.write_text("\n".join(line.rstrip() for line in args.output.read_text().splitlines()) + "\n")
     print(args.output)
 
 

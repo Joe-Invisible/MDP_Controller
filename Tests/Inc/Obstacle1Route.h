@@ -18,6 +18,8 @@ typedef struct
     float recognitionLeadMm;      /* Recognition precedes entry steering. */
     float bodyLengthMm;
     float bodyWidthMm;
+    float bodyCenterAheadOfRearAxleMm;
+    float frontProtrusionMm;
     float cameraBehindFrontMm;
     float cameraHorizontalFovDeg;
     float recognitionTargetWidthMm;

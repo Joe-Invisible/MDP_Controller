@@ -37,8 +37,10 @@ def main():
         axis.text(front+50, 0, "O1", color="white", ha="center", va="center", fontsize=9)
         axis.plot([-500,-500,0], [300,-300,-300], color="#424952")
         axis.plot([-500,0], [300,300], color="#424952")
-        axis.add_patch(Rectangle((-400,-100),300,200,fill=False,edgecolor="#5b6978"))
-        recognitionX = front - (number("bodyLengthMm")/2-number("cameraBehindFrontMm")) - number("recognitionCameraRangeMm")
+        axis.add_patch(Rectangle((-250+number("bodyCenterAheadOfRearAxleMm")-number("bodyLengthMm")/2,
+            -number("bodyWidthMm")/2),number("bodyLengthMm")+number("frontProtrusionMm"),
+            number("bodyWidthMm"),fill=False,edgecolor="#5b6978"))
+        recognitionX = front - (number("bodyCenterAheadOfRearAxleMm")+number("bodyLengthMm")/2-number("cameraBehindFrontMm")) - number("recognitionCameraRangeMm")
         axis.scatter(recognitionX, 0, color="#287d53", marker="D", s=25, zorder=6)
         if direction == 'L':
             axis.annotate("Recognition → accelerate", (recognitionX,0), xytext=(100,-240),
@@ -57,11 +59,13 @@ def main():
     axes[-1].set_xlabel("Forward position from park mouth (mm)",fontsize=9)
     fig.suptitle("O1 alone · 500 / 500 / 1500 mm arcs",x=0.08,ha="left",fontsize=17,weight="bold")
     fig.text(0.08,0.02,"Ideal host execution. Grey: 100 mm obstacle buffer; red: lateral arena boundaries.\n"
-             "Paths show the rear axle; preflight checks the complete 300 × 200 mm body. O2 is absent.",
+             "Paths show the rear axle; preflight checks the measured chassis plus sensor protrusion. O2 is absent.",
              fontsize=9,color="#465363")
     fig.subplots_adjust(left=0.08,right=0.98,bottom=0.14,top=0.9,hspace=0.28)
     args.output.parent.mkdir(parents=True,exist_ok=True)
     fig.savefig(args.output,dpi=160,metadata={"Date":None} if args.output.suffix == '.svg' else None)
+    if args.output.suffix == ".svg":
+        args.output.write_text("\n".join(line.rstrip() for line in args.output.read_text().splitlines()) + "\n")
     print(args.output)
 
 

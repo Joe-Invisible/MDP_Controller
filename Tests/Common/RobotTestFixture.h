@@ -47,6 +47,9 @@ typedef struct RobotTestFixture {
 bool RobotTestFixture_InitIMU(
 	RobotTestFixture *fixture);
 
+/* One fresh, stationary HC-SR04 reading; no motor/IMU initialization. */
+bool RobotTestFixture_ReadUltrasonicMm(float *distanceMm);
+
 bool RobotTestFixture_InitRearWheels(
     RobotTestFixture *fixture);
 

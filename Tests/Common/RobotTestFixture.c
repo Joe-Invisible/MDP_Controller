@@ -9,6 +9,7 @@
 #include "i2c.h"
 
 #include "RobotTestFixture.h"
+#include "RobotPeripherals.h"
 
 #define MOTORBPWMSRC htim9
 #define MOTORCPWMSRC htim1
@@ -32,6 +33,28 @@ static const WheelSpeedBrakeConfig wheelSpeedBrakeConfig = {
     .fullDemandOverspeedCps = 800.0f
 };
 #endif
+
+bool RobotTestFixture_ReadUltrasonicMm(float *distanceMm)
+{
+    if (distanceMm == NULL)
+        return false;
+    *distanceMm = 0.0f;
+    HCSR04_Init(&hcsr04, USS_TRIG_GPIO_Port, USS_TRIG_Pin, &htim12, TIM_CHANNEL_2);
+    if (!HCSR04_Trigger(&hcsr04))
+        return false;
+    while (HCSR04_IsBusy(&hcsr04))
+    {
+        HCSR04_Update(&hcsr04);
+        HAL_Delay(1U);
+    }
+    if (!HCSR04_HasMeasurement(&hcsr04))
+        return false;
+    float range = HCSR04_GetDistanceMm(&hcsr04);
+    if (range < 20.0f || range > 4000.0f)
+        return false;
+    *distanceMm = range;
+    return true;
+}
 
 bool RobotTestFixture_InitIMU(RobotTestFixture *fixture) {
 	if (fixture == NULL) return false;

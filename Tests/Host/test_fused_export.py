@@ -17,13 +17,15 @@ MotionSequenceFusionTestExperiment motionSequenceFusionTestExperiment =
     EXPERIMENT_MODE;
 uint32_t motionSequenceFusionTestLogPeriodMs = EXPERIMENT_MODE ? 20 : 100;
 Task2RouteConfig task2RouteConfig = {.parkToObstacle1Mm=600, .obstacleFaceGapMm=1050, .obstacle2WidthMm=500};
-const char *const task2RouteStepNames[8] = {"Approach O1", "O1 depart", "O1 bypass", "O1 centre", "Approach O2", "O2 depart", "O2 back", "Return park"};
+MotionSequenceFusionTestStartupRangeConfig motionSequenceFusionTestStartupRangeConfig = {
+    .enabled=true, .sensorAheadOfRearAxleMm=210};
+MotionSequenceFusionTestStartupRange motionSequenceFusionTestStartupRange = {
+    .attempted=true, .valid=true, .sensorToObstacleMm=640, .parkToObstacle1Mm=600};
 Task2Route motionSequenceFusionTestTask2Routes[2] = {
     {.config={.firstArrow=TASK2_ARROW_LEFT, .secondArrow=TASK2_ARROW_RIGHT, .obstacle2WidthMm=500}, .report={.valid=true, .reason="OK", .minimumObstacleGapMm=123}},
     {.config={.firstArrow=TASK2_ARROW_LEFT, .secondArrow=TASK2_ARROW_RIGHT, .obstacle2WidthMm=500}, .report={.valid=true, .reason="OK", .minimumObstacleGapMm=117}}
 };
 Obstacle1RouteConfig obstacle1RouteConfig = {.parkToObstacleMm=1050, .recognitionCameraRangeMm=1000};
-const char *const obstacle1RouteStepNames[4] = {"Approach O1", "O1 depart", "O1 bypass", "Loose O1 exit"};
 Obstacle1Route motionSequenceFusionTestObstacle1Routes[2] = {
     {.report={.valid=true, .reason="OK", .minimumObstacleGapMm=217}},
     {.report={.valid=true, .reason="OK", .minimumObstacleGapMm=236}},
@@ -149,6 +151,8 @@ def main():
                 assert "Parameterised eight-primitive Task 2" in log
                 assert "MOTION_SEQUENCE_FUSION_TEST_TASK2_PARAMETERISED" in log
                 assert "parkToObstacle1Mm = 600" in log
+                assert "sensorAheadOfRearAxleMm = 210" in log
+                assert "sensorToObstacleMm = 640" in log
                 assert "obstacleFaceGapMm = 1050" in log
                 assert "minimumObstacleGapMm = 123" in log
                 assert "minimumObstacleGapMm = 117" in log

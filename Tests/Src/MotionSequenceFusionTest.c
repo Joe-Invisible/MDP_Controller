@@ -56,6 +56,16 @@ uint32_t motionSequenceFusionTestLogPeriodMs;
 float motionSequenceFusionTestTask2BlendLengthMm = 500.0f;
 bool motionSequenceFusionTestTask2AllowBlendOverlap = true;
 
+/* Stationary O1 range before route preflight (eight-primitive mode only).
+ * Measured transducer face to rear axle midpoint: 210 mm.
+ * Start with chassis tail 213 mm from park back wall: axle is then 250 mm
+ * from that wall (x=-250 from the mouth). Tail itself is not the pose origin. */
+MotionSequenceFusionTestStartupRangeConfig motionSequenceFusionTestStartupRangeConfig = {
+    .enabled = true,
+    .sensorAheadOfRearAxleMm = 210.0f,
+};
+MotionSequenceFusionTestStartupRange motionSequenceFusionTestStartupRange;
+
 static bool MotionSequenceFusionTest_IsObstacle1(void)
 {
     return motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_OBSTACLE1_BYPASS;
@@ -759,6 +769,7 @@ static bool MotionSequenceFusionTest_RunPattern(bool stopAfter)
 
 void MotionSequenceFusionTestRun(void)
 {
+    motionSequenceFusionTestStartupRange = (MotionSequenceFusionTestStartupRange){0};
     motionSequenceFusionTestLogCount = 0U;
     motionSequenceFusionTestElapsedMs = 0U;
     motionSequenceFusionTestPassed = false;
@@ -832,8 +843,43 @@ void MotionSequenceFusionTestRun(void)
     }
     if (motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_PARAMETERISED)
     {
-        /* Freeze both sides before the first ready screen. No hardware is
-         * initialised and neither run launches when either preflight fails. */
+        if (motionSequenceFusionTestStartupRangeConfig.enabled)
+        {
+            float offset = motionSequenceFusionTestStartupRangeConfig.sensorAheadOfRearAxleMm;
+            if (!isfinite(offset))
+            {
+                motionSequenceFusionTestStatus = MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
+                MotionSequenceFusionTestFinished();
+                return;
+            }
+            OLED_Clear();
+            OLED_Printf(0, 0, "Measure O1 range");
+            OLED_Printf(0, 2, "Park +x, stationary");
+            OLED_Printf(0, 4, "SW1: measure once");
+            OLED_Refresh_Gram();
+            SW1_WaitForPressAndRelease();
+            HAL_Delay(FUSION_INITIAL_CLEARANCE_MS);
+            motionSequenceFusionTestStartupRange.attempted = true;
+            float range;
+            if (!RobotTestFixture_ReadUltrasonicMm(&range) || !isfinite(range) ||
+                range < 20.0f || range > 4000.0f)
+            {
+                motionSequenceFusionTestStatus = MOTIONCONTROLLER_STATUS_INVALID_STATE;
+                MotionSequenceFusionTestFinished();
+                OLED_Printf(0, 5, "O1 range failed");
+                OLED_Refresh_Gram();
+                return;
+            }
+            /* Sensor x = starting axle x + mounting offset. The reading
+             * measures sensor-to-front-face, not park-mouth-to-front-face. */
+            float parkToFace = range + TASK2_ROUTE_START_X_MM + offset;
+            motionSequenceFusionTestStartupRange.sensorToObstacleMm = range;
+            motionSequenceFusionTestStartupRange.parkToObstacle1Mm = parkToFace;
+            motionSequenceFusionTestStartupRange.valid = true;
+            task2RouteConfig.parkToObstacle1Mm = parkToFace;
+        }
+        /* Freeze the same measured/manual layout into both sides before A.
+         * Motors stay uninitialised when measurement or preflight fails. */
         MotionSequenceConfig sequenceConfig = motionSequenceConfig;
         sequenceConfig.blendLengthMm = motionSequenceFusionTestTask2BlendLengthMm;
         sequenceConfig.allowBlendOverlap = motionSequenceFusionTestTask2AllowBlendOverlap;

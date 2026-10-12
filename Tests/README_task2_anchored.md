@@ -32,14 +32,52 @@ Edit the grouped `task2RouteConfig` initializer in
 
 The rear-axle reference starts at `(-250, 0)` inside a 500 mm deep, 600 mm wide
 park. Thus the starting axle-to-O1 distance is `parkToObstacle1Mm + 250`;
-under the centred 300 mm body assumption, the initial front-body gap is
-`parkToObstacle1Mm + 100`. These are different distance references.
+the 227 mm chassis extends 190 mm ahead and 37 mm behind the axle. The initial
+front-body gap is `parkToObstacle1Mm + 60`; the sensor-face gap is
+`parkToObstacle1Mm + 40`. These are different distance references.
 O1 is 100 × 100 mm; O2 is 100 mm deep. There is **no boundary behind O2**.
 The whole body must stay inside `|y| < obstacle2WidthMm/2 + obstacle2EndSpaceMm`.
 
 Parameters are copied before A starts. Both trials use those frozen inputs;
 changing a debugger variable between trials does not change B's geometry.
 Stop at `MotionSequenceFusionTestRun` before preflight to change inputs in GDB.
+
+### Startup ultrasonic O1 distance
+
+Eight-primitive mode now defaults to one stationary HC-SR04 reading before
+route preflight. At the `Measure O1 range` screen, place the robot at the assumed
+starting pose, facing +x toward the mock O1, then press SW1. A fresh measurement
+is taken after the button-clearance delay. A trigger/echo failure or a range
+outside 20–4000 mm aborts before motor initialization; no old/manual range is
+silently substituted. The converted layout must also pass the existing route
+preflight, including the 600 mm minimum park-mouth-to-O1 distance.
+
+The grouped `motionSequenceFusionTestStartupRangeConfig` initializer in
+`Tests/Src/MotionSequenceFusionTest.c` exposes:
+
+| Setting | Default | Meaning |
+| --- | ---: | --- |
+| `enabled` | `true` | Measure once in selector 4; `false` uses the manually configured distance. |
+| `sensorAheadOfRearAxleMm` | 210 mm | Measured longitudinal rear-axle-to-transducer-face offset, positive forward. |
+
+The conversion is `parkToObstacle1Mm = sensorRangeMm - 250 + sensorAheadOfRearAxleMm`,
+because the initial rear axle is at x = −250 mm relative to the park mouth.
+For the measured 210 mm offset, a 1090 mm reading becomes a 1050 mm layout
+distance (`parkToObstacle1Mm = sensorRangeMm - 40`). The reading therefore must not be copied directly into the route.
+The robot must be centred, forward-facing, and stationary; this measurement
+does not recover lateral position or heading.
+
+The measured value replaces `task2RouteConfig.parkToObstacle1Mm` and is frozen
+into both A and B. There is **one reading per pair**, not another reading after
+the manual B reset. Reset B to the same pose. After preflight and initialization,
+the normal A-ready and B-ready screens still each require SW1. Startup ranging
+and its button wait are excluded from both motion timings. O2 spacing/width
+remain manual inputs; the approaches still follow fixed-distance profiles.
+Other selectors, including the isolated O1 mode, do not perform startup ranging.
+
+The exporter includes the raw range, converted distance and mounting offset.
+Static route-name labels are emitted directly, avoiding linker-discarded ELF
+symbols. Re-source the updated exporter before exporting an existing run.
 
 ## Route and camera assumption
 
@@ -61,8 +99,11 @@ view exists before steering toward either selected bypass. There is no live
 camera, ultrasonic endpoint, direction message, or dynamic handoff yet.
 
 `cameraHorizontalFovDeg = 60` and `cameraBehindFrontMm = 80` are explicit inputs.
-The lens is 70 mm ahead of the axle **only under the centred 300 mm body
-assumption**. Replace body dimensions/frame assumptions with measured values.
+The lens is 110 mm ahead of the axle, using the measured front-body offset
+of 190 mm and the existing 80 mm camera setback. The measured chassis length
+is 227 mm; width remains the assumed 200 mm. Body centre is 76.5 mm ahead of
+the axle. Footprint checks conservatively include the sensor protrusion at
+full body width, from -37 to +210 mm along the axle frame.
 `recognitionTargetWidthMm = 100` is an assumed centred arrow width, not a
 measurement. Horizontal framing is checked; target height, vertical FOV,
 exposure, confidence, and recognition duration are not modelled.

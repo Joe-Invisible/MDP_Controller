@@ -34,7 +34,9 @@ void InvokeTest() {
 
 	LED_On();
 
-    /* Isolated 4-primitive O1: edit Obstacle1Route.c's grouped settings.
+    /* Choose mode in MotionSequenceFusionTest.c. Default: isolated O1.
+     * Full-route selector 4 optionally measures O1 once before preflight.
+     * Isolated 4-primitive O1: edit Obstacle1Route.c's grouped settings.
      * A is fused; B uses standalone yaw-priority primitives. */
     MotionSequenceFusionTestRun();
 

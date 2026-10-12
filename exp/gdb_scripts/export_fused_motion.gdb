@@ -41,14 +41,16 @@ define mctrl-fusion-export
     if motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_PARAMETERISED
         echo === Parameterised eight-primitive Task 2 (instant recognition, anchored arcs) ===\n
         p task2RouteConfig
-        p task2RouteStepNames
+        echo Steps: Approach O1 -> O1 depart -> O1 bypass -> O1 centre -> Approach O2 -> O2 depart -> O2 back -> Return park\n
+        p motionSequenceFusionTestStartupRangeConfig
+        p motionSequenceFusionTestStartupRange
         echo === Frozen A/B route settings and geometric preflight ===\n
         p motionSequenceFusionTestTask2Routes
     end
     if motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_OBSTACLE1_BYPASS
         echo === Isolated four-primitive O1 (1000mm recognition; 500mm minimum at entry-blend exit) ===\n
         p obstacle1RouteConfig
-        p obstacle1RouteStepNames
+        echo Steps: Approach O1 -> O1 depart -> O1 bypass -> Loose O1 exit\n
         echo === Frozen A/B O1 geometry and preflight ===\n
         p motionSequenceFusionTestObstacle1Routes
     end

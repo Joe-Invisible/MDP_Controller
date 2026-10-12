@@ -26,6 +26,25 @@ extern uint32_t motionSequenceFusionTestLogPeriodMs;
 extern float motionSequenceFusionTestTask2BlendLengthMm;
 extern bool motionSequenceFusionTestTask2AllowBlendOverlap;
 
+/* Eight-primitive mode only. Disable to retain the manual O1 distance.
+ * The offset is longitudinal, measured from rear axle to transducer face. */
+typedef struct
+{
+    bool enabled;
+    float sensorAheadOfRearAxleMm;
+} MotionSequenceFusionTestStartupRangeConfig;
+
+typedef struct
+{
+    bool attempted;
+    bool valid;
+    float sensorToObstacleMm;
+    float parkToObstacle1Mm;
+} MotionSequenceFusionTestStartupRange;
+
+extern MotionSequenceFusionTestStartupRangeConfig motionSequenceFusionTestStartupRangeConfig;
+extern MotionSequenceFusionTestStartupRange motionSequenceFusionTestStartupRange;
+
 typedef struct
 {
     float yawRateKp;
