@@ -57,3 +57,19 @@ python Tests/Host/test_task2_export.py --gdb /path/to/gdb
 The host fixture models ideal wheel/gyro tracking. It verifies mirrored routes,
 parameter changes, startup ranging, speed changes, stopping, cancellation,
 timeouts and exports; it does not model servo lag, slip or camera latency.
+
+## Route graph
+
+![Current configured stopped route](task2_motion_route.svg)
+
+Regenerate from the actual C planner after changing the route configuration
+(requires a host C compiler, NumPy and Matplotlib):
+
+```sh
+python Tests/Host/plot_task2_motion.py
+```
+
+The plotter also accepts `--first-arrow`, `--second-arrow`, `--park-to-o1`,
+`--gap` and `--width` overrides. Use `--park-to-o1` for the captured startup
+distance when it differs from the configured layout. Each plotted route must
+pass the same geometric preflight. This is nominal geometry, not a run trace.
