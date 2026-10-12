@@ -1,8 +1,9 @@
 # Parameterised Task 2: anchored eight-primitive A/B test
 
 Branch: `experiment/task2-anchored-parameterised`.
-The default `TestMain.c` entry runs `MotionSequenceFusionTestRun()` with
+The full route remains available with
 `MOTION_SEQUENCE_FUSION_TEST_TASK2_PARAMETERISED` (selector 4).
+The current default is the [isolated O1 test](README_obstacle1_bypass.md), selector 5.
 Historical selector 0 retains the previous five-primitive experiment.
 
 ## Change the important inputs in one place
@@ -150,8 +151,8 @@ reserve before treating the configured buffer as a guaranteed physical margin.
 Validation covered 64 A/B pairs (128 runs): all four arrow combinations, widths
 300/350/400/500 mm, park-to-O1 settings 600/1050 mm, and inter-obstacle face gaps
 1050/1100 mm. This is a tested set, not an exhaustive feasible envelope.
-With the default L/R inputs, the host returned A = 28.227 s and B = 17.898 s;
-these are software timings. Other route settings and hardware runs may differ.
+With the default L/R inputs, the host returned A = 18.910 s and B = 17.898 s;
+these are software timings with local feedforward slope limits. Other route settings and hardware runs may differ.
 
 ![Default-config ideal host traces](task2_anchored_route.svg)
 

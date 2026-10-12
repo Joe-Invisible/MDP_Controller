@@ -26,6 +26,8 @@ typedef struct MotionProfile {
      */
     float targetDistanceMm;
     float maxSpeedMmps;
+    /* Optional soft cruise request. Zero inherits maxSpeedMmps. */
+    float requestedCruiseSpeedMmps;
 
     /*
      * Current generated speed reference
@@ -58,6 +60,10 @@ bool MotionProfile_Start(
     MotionProfile *profile,
     float distanceMm,
     float maxSpeedMmps);
+
+/* Change cruise speed while active, preserving distance, speed and progress.
+ * The hard max/stopping envelope still wins; requests use normal accel/decel. */
+bool MotionProfile_RequestCruiseSpeed(MotionProfile *profile, float speedMmps);
 
 /**
  * @brief Updates the speed reference using travelled

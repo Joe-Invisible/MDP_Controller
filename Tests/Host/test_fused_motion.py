@@ -255,6 +255,8 @@ static void testSeparateProfileLimits(void)
             f.config.straightDecelerationMmps2 = 3000;
             f.config.arcDecelerationMmps2 = 2000;
             s.config.blendLengthMm = 200;
+            /* Isolate the distance envelope from the separate sampled FF guard. */
+            s.config.referenceGuardSec = 0;
             assert(MotionSequence_AddStraight(&s, direction * 500, 7800, false) == 0);
             assert(MotionSequence_AddArc(&s, direction * 500, -500, 1000, false) == 0);
             assert(MotionSequence_Execute(&s) == 0);
@@ -569,7 +571,12 @@ static void testFastJunctionAndRateIsolation(void)
     assert(MotionSequence_AddStraight(&s, 300, 2000, false) == 0);
     assert(MotionSequence_AddArc(&s, 500, -500, 2000, false) == 0);
     assert(MotionSequence_Execute(&s) == 0);
-    assert(s.plan.junctionSpeedCps[0] > 500 && s.plan.junctionSpeedCps[0] < 800);
+    /* A local-table plan reports the base ceiling, not the minimum over a
+     * whole blend. At its steep centre bridge, evaluation still inherits 120. */
+    near(s.plan.junctionSpeedCps[0], 2000, 0);
+    MotionPathSample inherited;
+    assert(MotionSequencePlan_Evaluate(&s.run, 251, &inherited));
+    assert(inherited.speedLimitCps > 500 && inherited.speedLimitCps < 800);
     prepareSequence(&f, &s);
     oldRaw = f.steering.command;
     gyroDps = 1000;
@@ -1548,7 +1555,7 @@ int main(void)
     testStopsReversalsAndCancel();
     testValidationAndFaults();
     testRandomPlans();
-    assert(motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_PARAMETERISED);
+    assert(motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_OBSTACLE1_BYPASS);
     testSingleTuningHarness();
     testRobotHarness();
     testStoppedArcDistanceGuards();
@@ -1582,6 +1589,7 @@ def main():
             f"-I{ROOT / 'Tests/Common'}", str(work / "test.c"),
             str(ROOT / "Tests/Src/MotionSequenceFusionTest.c"),
             str(ROOT / "Tests/Src/Task2Route.c"),
+            str(ROOT / "Tests/Src/Obstacle1Route.c"),
         ]
         command += [str(ROOT / f"Controllers/Src/{name}.c") for name in sources]
         command += ["-lm", "-o", str(work / "test")]

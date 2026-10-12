@@ -71,8 +71,17 @@ bool MotionProfile_Start(
     profile->targetDistanceMm = distanceMm;
     profile->maxSpeedMmps = maxSpeedMmps;
     profile->targetSpeedMmps = 0.0f;
+    profile->requestedCruiseSpeedMmps = 0.0f;
     profile->active = true;
 
+    return true;
+}
+
+bool MotionProfile_RequestCruiseSpeed(MotionProfile *profile, float speedMmps)
+{
+    if (profile == NULL || !profile->active || !isfinite(speedMmps) || speedMmps <= 0.0f)
+        return false;
+    profile->requestedCruiseSpeedMmps = speedMmps;
     return true;
 }
 
@@ -141,8 +150,12 @@ float MotionProfile_UpdateWithBrakingLimit(
      * instead if the requested distance is too short to
      * attain the max speed
      */
+    float cruiseLimitMmps = profile->maxSpeedMmps;
+    if (profile->requestedCruiseSpeedMmps > 0.0f)
+        cruiseLimitMmps = fminf(cruiseLimitMmps, fmaxf(profile->requestedCruiseSpeedMmps,
+            profile->targetSpeedMmps - profile->decelerationMmps2 * dt));
     profile->targetSpeedMmps = MotionProfile_Min3(
-        profile->maxSpeedMmps,
+        cruiseLimitMmps,
         accelerationLimitedSpeedMmps,
         brakingSpeedLimitMmps);
 

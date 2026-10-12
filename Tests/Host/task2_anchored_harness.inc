@@ -262,6 +262,6 @@ int main(void)
     puts("PASS: 64 anchored A/B combinations, camera views and footprints");
     testRejectedRoutes();
     puts("PASS: rejected routes, cancellation and timeout");
-    motionSequenceFusionTestExperiment = MOTION_SEQUENCE_FUSION_TEST_TASK2_PARAMETERISED;
+    motionSequenceFusionTestExperiment = MOTION_SEQUENCE_FUSION_TEST_OBSTACLE1_BYPASS;
     return legacyRegressionMain();
 }

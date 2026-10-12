@@ -34,7 +34,7 @@ void InvokeTest() {
 
 	LED_On();
 
-    /* Parameterised 8-primitive Task 2: edit Task2Route.c's grouped settings.
+    /* Isolated 4-primitive O1: edit Obstacle1Route.c's grouped settings.
      * A is fused; B uses standalone yaw-priority primitives. */
     MotionSequenceFusionTestRun();
 

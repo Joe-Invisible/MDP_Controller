@@ -285,6 +285,13 @@ MotionControllerStatus MotionController_MoveStraight(
 	float distanceMm,
 	float speedCps);
 
+/* Soft cruise request for the current motion, including fused profiles.
+ * Launch with the intended upper cruise speed, then request approach speed;
+ * raise it again on recognition. Speed must not exceed the launched ceiling.
+ * Preparation is supported; idle/braking is rejected. No endpoint/yaw reset. */
+MotionControllerStatus MotionController_RequestCruiseSpeed(
+    MotionController *controller, float speedCps);
+
 /**
  * Constant-curvature arc motion.
  *

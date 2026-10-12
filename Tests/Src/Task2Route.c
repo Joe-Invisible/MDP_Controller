@@ -244,13 +244,12 @@ static float ObstacleGap(const Task2RouteConfig *c, const Task2RoutePose *p,
     return overlap ? 0.0f : gap;
 }
 
-bool Task2Route_CheckPose(const Task2RouteConfig *c,
-    const Task2RoutePose *p, Task2RouteReport *report)
+static bool CheckFootprint(const Task2RouteConfig *c,
+    const Task2RoutePose *p, float sideLimit, bool includeObstacle2, Task2RouteReport *report)
 {
     float cx[4], cy[4];
     float cosine = cosf(p->yawRad), sine = sinf(p->yawRad);
     float hf = 0.5f * c->bodyLengthMm, hs = 0.5f * c->bodyWidthMm;
-    float sideLimit = 0.5f * c->obstacle2WidthMm + c->obstacle2EndSpaceMm;
     for (unsigned j = 0U; j < 4U; ++j)
     {
         float f = j < 2U ? hf : -hf;
@@ -279,9 +278,22 @@ bool Task2Route_CheckPose(const Task2RouteConfig *c,
     float secondX = c->parkToObstacle1Mm + 150.0f + c->obstacleFaceGapMm;
     report->minimumObstacleGapMm = fminf(report->minimumObstacleGapMm,
         fminf(ObstacleGap(c, p, cx, cy, firstX, 50.0f),
-              ObstacleGap(c, p, cx, cy, secondX, 0.5f * c->obstacle2WidthMm)));
+              includeObstacle2 ? ObstacleGap(c, p, cx, cy, secondX, 0.5f * c->obstacle2WidthMm) : INFINITY));
     return report->minimumObstacleGapMm >= c->obstacleBufferMm &&
         report->minimumSideMarginMm > 0.0f && report->minimumParkWallMarginMm > 0.0f;
+}
+
+bool Task2Route_CheckPose(const Task2RouteConfig *config,
+    const Task2RoutePose *pose, Task2RouteReport *report)
+{
+    return CheckFootprint(config, pose,
+        0.5f * config->obstacle2WidthMm + config->obstacle2EndSpaceMm, true, report);
+}
+
+bool Task2Route_CheckObstacle1Pose(const Task2RouteConfig *config,
+    float arenaHalfWidthMm, const Task2RoutePose *pose, Task2RouteReport *report)
+{
+    return CheckFootprint(config, pose, arenaHalfWidthMm, false, report);
 }
 
 static bool ValidatePath(Task2Route *route, const MotionSequencePlan *plan, bool fused)

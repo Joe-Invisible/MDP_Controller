@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include "MotionPathProfile.h"
+#include "MotionControllerConfig.h"
 
 #define MOTION_SEQUENCE_CAPACITY 20U
 
@@ -26,6 +27,8 @@ typedef struct
      * Independent curvature ramps may overlap; stop/reversal boundaries still
      * contain every ramp. False retains the established quarter-segment bound. */
     bool allowBlendOverlap;
+    /* Local FF intervals include a guard for discrete reference updates. */
+    float referenceGuardSec;
 } MotionSequenceConfig;
 
 typedef struct
@@ -46,8 +49,14 @@ typedef struct
     float arcDecelerationMmps2;
     float requestedBlendLengthMm;
     float junctionSpeedCeilingCps;
-    float feedforwardSlopeBound;
+    float feedforwardSlopeBound; /* Fallback for pure plans without a table. */
+    /* Borrowed calibration; keep it valid and unchanged through execution.
+     * With a table, junctionSpeedCps is the base ceiling; Evaluate applies
+     * piecewise local steering limits and braking lookahead. */
+    const MotionControllerArcConfig *feedforwardConfig;
+    float straightFeedforwardCommand;
     float steeringRatePerSec;
+    float referenceGuardSec;
     bool allowBlendOverlap;
     bool prepared;
 } MotionSequencePlan;
@@ -60,6 +69,10 @@ typedef struct
 } MotionSequenceRun;
 
 extern const MotionSequenceConfig motionSequenceConfig;
+
+/* Optional local-slope model. NULL selects the supplied scalar fallback. */
+void MotionSequencePlan_SetFeedforward(MotionSequencePlan *plan,
+    const MotionControllerArcConfig *config, float straightCommand);
 
 bool MotionSequencePlan_Prepare(
     MotionSequencePlan *plan,

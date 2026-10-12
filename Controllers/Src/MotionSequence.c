@@ -32,7 +32,8 @@ MotionControllerStatus MotionSequence_Begin(
         !isfinite(config->blendLengthMm) || config->blendLengthMm <= 0.0f ||
         !isfinite(config->junctionSpeedCps) || config->junctionSpeedCps <= 0.0f ||
         !isfinite(config->steeringCommandRatePerSec) ||
-        config->steeringCommandRatePerSec < 0.0f)
+        config->steeringCommandRatePerSec < 0.0f ||
+        !isfinite(config->referenceGuardSec) || config->referenceGuardSec < 0.0f)
     {
         return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
     }
@@ -225,6 +226,8 @@ MotionControllerStatus MotionSequence_Execute(MotionSequence *sequence)
     const MotionControllerConfig *config = sequence->controller->config;
     float mmPerCount = SEQUENCE_PI * config->kinematics->rearWheelDiameterMm /
                        config->kinematics->rearEncoderCountsPerRev;
+    MotionSequencePlan_SetFeedforward(&sequence->plan, config->arcConfig,
+                                      config->straightSteeringFeedforwardCommand);
     if (!MotionSequencePlan_Prepare(
             &sequence->plan,
             &sequence->config,

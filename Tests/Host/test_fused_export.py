@@ -22,6 +22,12 @@ Task2Route motionSequenceFusionTestTask2Routes[2] = {
     {.config={.firstArrow=TASK2_ARROW_LEFT, .secondArrow=TASK2_ARROW_RIGHT, .obstacle2WidthMm=500}, .report={.valid=true, .reason="OK", .minimumObstacleGapMm=123}},
     {.config={.firstArrow=TASK2_ARROW_LEFT, .secondArrow=TASK2_ARROW_RIGHT, .obstacle2WidthMm=500}, .report={.valid=true, .reason="OK", .minimumObstacleGapMm=117}}
 };
+Obstacle1RouteConfig obstacle1RouteConfig = {.parkToObstacleMm=1050, .recognitionCameraRangeMm=1000};
+const char *const obstacle1RouteStepNames[4] = {"Approach O1", "O1 depart", "O1 bypass", "Loose O1 exit"};
+Obstacle1Route motionSequenceFusionTestObstacle1Routes[2] = {
+    {.report={.valid=true, .reason="OK", .minimumObstacleGapMm=217}},
+    {.report={.valid=true, .reason="OK", .minimumObstacleGapMm=236}},
+};
 bool motionSequenceFusionTestPassed = true;
 MotionControllerStatus motionSequenceFusionTestStatus = MOTIONCONTROLLER_STATUS_PROFILE_ERROR;
 bool motionSequenceFusionTestTimedOut = true;
@@ -84,7 +90,7 @@ def main():
         (work / "stm32f4xx_hal.h").write_text(HAL_STUB)
         (work / "fixture.c").write_text(SOURCE)
         cases = [(mode, count, 1 if mode == 3 else 2)
-                 for mode in (0, 1, 2, 3, 4) for count in (0, 2, 3)]
+                 for mode in (0, 1, 2, 3, 4, 5) for count in (0, 2, 3)]
         cases += [(3, 2, 0), (3, 2, 3)]
         for experiment_mode, count, result_count in cases:
             elf = work / "fixture"
@@ -130,6 +136,15 @@ def main():
                     assert "straightTuning = {yawRateKp = 150, yawRateKi = 50, yawRateKd = 0, headingKpPerSec = 0.5}" in log
                     assert "arcTuning = {yawRateKp = 150, yawRateKi = 100, yawRateKd = 0, headingKpPerSec = 0.5}" in log
                 assert "completedRuns = 5" not in log
+            elif experiment_mode == 5:
+                assert "Isolated four-primitive O1" in log
+                assert "MOTION_SEQUENCE_FUSION_TEST_OBSTACLE1_BYPASS" in log
+                assert "parkToObstacleMm = 1050" in log
+                assert "recognitionCameraRangeMm = 1000" in log
+                assert "minimumObstacleGapMm = 217" in log
+                assert "minimumObstacleGapMm = 236" in log
+                assert "Loose O1 exit" in log and "A prepared fused plan" in log
+                assert "Frozen arc feedforward calibration" in log
             elif experiment_mode == 4:
                 assert "Parameterised eight-primitive Task 2" in log
                 assert "MOTION_SEQUENCE_FUSION_TEST_TASK2_PARAMETERISED" in log

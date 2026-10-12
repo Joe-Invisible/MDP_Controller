@@ -30,7 +30,11 @@ define mctrl-fusion-export
             if motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_REFERENCE_FILTER
                 echo === A/B reference filter comparison (0=existing, 1=matched; both fused) ===\n
             else
-                echo === A/B Task 2 comparison (0=overlap fusion, 1=standalone stopped; yaw-priority arc exits) ===\n
+                if motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_OBSTACLE1_BYPASS
+                    echo === A/B isolated O1 comparison (instant recognition; stopped yaw-priority exits) ===\n
+                else
+                    echo === A/B Task 2 comparison (0=overlap fusion, 1=standalone stopped; yaw-priority arc exits) ===\n
+                end
             end
         end
     end
@@ -40,6 +44,13 @@ define mctrl-fusion-export
         p task2RouteStepNames
         echo === Frozen A/B route settings and geometric preflight ===\n
         p motionSequenceFusionTestTask2Routes
+    end
+    if motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_OBSTACLE1_BYPASS
+        echo === Isolated four-primitive O1 (1000mm recognition; 500mm minimum at entry-blend exit) ===\n
+        p obstacle1RouteConfig
+        p obstacle1RouteStepNames
+        echo === Frozen A/B O1 geometry and preflight ===\n
+        p motionSequenceFusionTestObstacle1Routes
     end
     p motionSequenceFusionTestResultCount
     set $fusion_result_capacity = sizeof(motionSequenceFusionTestResults) / sizeof(motionSequenceFusionTestResults[0])
@@ -51,8 +62,8 @@ define mctrl-fusion-export
     p motionSequenceFusionTestComparisonValid
     p motionSequenceFusionTestSavedTimeMs
     p motionSequenceFusionTestSavedPercent
-    if motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING || motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_PARAMETERISED
-        echo === A prepared fused plan (actual blends and speed caps) ===\n
+    if motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING || motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_PARAMETERISED || motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_OBSTACLE1_BYPASS
+        echo === A prepared fused plan (actual blends; local caps are in samples) ===\n
         p motionSequenceFusionTestFusedPlan
     end
     echo === Standalone stopped arc exits (including braking) ===\n
@@ -67,7 +78,7 @@ define mctrl-fusion-export
     p motionSequenceFusionTestSequence
     if motionSequenceFusionTestSequence.controller != 0
         p *motionSequenceFusionTestSequence.controller->config
-        if motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING || motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_PARAMETERISED
+        if motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING || motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_PARAMETERISED || motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_OBSTACLE1_BYPASS
             echo === Frozen arc feedforward calibration ===\n
             p *motionSequenceFusionTestSequence.controller->config->arcConfig
             p motionSequenceFusionTestSequence.controller->config->arcConfig->positivePoints[0] @ motionSequenceFusionTestSequence.controller->config->arcConfig->positivePointCount

@@ -812,6 +812,23 @@ MotionControllerStatus MotionController_MoveStraight(
     return MOTIONCONTROLLER_STATUS_OK;
 }
 
+MotionControllerStatus MotionController_RequestCruiseSpeed(
+    MotionController *controller, float speedCps)
+{
+    if (controller == NULL)
+        return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
+    if (!controller->initialized)
+        return MOTIONCONTROLLER_STATUS_NOT_INITIALIZED;
+    if (controller->mode == MOTIONCONTROLLER_IDLE || controller->mode == MOTIONCONTROLLER_BRAKING ||
+        !MotionProfile_IsActive(&controller->motionProfile))
+        return MOTIONCONTROLLER_STATUS_INVALID_STATE;
+    if (!isfinite(speedCps) || speedCps <= 0.0f || speedCps > controller->maxSpeedCps)
+        return MOTIONCONTROLLER_STATUS_INVALID_SPEED;
+    return MotionProfile_RequestCruiseSpeed(&controller->motionProfile,
+               speedCps * MotionController_GetMmPerCount(controller))
+        ? MOTIONCONTROLLER_STATUS_OK : MOTIONCONTROLLER_STATUS_INVALID_SPEED;
+}
+
 MotionControllerStatus MotionController_MoveArc(
     MotionController *controller,
     float distanceMm,

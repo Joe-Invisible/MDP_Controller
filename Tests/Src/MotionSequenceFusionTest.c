@@ -39,7 +39,7 @@ static const MotionSequenceFusionTestStep tuningTestSteps[] = {
     {1000.0f, 0.0f, FUSION_SPEED_CPS},
 };
 MotionSequenceFusionTestExperiment motionSequenceFusionTestExperiment =
-    MOTION_SEQUENCE_FUSION_TEST_TASK2_PARAMETERISED;
+    MOTION_SEQUENCE_FUSION_TEST_OBSTACLE1_BYPASS;
 MotionSequenceFusionTestTuning motionSequenceFusionTestStraightTuning = {
     .yawRateKp = 150.0f,
     .yawRateKi = 50.0f,
@@ -56,10 +56,16 @@ uint32_t motionSequenceFusionTestLogPeriodMs;
 float motionSequenceFusionTestTask2BlendLengthMm = 500.0f;
 bool motionSequenceFusionTestTask2AllowBlendOverlap = true;
 
+static bool MotionSequenceFusionTest_IsObstacle1(void)
+{
+    return motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_OBSTACLE1_BYPASS;
+}
+
 static bool MotionSequenceFusionTest_IsTask2(void)
 {
     return motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING ||
-        motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_PARAMETERISED;
+        motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_PARAMETERISED ||
+        MotionSequenceFusionTest_IsObstacle1();
 }
 
 static bool MotionSequenceFusionTest_IsSingleRun(void)
@@ -139,6 +145,7 @@ MotionSequenceFusionTestArcExit motionSequenceFusionTestArcExits[MOTION_SEQUENCE
 uint32_t motionSequenceFusionTestArcExitCount;
 MotionSequencePlan motionSequenceFusionTestFusedPlan;
 Task2Route motionSequenceFusionTestTask2Routes[MOTION_SEQUENCE_FUSION_TEST_RUN_COUNT];
+Obstacle1Route motionSequenceFusionTestObstacle1Routes[MOTION_SEQUENCE_FUSION_TEST_RUN_COUNT];
 static Task2RoutePose estimatedPose;
 static float previousPoseTravelMm;
 static float previousPoseYawRad;
@@ -163,6 +170,16 @@ static void MotionSequenceFusionTest_UpdatePose(void)
     previousPoseTravelMm = travel;
     previousPoseYawRad = yaw;
 
+    if (MotionSequenceFusionTest_IsObstacle1())
+    {
+        if (sequence->state == MOTION_SEQUENCE_COMPLETE)
+        {
+            MotionSequenceFusionTestResult *result = &motionSequenceFusionTestResults[comparisonRunIndex];
+            result->obstacle1ExitPoseEstimateValid = true;
+            result->obstacle1ExitPoseEstimate = estimatedPose;
+        }
+        return;
+    }
     if (motionSequenceFusionTestExperiment != MOTION_SEQUENCE_FUSION_TEST_TASK2_PARAMETERISED)
         return;
     MotionSequenceFusionTestResult *result = &motionSequenceFusionTestResults[comparisonRunIndex];
@@ -190,6 +207,9 @@ static MotionControllerStatus MotionSequenceFusionTest_LaunchStandalone(uint32_t
         ? MotionController_MoveStraight(sequence->controller, step->signedDistanceMm, step->speedCps)
         : MotionController_MoveArc(sequence->controller, step->signedDistanceMm,
                                    1.0f / step->curvaturePerMm, step->speedCps);
+    if (status == MOTIONCONTROLLER_STATUS_OK && index == 0U && MotionSequenceFusionTest_IsObstacle1())
+        status = MotionController_RequestCruiseSpeed(sequence->controller,
+            motionSequenceFusionTestObstacle1Routes[comparisonRunIndex].config.approachSpeedCps);
     sequence->lastStatus = status;
     sequence->state = status == MOTIONCONTROLLER_STATUS_OK
         ? MOTION_SEQUENCE_RUNNING : MOTION_SEQUENCE_FAILED;
@@ -204,6 +224,9 @@ static MotionControllerStatus MotionSequenceFusionTest_Execute(void)
         MotionControllerStatus status = MotionSequence_Execute(sequence);
         if (MotionSequenceFusionTest_IsTask2())
             motionSequenceFusionTestFusedPlan = sequence->plan;
+        if (status == MOTIONCONTROLLER_STATUS_OK && MotionSequenceFusionTest_IsObstacle1())
+            status = MotionController_RequestCruiseSpeed(sequence->controller,
+                motionSequenceFusionTestObstacle1Routes[comparisonRunIndex].config.approachSpeedCps);
         return status;
     }
     const MotionControllerConfig *config = sequence->controller->config;
@@ -421,9 +444,29 @@ static MotionControllerStatus MotionSequenceFusionTest_BuildPattern(bool stopAft
         sequenceConfig.blendLengthMm = motionSequenceFusionTestTask2BlendLengthMm;
         sequenceConfig.allowBlendOverlap = !stopAfter && motionSequenceFusionTestTask2AllowBlendOverlap;
     }
+    if (MotionSequenceFusionTest_IsObstacle1())
+    {
+        const Obstacle1RouteConfig *config = &motionSequenceFusionTestObstacle1Routes[comparisonRunIndex].config;
+        sequenceConfig.blendLengthMm = fmaxf(config->entryBlendMm, config->bypassBlendMm);
+        sequenceConfig.allowBlendOverlap = !stopAfter;
+    }
     MotionSequence *sequence = &motionSequenceFusionTestSequence;
     MotionControllerStatus status = MotionSequence_Begin(
         sequence, &fixture.motionController, &sequenceConfig);
+    if (MotionSequenceFusionTest_IsObstacle1())
+    {
+        const Obstacle1Route *route = &motionSequenceFusionTestObstacle1Routes[comparisonRunIndex];
+        for (unsigned i = 0U; i < OBSTACLE1_ROUTE_STEP_COUNT && status == MOTIONCONTROLLER_STATUS_OK; ++i)
+        {
+            const MotionSequenceSegment *step = &route->steps[i];
+            status = step->curvaturePerMm == 0.0f
+                ? MotionSequence_AddStraight(sequence, step->signedDistanceMm, step->speedCps, stopAfter)
+                : MotionSequence_AddArc(sequence, step->signedDistanceMm,
+                                        1.0f / step->curvaturePerMm, step->speedCps, stopAfter);
+            sequence->plan.junctionBlendLimitMm[i] = route->blendLimitMm[i];
+        }
+        return status;
+    }
     if (motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_PARAMETERISED)
     {
         const Task2Route *route = &motionSequenceFusionTestTask2Routes[comparisonRunIndex];
@@ -567,9 +610,12 @@ static bool MotionSequenceFusionTest_RunPattern(bool stopAfter)
     else
     {
         OLED_Printf(0, 0, "%s pattern ready", stopAfter ? "B stopped" : "A fused");
-        OLED_Printf(0, 1, "Task2: %.2fm", (double)(estimatedTravelMm / 1000.0f));
+        OLED_Printf(0, 1, MotionSequenceFusionTest_IsObstacle1() ? "O1: %.2fm" : "Task2: %.2fm", (double)(estimatedTravelMm / 1000.0f));
     }
-    if (MotionSequenceFusionTest_IsSingleRun())
+    if (MotionSequenceFusionTest_IsObstacle1())
+        OLED_Printf(0, 2, "%s:%gmm", stopAfter ? "Stopped" : "Overlap",
+            (double)motionSequenceFusionTestSequence.config.blendLengthMm);
+    else if (MotionSequenceFusionTest_IsSingleRun())
         OLED_Printf(0, 2, "5000 CPS; B:%gmm", (double)motionSequenceFusionTestSequence.config.blendLengthMm);
     else if (task2 && !stopAfter)
         OLED_Printf(0, 2, "%s:%gmm", motionSequenceFusionTestTask2AllowBlendOverlap ?
@@ -585,6 +631,12 @@ static bool MotionSequenceFusionTest_RunPattern(bool stopAfter)
         const Task2RouteConfig *config = &motionSequenceFusionTestTask2Routes[comparisonRunIndex].config;
         OLED_Printf(0, 3, "O1:%c O2:%c W:%g", config->firstArrow == TASK2_ARROW_LEFT ? 'L' : 'R',
                     config->secondArrow == TASK2_ARROW_LEFT ? 'L' : 'R', (double)config->obstacle2WidthMm);
+    }
+    if (MotionSequenceFusionTest_IsObstacle1())
+    {
+        const Obstacle1RouteConfig *config = &motionSequenceFusionTestObstacle1Routes[comparisonRunIndex].config;
+        OLED_Printf(0, 3, "O1:%c front:%gmm", config->arrow == TASK2_ARROW_LEFT ? 'L' : 'R',
+                    (double)config->parkToObstacleMm);
     }
     OLED_Printf(0, 4, "%s", MotionSequenceFusionTest_IsAccuracyExperiment()
         ? "Reset +x; SW1 start" : "Park +x; SW1 start");
@@ -648,6 +700,22 @@ static bool MotionSequenceFusionTest_RunPattern(bool stopAfter)
             motionSequenceFusionTestStatus =
                 MotionSequenceFusionTest_Update((nowMs - previousUpdateMs) / 1000.0f);
             MotionSequenceFusionTest_UpdatePose();
+            if (MotionSequenceFusionTest_IsObstacle1() && !aborting &&
+                !result->approachRecognitionReceived && MotionController_IsBusy(sequence->controller) &&
+                Obstacle1Route_CameraVisible(&motionSequenceFusionTestObstacle1Routes[comparisonRunIndex].config,
+                                             &estimatedPose))
+            {
+                /* Model an immediate camera/RPi reply. The active profile and
+                 * endpoint survive this speed request; acceleration is bounded. */
+                motionSequenceFusionTestStatus = MotionController_RequestCruiseSpeed(sequence->controller,
+                    motionSequenceFusionTestObstacle1Routes[comparisonRunIndex].config.cruiseSpeedCps);
+                if (motionSequenceFusionTestStatus == MOTIONCONTROLLER_STATUS_OK)
+                {
+                    result->approachRecognitionReceived = true;
+                    result->approachRecognitionElapsedMs = nowMs - startMs;
+                    result->approachRecognitionPoseEstimate = estimatedPose;
+                }
+            }
         }
         previousUpdateMs = nowMs;
         if (nowMs - lastLogMs >= motionSequenceFusionTestLogPeriodMs)
@@ -660,7 +728,8 @@ static bool MotionSequenceFusionTest_RunPattern(bool stopAfter)
     motionSequenceFusionTestElapsedMs = HAL_GetTick() - startMs;
     result->passed =
         motionSequenceFusionTestStatus == MOTIONCONTROLLER_STATUS_OK &&
-        sequence->state == MOTION_SEQUENCE_COMPLETE;
+        sequence->state == MOTION_SEQUENCE_COMPLETE &&
+        (!MotionSequenceFusionTest_IsObstacle1() || result->approachRecognitionReceived);
 
     /* Reserve/replace the last slot so a truncated log still has a final sample. */
     if (motionSequenceFusionTestLogCount == FUSION_LOG_CAPACITY ||
@@ -703,7 +772,10 @@ void MotionSequenceFusionTestRun(void)
     motionSequenceFusionTestArcExitCount = 0U;
     motionSequenceFusionTestFusedPlan = (MotionSequencePlan){0};
     for (unsigned i = 0U; i < MOTION_SEQUENCE_FUSION_TEST_RUN_COUNT; ++i)
+    {
         motionSequenceFusionTestTask2Routes[i] = (Task2Route){0};
+        motionSequenceFusionTestObstacle1Routes[i] = (Obstacle1Route){0};
+    }
     standaloneStoppedRun = false;
     comparisonRunIndex = 0U;
     for (uint32_t i = 0U; i < MOTION_SEQUENCE_FUSION_TEST_RUN_COUNT; ++i)
@@ -715,7 +787,7 @@ void MotionSequenceFusionTestRun(void)
         motionSequenceFusionTestExperiment != MOTION_SEQUENCE_FUSION_TEST_TASK2_PARAMETERISED &&
         motionSequenceFusionTestExperiment != MOTION_SEQUENCE_FUSION_TEST_REFERENCE_FILTER &&
         motionSequenceFusionTestExperiment != MOTION_SEQUENCE_FUSION_TEST_TASK1_GAINS &&
-        !MotionSequenceFusionTest_IsSingleRun())
+        !MotionSequenceFusionTest_IsSingleRun() && !MotionSequenceFusionTest_IsObstacle1())
     {
         motionSequenceFusionTestStatus = MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
         MotionSequenceFusionTestFinished();
@@ -738,6 +810,26 @@ void MotionSequenceFusionTestRun(void)
     fusionMotionConfig.straightDecelerationMmps2 = 3000.0f;
     fusionMotionConfig.arcAccelerationMmps2 = 2000.0f;
     fusionMotionConfig.arcDecelerationMmps2 = 2000.0f;
+    if (MotionSequenceFusionTest_IsObstacle1())
+    {
+        MotionSequenceConfig sequenceConfig = motionSequenceConfig;
+        sequenceConfig.blendLengthMm = fmaxf(obstacle1RouteConfig.entryBlendMm, obstacle1RouteConfig.bypassBlendMm);
+        sequenceConfig.allowBlendOverlap = true;
+        float mmPerCount = FUSION_PI * fusionMotionConfig.kinematics->rearWheelDiameterMm /
+            fusionMotionConfig.kinematics->rearEncoderCountsPerRev;
+        for (unsigned i = 0U; i < MOTION_SEQUENCE_FUSION_TEST_RUN_COUNT; ++i)
+        {
+            if (!Obstacle1Route_Create(&obstacle1RouteConfig, &sequenceConfig, mmPerCount,
+                                      i == 0U, &motionSequenceFusionTestObstacle1Routes[i]))
+            {
+                motionSequenceFusionTestStatus = MOTIONCONTROLLER_STATUS_PROFILE_ERROR;
+                MotionSequenceFusionTestFinished();
+                OLED_Printf(0, 5, "%s", motionSequenceFusionTestObstacle1Routes[i].report.reason);
+                OLED_Refresh_Gram();
+                return;
+            }
+        }
+    }
     if (motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_PARAMETERISED)
     {
         /* Freeze both sides before the first ready screen. No hardware is

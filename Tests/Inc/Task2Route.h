@@ -86,6 +86,10 @@ bool Task2Route_Create(const Task2RouteConfig *config,
     bool fused, Task2Route *route);
 
 /* Independent footprint checks, also usable for host ideal execution checks. */
+/* Shared footprint geometry for the isolated O1 experiment; ignores O2. */
+bool Task2Route_CheckObstacle1Pose(const Task2RouteConfig *config,
+    float arenaHalfWidthMm, const Task2RoutePose *pose, Task2RouteReport *report);
+
 bool Task2Route_CheckPose(const Task2RouteConfig *config,
     const Task2RoutePose *pose, Task2RouteReport *report);
 

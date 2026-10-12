@@ -3,6 +3,7 @@
 
 #include "MotionSequence.h"
 #include "Task2Route.h"
+#include "Obstacle1Route.h"
 
 /* Result capacity for optional A/B modes; single tuning uses only index 0. */
 #define MOTION_SEQUENCE_FUSION_TEST_RUN_COUNT 2U
@@ -14,9 +15,10 @@ typedef enum
     MOTION_SEQUENCE_FUSION_TEST_TASK1_GAINS,
     MOTION_SEQUENCE_FUSION_TEST_SINGLE_TUNING,
     MOTION_SEQUENCE_FUSION_TEST_TASK2_PARAMETERISED,
+    MOTION_SEQUENCE_FUSION_TEST_OBSTACLE1_BYPASS,
 } MotionSequenceFusionTestExperiment;
 
-/* Set before Run(). Default: parameterised 8-primitive Task 2 A/B.
+/* Set before Run(). Default: isolated 4-primitive O1 A/B.
  * TASK2_TIMING retains the historical fixed 5-primitive experiment. */
 extern MotionSequenceFusionTestExperiment motionSequenceFusionTestExperiment;
 extern uint32_t motionSequenceFusionTestLogPeriodMs;
@@ -58,6 +60,9 @@ typedef struct
     /* Actual per-run configuration; final controller config belongs to last run. */
     MotionSequenceFusionTestTuning straightTuning;
     MotionSequenceFusionTestTuning arcTuning;
+    bool approachRecognitionReceived;
+    uint32_t approachRecognitionElapsedMs;
+    Task2RoutePose approachRecognitionPoseEstimate;
     bool obstacle1ExitPoseEstimateValid;
     Task2RoutePose obstacle1ExitPoseEstimate; /* Encoder/gyro estimate, no error bound. */
 } MotionSequenceFusionTestResult;
@@ -81,6 +86,7 @@ extern uint32_t motionSequenceFusionTestArcExitCount;
 extern MotionSequencePlan motionSequenceFusionTestFusedPlan;
 /* Frozen route/config/preflight for both sides, preserved after B replaces A. */
 extern Task2Route motionSequenceFusionTestTask2Routes[MOTION_SEQUENCE_FUSION_TEST_RUN_COUNT];
+extern Obstacle1Route motionSequenceFusionTestObstacle1Routes[MOTION_SEQUENCE_FUSION_TEST_RUN_COUNT];
 
 typedef struct
 {

@@ -75,6 +75,7 @@ def main():
             f"-I{ROOT / 'Tests/Common'}", str(work / "test.c"),
             str(ROOT / "Tests/Src/MotionSequenceFusionTest.c"),
             str(ROOT / "Tests/Src/Task2Route.c"),
+            str(ROOT / "Tests/Src/Obstacle1Route.c"),
         ]
         command += [str(ROOT / f"Controllers/Src/{name}.c") for name in sources]
         command += ["-lm", "-o", str(work / "test")]
