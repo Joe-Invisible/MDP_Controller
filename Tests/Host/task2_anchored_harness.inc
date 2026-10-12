@@ -236,6 +236,24 @@ static void testAnchoredHarness(void)
                             assert(nominal->valid && result->passed && !result->logTruncated);
                             assert(anchoredCameraSeen[run][0] && anchoredCameraSeen[run][1]);
                             assert(result->obstacle1ExitPoseEstimateValid);
+                            assert(result->approachRecognitionReceived);
+                            assert(Task2Route_Obstacle1CameraVisible(&task2RouteConfig,
+                                &result->approachRecognitionPoseEstimate));
+                            assert(fabsf(result->approachRecognitionPoseEstimate.yMm) < 0.1f);
+                            assert(fabsf(result->approachRecognitionPoseEstimate.yawRad) < 1e-4f);
+                            bool acceleratedInApproach = false;
+                            for (unsigned sampleIndex = 0; sampleIndex < motionSequenceFusionTestLogCount; ++sampleIndex)
+                            {
+                                const MotionSequenceFusionTestSample *sample = &motionSequenceFusionTestLog[sampleIndex];
+                                if (sample->comparisonRunIndex != run) continue;
+                                if (sample->timeMs < result->approachRecognitionElapsedMs)
+                                    assert(fabsf(sample->targetSpeedCps) <= task2RouteConfig.approachSpeedCps + 0.5f);
+                                if (sample->timeMs > result->approachRecognitionElapsedMs &&
+                                    sample->sequenceTravelMm < motionSequenceFusionTestTask2Routes[run].steps[0].signedDistanceMm &&
+                                    sample->targetSpeedCps > task2RouteConfig.approachSpeedCps + 100.0f)
+                                    acceleratedInApproach = true;
+                            }
+                            assert(acceleratedInApproach);
                             assert(fabsf(result->obstacle1ExitPoseEstimate.yMm) < 20.0f);
                             assert(fabsf(result->obstacle1ExitPoseEstimate.yawRad) < 0.04f);
                             assert(nominal->minimumObstacleGapMm >= task2RouteConfig.obstacleBufferMm);

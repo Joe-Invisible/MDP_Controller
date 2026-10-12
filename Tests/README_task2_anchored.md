@@ -108,10 +108,15 @@ full body width, from -37 to +210 mm along the axle frame.
 measurement. Horizontal framing is checked; target height, vertical FOV,
 exposure, confidence, and recognition duration are not modelled.
 
-Both whole straight approaches use `approachSpeedCps = 2000` in this first
-implementation; arcs request `cruiseSpeedCps = 5000`. Programmed speed zones and
-ultrasonic-triggered slowdown are deferred. The short O2 straight provides a
-view under the instantaneous-recognition assumption, not a timed capture dwell.
+O1 starts with a soft `approachSpeedCps = 2000` request and a hard
+`cruiseSpeedCps = 5000` ceiling. On the first encoder/gyro pose where the complete
+O1 arrow fits the horizontal view and recognition range, the test simulates an
+immediate reply and raises the cruise request. A and B accelerate on the remaining
+first straight without restarting their profiles; local steering and braking
+limits still apply. The event time/pose are included in the results. No live
+camera/RPi direction input is connected yet.
+O2's whole approach straight still uses `approachSpeedCps`; its short viewing
+window assumes instantaneous recognition rather than a capture dwell.
 
 ## Geometry controls and rejection
 

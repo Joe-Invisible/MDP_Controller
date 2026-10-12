@@ -21,8 +21,8 @@ Task2RouteConfig task2RouteConfig = {
     .obstacleBufferMm = 100.0f,
     .obstacle2EndSpaceMm = 500.0f,
 
-    /* Speeds and assumed body/camera geometry. Recognition is instantaneous.
-     * Both whole approaches use the reduced speed; live speed zones are deferred. */
+    /* O1 accelerates after simulated recognition. O2 keeps approach speed.
+     * Recognition is instantaneous; camera/RPi integration is deferred. */
     .cruiseSpeedCps = 5000.0f,
     .approachSpeedCps = 2000.0f,
     .bodyLengthMm = 227.0f,
@@ -71,6 +71,26 @@ static float CameraOffset(const Task2RouteConfig *config)
         0.5f * config->bodyLengthMm - config->cameraBehindFrontMm;
 }
 
+bool Task2Route_Obstacle1CameraVisible(const Task2RouteConfig *c, const Task2RoutePose *pose)
+{
+    float cosine = cosf(pose->yawRad), sine = sinf(pose->yawRad);
+    float cameraX = pose->xMm + CameraOffset(c) * cosine;
+    float cameraY = pose->yMm + CameraOffset(c) * sine;
+    float dx = c->parkToObstacle1Mm - cameraX;
+    if (dx <= 0.0f || hypotf(dx, cameraY) > c->recognitionCameraRangeMm)
+        return false;
+    for (int sign = -1; sign <= 1; sign += 2)
+    {
+        float dy = sign * 0.5f * c->recognitionTargetWidthMm - cameraY;
+        float forward = dx * cosine + dy * sine;
+        float lateral = -dx * sine + dy * cosine;
+        if (forward <= 0.0f || fabsf(lateral) >=
+            forward * tanf(c->cameraHorizontalFovDeg * ROUTE_PI / 360.0f))
+            return false;
+    }
+    return true;
+}
+
 static bool ValidConfig(const Task2RouteConfig *config)
 {
     const float positive[] = {
@@ -109,8 +129,11 @@ static void SetStep(Task2Route *route, unsigned index, float length, float radiu
     route->steps[index] = (MotionSequenceSegment){
         .signedDistanceMm = length,
         .curvaturePerMm = radius == 0.0f ? 0.0f : 1.0f / radius,
-        .speedCps = radius == 0.0f ? route->config.approachSpeedCps
-                                 : route->config.cruiseSpeedCps,
+        /* O1 launches with a cruise ceiling and a soft approach request;
+         * recognition raises that request without changing the primitive.
+         * O2 retains the original constant approach-speed policy. */
+        .speedCps = radius == 0.0f && index != 0U ? route->config.approachSpeedCps
+                                                : route->config.cruiseSpeedCps,
     };
 }
 

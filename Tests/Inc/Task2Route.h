@@ -25,7 +25,7 @@ typedef struct
     float obstacle2EndSpaceMm;     /* Worst-case available space at each end. */
 
     float cruiseSpeedCps;
-    float approachSpeedCps;        /* Whole straight approach, first version. */
+    float approachSpeedCps;        /* Before O1 recognition; whole O2 straight. */
     float bodyLengthMm;
     float bodyWidthMm;
     float bodyCenterAheadOfRearAxleMm;
@@ -86,6 +86,10 @@ extern const char *const task2RouteStepNames[TASK2_ROUTE_STEP_COUNT];
 bool Task2Route_Create(const Task2RouteConfig *config,
     const MotionSequenceConfig *sequenceConfig, float mmPerCount,
     bool fused, Task2Route *route);
+
+/* Instantaneous recognition simulation: whole horizontal O1 target in view. */
+bool Task2Route_Obstacle1CameraVisible(const Task2RouteConfig *config,
+    const Task2RoutePose *pose);
 
 /* Independent footprint checks, also usable for host ideal execution checks. */
 /* Shared footprint geometry for the isolated O1 experiment; ignores O2. */

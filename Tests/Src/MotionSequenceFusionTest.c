@@ -71,6 +71,12 @@ static bool MotionSequenceFusionTest_IsObstacle1(void)
     return motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_OBSTACLE1_BYPASS;
 }
 
+static bool MotionSequenceFusionTest_HasRecognitionApproach(void)
+{
+    return MotionSequenceFusionTest_IsObstacle1() ||
+        motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_PARAMETERISED;
+}
+
 static bool MotionSequenceFusionTest_IsTask2(void)
 {
     return motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_TIMING ||
@@ -217,9 +223,11 @@ static MotionControllerStatus MotionSequenceFusionTest_LaunchStandalone(uint32_t
         ? MotionController_MoveStraight(sequence->controller, step->signedDistanceMm, step->speedCps)
         : MotionController_MoveArc(sequence->controller, step->signedDistanceMm,
                                    1.0f / step->curvaturePerMm, step->speedCps);
-    if (status == MOTIONCONTROLLER_STATUS_OK && index == 0U && MotionSequenceFusionTest_IsObstacle1())
+    if (status == MOTIONCONTROLLER_STATUS_OK && index == 0U && MotionSequenceFusionTest_HasRecognitionApproach())
         status = MotionController_RequestCruiseSpeed(sequence->controller,
-            motionSequenceFusionTestObstacle1Routes[comparisonRunIndex].config.approachSpeedCps);
+            MotionSequenceFusionTest_IsObstacle1()
+                ? motionSequenceFusionTestObstacle1Routes[comparisonRunIndex].config.approachSpeedCps
+                : motionSequenceFusionTestTask2Routes[comparisonRunIndex].config.approachSpeedCps);
     sequence->lastStatus = status;
     sequence->state = status == MOTIONCONTROLLER_STATUS_OK
         ? MOTION_SEQUENCE_RUNNING : MOTION_SEQUENCE_FAILED;
@@ -234,9 +242,11 @@ static MotionControllerStatus MotionSequenceFusionTest_Execute(void)
         MotionControllerStatus status = MotionSequence_Execute(sequence);
         if (MotionSequenceFusionTest_IsTask2())
             motionSequenceFusionTestFusedPlan = sequence->plan;
-        if (status == MOTIONCONTROLLER_STATUS_OK && MotionSequenceFusionTest_IsObstacle1())
+        if (status == MOTIONCONTROLLER_STATUS_OK && MotionSequenceFusionTest_HasRecognitionApproach())
             status = MotionController_RequestCruiseSpeed(sequence->controller,
-                motionSequenceFusionTestObstacle1Routes[comparisonRunIndex].config.approachSpeedCps);
+                MotionSequenceFusionTest_IsObstacle1()
+                    ? motionSequenceFusionTestObstacle1Routes[comparisonRunIndex].config.approachSpeedCps
+                    : motionSequenceFusionTestTask2Routes[comparisonRunIndex].config.approachSpeedCps);
         return status;
     }
     const MotionControllerConfig *config = sequence->controller->config;
@@ -710,15 +720,22 @@ static bool MotionSequenceFusionTest_RunPattern(bool stopAfter)
             motionSequenceFusionTestStatus =
                 MotionSequenceFusionTest_Update((nowMs - previousUpdateMs) / 1000.0f);
             MotionSequenceFusionTest_UpdatePose();
-            if (MotionSequenceFusionTest_IsObstacle1() && !aborting &&
+            bool arrow1Visible = MotionSequenceFusionTest_IsObstacle1()
+                ? Obstacle1Route_CameraVisible(&motionSequenceFusionTestObstacle1Routes[comparisonRunIndex].config,
+                                               &estimatedPose)
+                : motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK2_PARAMETERISED &&
+                  Task2Route_Obstacle1CameraVisible(&motionSequenceFusionTestTask2Routes[comparisonRunIndex].config,
+                                                    &estimatedPose);
+            if (MotionSequenceFusionTest_HasRecognitionApproach() && !aborting &&
                 !result->approachRecognitionReceived && MotionController_IsBusy(sequence->controller) &&
-                Obstacle1Route_CameraVisible(&motionSequenceFusionTestObstacle1Routes[comparisonRunIndex].config,
-                                             &estimatedPose))
+                arrow1Visible)
             {
                 /* Model an immediate camera/RPi reply. The active profile and
                  * endpoint survive this speed request; acceleration is bounded. */
                 motionSequenceFusionTestStatus = MotionController_RequestCruiseSpeed(sequence->controller,
-                    motionSequenceFusionTestObstacle1Routes[comparisonRunIndex].config.cruiseSpeedCps);
+                    MotionSequenceFusionTest_IsObstacle1()
+                        ? motionSequenceFusionTestObstacle1Routes[comparisonRunIndex].config.cruiseSpeedCps
+                        : motionSequenceFusionTestTask2Routes[comparisonRunIndex].config.cruiseSpeedCps);
                 if (motionSequenceFusionTestStatus == MOTIONCONTROLLER_STATUS_OK)
                 {
                     result->approachRecognitionReceived = true;
@@ -739,7 +756,7 @@ static bool MotionSequenceFusionTest_RunPattern(bool stopAfter)
     result->passed =
         motionSequenceFusionTestStatus == MOTIONCONTROLLER_STATUS_OK &&
         sequence->state == MOTION_SEQUENCE_COMPLETE &&
-        (!MotionSequenceFusionTest_IsObstacle1() || result->approachRecognitionReceived);
+        (!MotionSequenceFusionTest_HasRecognitionApproach() || result->approachRecognitionReceived);
 
     /* Reserve/replace the last slot so a truncated log still has a final sample. */
     if (motionSequenceFusionTestLogCount == FUSION_LOG_CAPACITY ||
