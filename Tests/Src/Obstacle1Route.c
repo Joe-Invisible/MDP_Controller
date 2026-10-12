@@ -12,7 +12,7 @@
  * The original Task2Route.c configuration and full-route mode remain intact. */
 Obstacle1RouteConfig obstacle1RouteConfig = {
     /* Arena and nominal body buffer. Positive y is left of the initial +x. */
-    .arrow = TASK2_ARROW_LEFT,
+    .arrow = TASK2_ARROW_RIGHT,
     .parkToObstacleMm = 1050.0f,
     .obstacleBufferMm = 100.0f,
     .arenaHalfWidthMm = 750.0f,

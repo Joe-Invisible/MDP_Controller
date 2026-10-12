@@ -39,7 +39,7 @@ static const MotionSequenceFusionTestStep tuningTestSteps[] = {
     {1000.0f, 0.0f, FUSION_SPEED_CPS},
 };
 MotionSequenceFusionTestExperiment motionSequenceFusionTestExperiment =
-    MOTION_SEQUENCE_FUSION_TEST_OBSTACLE1_BYPASS;
+		MOTION_SEQUENCE_FUSION_TEST_TASK2_PARAMETERISED;
 MotionSequenceFusionTestTuning motionSequenceFusionTestStraightTuning = {
     .yawRateKp = 150.0f,
     .yawRateKi = 50.0f,
