@@ -58,7 +58,8 @@ Task2RouteConfig task2RouteConfig = {
     .obstacleBufferMm = 100.0f,
     .obstacle2EndSpaceMm = 500.0f,
     .boundaryBufferMm = 35.0f,
-    .parkBackWallBufferMm = 15.0f,
+    .parkBackWallBufferMm = 75.0f,
+    .parkSideWallBufferMm = 100.0f,
 
     /* Both approaches accelerate after simulated recognition.
      * Recognition is instantaneous; camera/RPi integration is deferred. */
@@ -107,6 +108,13 @@ static bool Reject(Task2Route *route, const char *reason)
     return false;
 }
 
+/* Initial rear-axle origin and final body-centre target are separate anchors. */
+static float ParkFinishX(const Task2RouteConfig *c)
+{
+    return TASK2_ROUTE_PARK_CENTER_X_MM + c->bodyCenterAheadOfRearAxleMm +
+        0.5f * c->frontProtrusionMm;
+}
+
 static float CameraOffset(const Task2RouteConfig *config)
 {
     return config->bodyCenterAheadOfRearAxleMm +
@@ -144,7 +152,8 @@ static bool ValidConfig(const Task2RouteConfig *config)
     const float positive[] = {
         config->obstacle2WidthMm, config->parkToObstacle1Mm,
         config->obstacleFaceGapMm, config->obstacleBufferMm,
-        config->obstacle2EndSpaceMm, config->boundaryBufferMm, config->parkBackWallBufferMm, config->cruiseSpeedCps,
+        config->obstacle2EndSpaceMm, config->boundaryBufferMm, config->parkBackWallBufferMm, config->parkSideWallBufferMm,
+        config->cruiseSpeedCps,
         config->approachSpeedCps, config->bodyLengthMm, config->bodyWidthMm,
         config->recognitionCameraRangeMm, config->cameraHorizontalFovDeg,
         config->recognitionTargetWidthMm, config->firstArcCameraRangeMm,
@@ -223,7 +232,8 @@ static bool Parked(const Task2RouteConfig *c, const Task2RoutePose *p)
     float cy = p->yMm + centre * sinf(p->yawRad);
     float ex = 0.5f * (length * fabsf(cosf(p->yawRad)) + c->bodyWidthMm * fabsf(sinf(p->yawRad)));
     float ey = 0.5f * (length * fabsf(sinf(p->yawRad)) + c->bodyWidthMm * fabsf(cosf(p->yawRad)));
-    return cx - ex > -500.0f && cx + ex < 0.0f && fabsf(cy) + ey < 300.0f;
+    return cx - ex >= -500.0f + c->parkBackWallBufferMm && cx + ex < 0.0f &&
+        fabsf(cy) + ey <= 300.0f - c->parkSideWallBufferMm;
 }
 
 #if !TASK2_ROUTE_EXHAUSTIVE_CHECKS
@@ -476,7 +486,7 @@ static bool BuildTraverseTail(const Task2RouteConfig *c, const Task2RouteConfig 
         float rejoinRadius = fmaxf(ROUTE_MIN_RADIUS_MM, 0.5f * lateral + 50.0f);
         float angle = acosf(1.0f - lateral / (2.0f * rejoinRadius));
         float parkStraight = 100.0f + 100.0f * park;
-        float sx = TASK2_ROUTE_START_X_MM + parkStraight + 2.0f * rejoinRadius * sinf(angle);
+        float sx = ParkFinishX(c) + parkStraight + 2.0f * rejoinRadius * sinf(angle);
         out[5] = (Task2RouteStep){.distanceMm = returnStart.xMm - sx, .radiusMm = 0.0f, .speedCps = c->cruiseSpeedCps};
         out[6] = (Task2RouteStep){.distanceMm = rejoinRadius * angle, .radiusMm = -side * rejoinRadius, .speedCps = c->cruiseSpeedCps};
         out[7] = (Task2RouteStep){.distanceMm = rejoinRadius * angle, .radiusMm = side * rejoinRadius, .speedCps = c->cruiseSpeedCps};
@@ -526,8 +536,11 @@ static bool BuildTail(const Task2RouteConfig *c, Task2RoutePose p,
                 ? -(160.0f + 3.0f * k) * ROUTE_PI / 180.0f
                 : -ROUTE_PI - asinf(rb / (bx + 250.0f));
             float rx = bx - rb * sinf(rh), ry = rb * cosf(rh);
-            float gx = TASK2_ROUTE_START_X_MM - rx, gy = -ry;
+            float finishX = curvedReturn == 0U ? TASK2_ROUTE_PARK_CENTER_X_MM : ParkFinishX(c);
+            float gx = finishX - rx, gy = -ry;
             float returnRadius = 0.0f, returnLength = hypotf(gx, gy);
+            if (curvedReturn == 0U)
+                returnLength -= c->bodyCenterAheadOfRearAxleMm + 0.5f * c->frontProtrusionMm;
             if (curvedReturn == 1U)
             {
                 float den = 2.0f * (-gx * sinf(rh) + gy * cosf(rh));
@@ -538,7 +551,7 @@ static bool BuildTail(const Task2RouteConfig *c, Task2RoutePose p,
                     continue;
                 float rcx = rx - returnRadius * sinf(rh);
                 float rcy = ry + returnRadius * cosf(rh);
-                float finish = atan2f((TASK2_ROUTE_START_X_MM - rcx) / returnRadius,
+                float finish = atan2f((ParkFinishX(c) - rcx) / returnRadius,
                                      rcy / returnRadius);
                 float delta = finish - rh;
                 while (delta * returnRadius < 0.0f)
@@ -561,7 +574,7 @@ static bool BuildTail(const Task2RouteConfig *c, Task2RoutePose p,
                 float radius = fmaxf(ROUTE_MIN_RADIUS_MM, 0.5f * rb + 50.0f);
                 float angle = acosf(1.0f - rb / (2.0f * radius));
                 float parkStraight = 100.0f + 100.0f * k;
-                float sx = TASK2_ROUTE_START_X_MM + parkStraight + 2.0f * radius * sinf(angle);
+                float sx = ParkFinishX(c) + parkStraight + 2.0f * radius * sinf(angle);
                 out[2] = (Task2RouteStep){.distanceMm = bx - sx, .radiusMm = 0.0f, .speedCps = c->cruiseSpeedCps};
                 out[3] = (Task2RouteStep){.distanceMm = radius * angle, .radiusMm = -side * radius, .speedCps = c->cruiseSpeedCps};
                 out[4] = (Task2RouteStep){.distanceMm = radius * angle, .radiusMm = side * radius, .speedCps = c->cruiseSpeedCps};
@@ -647,8 +660,57 @@ static bool MakeRearArc(const Task2RouteConfig *c, Task2RoutePose start, Task2Ro
     return true;
 }
 
+static bool CheckParkingStraight(const Task2RouteConfig *c, Task2RoutePose p,
+    Task2RouteStep *straight)
+{
+    float cosine = cosf(p.yawRad), sine = sinf(p.yawRad);
+    float centre = c->bodyCenterAheadOfRearAxleMm + 0.5f * c->frontProtrusionMm;
+    float travel = (TASK2_ROUTE_PARK_CENTER_X_MM - p.xMm) * cosine - p.yMm * sine - centre;
+    if (cosine >= -0.5f || travel <= 0.0f)
+        return false;
+    *straight = (Task2RouteStep){.distanceMm = travel, .speedCps = c->cruiseSpeedCps};
+#if TASK2_ROUTE_EXHAUSTIVE_CHECKS
+    return Sweep(c, p, straight, 1U, 1.0f, true);
+#else
+    Task2RouteReport accepted = EmptyReport();
+    if (!BoundedSweep(c, p, straight, 1U, true, &accepted))
+        return false;
+    planningWork.acceptedClearance = accepted;
+    return true;
+#endif
+}
+
+/* The tangent passes through the park's body-centre target. Stopping before
+ * that point by the axle-to-body-centre offset parks the whole footprint. */
+static bool AimRearArcAtPark(Task2RoutePose start, Task2RouteStep *arc)
+{
+    float r = arc->radiusMm;
+    float cx = start.xMm - r * sinf(start.yawRad), cy = start.yMm + r * cosf(start.yawRad);
+    float dx = TASK2_ROUTE_PARK_CENTER_X_MM - cx, dy = -cy, distance = hypotf(dx, dy);
+    if (distance <= fabsf(r))
+        return false;
+    float bearing = atan2f(dy, dx), offset = acosf(fabsf(r) / distance);
+    for (int sign = -1; sign <= 1; sign += 2)
+    {
+        float angle = bearing + sign * offset;
+        float ex = cx + fabsf(r) * cosf(angle), ey = cy + fabsf(r) * sinf(angle);
+        float heading = atan2f((ex - cx) / r, (cy - ey) / r);
+        float goalHeading = atan2f(-ey, TASK2_ROUTE_PARK_CENTER_X_MM - ex);
+        if (cosf(heading - goalHeading) < 0.9999f)
+            continue;
+        float delta = atan2f(sinf(heading - start.yawRad), cosf(heading - start.yawRad));
+        if (delta * r < 0.0f)
+            delta += copysignf(2.0f * ROUTE_PI, r);
+        if (fabsf(delta) > 1.5f * ROUTE_PI)
+            continue;
+        arc->distanceMm = delta * r;
+        return true;
+    }
+    return false;
+}
+
 static bool RearBypassAt(const Task2RouteConfig *bounds, Task2RoutePose p,
-    float positioningDistance, Task2RouteStep out[2], unsigned *count)
+    float positioningDistance, Task2RouteStep out[2], unsigned *count, bool tangentReturn)
 {
     unsigned arcIndex = positioningDistance > 0.0f ? 1U : 0U;
     Task2RoutePose arcStart = p;
@@ -657,7 +719,8 @@ static bool RearBypassAt(const Task2RouteConfig *bounds, Task2RoutePose p,
         out[0] = (Task2RouteStep){.distanceMm = positioningDistance, .speedCps = bounds->cruiseSpeedCps};
         arcStart = Advance(p, positioningDistance, 0.0f);
     }
-    if (!MakeRearArc(bounds, arcStart, &out[arcIndex]))
+    if (!MakeRearArc(bounds, arcStart, &out[arcIndex]) ||
+        (tangentReturn && !AimRearArcAtPark(arcStart, &out[arcIndex])))
         return false;
     bool crossed[2][2] = {{false, false}, {false, false}};
     crossed[1][0] = p.xMm >= bounds->parkToObstacle1Mm + 150.0f + bounds->obstacleFaceGapMm;
@@ -678,31 +741,55 @@ static bool RearBypassAt(const Task2RouteConfig *bounds, Task2RoutePose p,
  * Prefer a direct arc; otherwise bracket a positioning straight geometrically
  * and refine it with at most ten clearance checks. The accepting check is reused. */
 static bool BuildParallelReturn(const Task2RouteConfig *c, Task2RoutePose p,
-    float width, Task2RouteStep out[6], unsigned *count)
+    float width, Task2RouteStep out[6], unsigned *count, bool *tangentReturn)
 {
     Task2RouteConfig bounds = ObservedBounds(c, width);
     float h = c->secondArrow * p.yawRad;
     if (bounds.obstacle2EndSpaceMm <= 0.0f || fabsf(h) > 15.0f * ROUTE_PI / 180.0f)
         return false;
-    if (RearBypassAt(&bounds, p, 0.0f, out, count))
-        return true;
     float rear = c->parkToObstacle1Mm + 200.0f + c->obstacleFaceGapMm;
     float front = c->bodyCenterAheadOfRearAxleMm + 0.5f * c->bodyLengthMm + c->frontProtrusionMm;
-    float hi = (rear + front + 21.0f - p.xMm) / cosf(h), lo = 0.0f;
-    if (hi <= 0.0f || !RearBypassAt(&bounds, p, hi, out, count))
-        return false;
-    for (unsigned i = 0U; i < 10U; ++i)
+    float upperPosition = (rear + front + 21.0f - p.xMm) / cosf(h);
+    for (unsigned attempt = 0U; attempt < 2U; ++attempt)
     {
-        if (planningWork.exhausted)
-            return false;
-        float mid = 0.5f * (lo + hi);
-        if (RearBypassAt(&bounds, p, mid, out, count))
-            hi = mid;
-        else
-            lo = mid;
+        bool tangent = attempt == 0U;
+        if (!RearBypassAt(&bounds, p, 0.0f, out, count, tangent))
+        {
+            float hi = upperPosition, lo = 0.0f;
+            if (hi <= 0.0f || !RearBypassAt(&bounds, p, hi, out, count, tangent))
+                continue;
+            for (unsigned i = 0U; i < 10U; ++i)
+            {
+                if (planningWork.exhausted)
+                    return false;
+                float mid = 0.5f * (lo + hi);
+                if (RearBypassAt(&bounds, p, mid, out, count, tangent))
+                    hi = mid;
+                else
+                    lo = mid;
+            }
+            if (!RearBypassAt(&bounds, p, hi + 10.0f, out, count, tangent))
+                continue;
+        }
+        if (tangent)
+        {
+#if !TASK2_ROUTE_EXHAUSTIVE_CHECKS
+            Task2RouteReport arcClearance = planningWork.acceptedClearance;
+#endif
+            Task2RoutePose finish = p;
+            for (unsigned i = 0U; i < *count; ++i)
+                finish = Advance(finish, out[i].distanceMm, out[i].radiusMm);
+            Task2RouteStep straight;
+            if (!CheckParkingStraight(&bounds, finish, &straight))
+                continue;
+#if !TASK2_ROUTE_EXHAUSTIVE_CHECKS
+            MergeMargins(&planningWork.acceptedClearance, &arcClearance);
+#endif
+        }
+        *tangentReturn = tangent;
+        return true;
     }
-    /* Small longitudinal reserve after locating the collision-free entry. */
-    return RearBypassAt(&bounds, p, hi + 10.0f, out, count);
+    return false;
 }
 
 static float WrapYaw(float yaw)
@@ -739,24 +826,29 @@ static bool ParkingJoinAt(const Task2RouteConfig *c, Task2RoutePose p, float tra
 }
 
 static bool BuildParkingReturn(const Task2RouteConfig *c, Task2RoutePose p,
-    float width, Task2RouteStep out[4])
+    float width, Task2RouteStep out[4], unsigned *count)
 {
     Task2RouteConfig bounds = ObservedBounds(c, width);
-    if (fabsf(WrapYaw(p.yawRad + c->secondArrow * ROUTE_PI)) > 15.0f * ROUTE_PI / 180.0f)
+    if (CheckParkingStraight(&bounds, p, &out[0]))
+    {
+        *count = 1U;
+        return true;
+    }
+    if (fabsf(WrapYaw(p.yawRad + c->secondArrow * ROUTE_PI)) > 45.0f * ROUTE_PI / 180.0f)
         return false;
     for (unsigned park = 0U; park < 4U; ++park)
     {
         float parkStraight = 100.0f + 100.0f * park;
-        float lo = 0.0f, hi = p.xMm - TASK2_ROUTE_START_X_MM, x;
-        if (hi <= 0.0f || !ParkingJoinAt(c, p, lo, parkStraight, out, &x) || x < TASK2_ROUTE_START_X_MM ||
-            !ParkingJoinAt(c, p, hi, parkStraight, out, &x) || x > TASK2_ROUTE_START_X_MM)
+        float lo = 0.0f, hi = p.xMm - ParkFinishX(c), x;
+        if (hi <= 0.0f || !ParkingJoinAt(c, p, lo, parkStraight, out, &x) || x < ParkFinishX(c) ||
+            !ParkingJoinAt(c, p, hi, parkStraight, out, &x) || x > ParkFinishX(c))
             continue;
         for (unsigned i = 0U; i < 14U; ++i)
         {
             float mid = 0.5f * (lo + hi);
             if (!ParkingJoinAt(c, p, mid, parkStraight, out, &x))
                 return false;
-            if (x > TASK2_ROUTE_START_X_MM)
+            if (x > ParkFinishX(c))
                 lo = mid;
             else
                 hi = mid;
@@ -765,12 +857,16 @@ static bool BuildParkingReturn(const Task2RouteConfig *c, Task2RoutePose p,
             continue;
 #if TASK2_ROUTE_EXHAUSTIVE_CHECKS
         if (Sweep(&bounds, p, out, 4U, 1.0f, true))
+        {
+            *count = 4U;
             return true;
+        }
 #else
         Task2RouteReport accepted = EmptyReport();
         if (BoundedSweep(&bounds, p, out, 4U, true, &accepted))
         {
             planningWork.acceptedClearance = accepted;
+            *count = 4U;
             return true;
         }
 #endif
@@ -1016,12 +1112,14 @@ bool Task2Route_ReplanParallelReturn(Task2Route *route, const Task2RoutePose *po
     planningWork.exhausted = false;
     Task2RouteStep tail[9];
     unsigned count = 0U;
+    bool tangentReturn = false;
     if (!route || !pose || !route->obstacle2ParallelReturnPending ||
         completedQuarterStep + 1U != route->stepCount || !isfinite(width) || width < 300.0f ||
         !isfinite(pose->xMm) || !isfinite(pose->yMm) || !isfinite(pose->yawRad) ||
-        !BuildParallelReturn(&route->config, *pose, width, tail, &count))
+        !BuildParallelReturn(&route->config, *pose, width, tail, &count, &tangentReturn))
         return route ? FinishPlanning(route, Reject(route, "NO_PARALLEL_RETURN")) : false;
     route->obstacle2ParallelReturnPending = false;
+    route->obstacle2TangentRearArc = tangentReturn;
     route->obstacle2ParkReturnPending = true;
     route->obstacle2DirectRearArc = tail[0].radiusMm != 0.0f;
     return InstallSuffix(route, pose, width, tail, count, completedQuarterStep,
@@ -1034,13 +1132,16 @@ bool Task2Route_ReplanParkingReturn(Task2Route *route, const Task2RoutePose *pos
     planningWork.poseChecks = 0U;
     planningWork.exhausted = false;
     Task2RouteStep tail[4];
+    unsigned count = 0U;
     if (!route || !pose || !route->obstacle2ParkReturnPending ||
         completedRearStep + 1U != route->stepCount || !isfinite(width) || width < 300.0f ||
         !isfinite(pose->xMm) || !isfinite(pose->yMm) || !isfinite(pose->yawRad) ||
-        !BuildParkingReturn(&route->config, *pose, width, tail))
+        !BuildParkingReturn(&route->config, *pose, width, tail, &count))
         return route ? FinishPlanning(route, Reject(route, "NO_PARKING_RETURN")) : false;
     route->obstacle2ParkReturnPending = false;
-    return InstallSuffix(route, pose, width, tail, 4U, completedRearStep, 0U, "OK_PARKING_RETURN");
+    route->obstacle2StraightParkReturn = count == 1U;
+    return InstallSuffix(route, pose, width, tail, count, completedRearStep, 0U,
+        count == 1U ? "OK_STRAIGHT_PARK_RETURN" : "OK_PARKING_RETURN");
 }
 
 /* Exact rectangle separation axes plus vertex-to-rectangle distances. */
@@ -1072,6 +1173,40 @@ static float ObstacleGap(const Task2RouteConfig *c, const Task2RoutePose *p,
         minY <= halfWidth && maxY >= -halfWidth &&
         minF <= hf && maxF >= -hf && minS <= hs && maxS >= -hs;
     return overlap ? 0.0f : gap;
+}
+
+static float ParkWallGap(const Task2RouteConfig *c, const Task2RoutePose *p,
+    const float cx[4], const float cy[4], float ax, float ay, float bx, float by,
+    float cosine, float sine)
+{
+    float gap = INFINITY, vx = bx - ax, vy = by - ay, length2 = vx * vx + vy * vy;
+    for (unsigned i = 0U; i < 4U; ++i)
+    {
+        float t = fminf(1.0f, fmaxf(0.0f, ((cx[i] - ax) * vx + (cy[i] - ay) * vy) / length2));
+        gap = fminf(gap, hypotf(cx[i] - ax - t * vx, cy[i] - ay - t * vy));
+        unsigned next = (i + 1U) % 4U;
+        float ex = cx[next] - cx[i], ey = cy[next] - cy[i];
+        float den = ex * vy - ey * vx;
+        if (fabsf(den) > 0.00001f)
+        {
+            float dx = ax - cx[i], dy = ay - cy[i];
+            float edgeT = (dx * vy - dy * vx) / den;
+            float wallT = (dx * ey - dy * ex) / den;
+            if (edgeT >= 0.0f && edgeT <= 1.0f && wallT >= 0.0f && wallT <= 1.0f)
+                return 0.0f;
+        }
+    }
+    float centre = c->bodyCenterAheadOfRearAxleMm + 0.5f * c->frontProtrusionMm;
+    float halfLength = 0.5f * (c->bodyLengthMm + c->frontProtrusionMm);
+    for (unsigned end = 0U; end < 2U; ++end)
+    {
+        float dx = (end ? bx : ax) - p->xMm, dy = (end ? by : ay) - p->yMm;
+        float forward = dx * cosine + dy * sine - centre;
+        float lateral = -dx * sine + dy * cosine;
+        gap = fminf(gap, hypotf(fmaxf(0.0f, fabsf(forward) - halfLength),
+            fmaxf(0.0f, fabsf(lateral) - 0.5f * c->bodyWidthMm)));
+    }
+    return gap;
 }
 
 static bool CheckFootprint(const Task2RouteConfig *c,
@@ -1107,6 +1242,11 @@ static bool CheckFootprint(const Task2RouteConfig *c,
                                                     300.0f - fabsf(y));
         }
     }
+    report->minimumParkSideMarginMm = fminf(report->minimumParkSideMarginMm,
+        fminf(ParkWallGap(c, p, cx, cy, -500.0f, -300.0f, 0.0f, -300.0f, cosine, sine),
+              ParkWallGap(c, p, cx, cy, -500.0f, +300.0f, 0.0f, +300.0f, cosine, sine)));
+    report->minimumParkBackMarginMm = fminf(report->minimumParkBackMarginMm,
+        ParkWallGap(c, p, cx, cy, -500.0f, -300.0f, -500.0f, +300.0f, cosine, sine));
     report->minimumParkWallMarginMm = fminf(report->minimumParkBackMarginMm, report->minimumParkSideMarginMm);
     float firstX = c->parkToObstacle1Mm + 50.0f;
     float secondX = c->parkToObstacle1Mm + 150.0f + c->obstacleFaceGapMm;
@@ -1115,7 +1255,7 @@ static bool CheckFootprint(const Task2RouteConfig *c,
               includeObstacle2 ? ObstacleGap(c, p, cx, cy, secondX, 0.5f * c->obstacle2WidthMm) : INFINITY));
     return report->minimumObstacleGapMm >= c->obstacleBufferMm &&
         report->minimumSideMarginMm >= c->boundaryBufferMm &&
-        report->minimumParkSideMarginMm >= c->boundaryBufferMm &&
+        report->minimumParkSideMarginMm >= c->parkSideWallBufferMm &&
         report->minimumParkBackMarginMm >= c->parkBackWallBufferMm;
 }
 

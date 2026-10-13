@@ -23,7 +23,7 @@ define task2-motion-export
         p task2MotionTestControllerConfig.arcConfig->negativePoints[0] @ task2MotionTestControllerConfig.arcConfig->negativePointCount
     end
     if task2MotionTestRoute.obstacle2IRDeparture
-        echo Steps: Approach O1 -> O1 depart -> O1 bypass exit -> Approach O2 -> IR arc (90 deg cap; IR disabled) -> IR straight (initial absence or trend onset; no distance cap) -> R275 quarter to 0 -> measured parallel stop -> direct rear arc (positioning straight only if needed) -> measured rear stop -> separate parking join -> Return park\n
+        echo Steps: Approach O1 -> O1 depart -> O1 bypass exit -> Approach O2 -> IR arc (90 deg cap; IR disabled) -> IR straight (initial absence or trend onset; no distance cap) -> R275 quarter to 0 -> measured parallel stop -> direct rear arc (positioning straight only if needed) -> measured rear stop -> one straight into park (alignment fallback) -> Return park\n
     else
         echo Steps: Approach O1 -> O1 depart -> O1 bypass exit -> Approach O2 -> sensor departure -> clearance/back -> Return park\n
     end

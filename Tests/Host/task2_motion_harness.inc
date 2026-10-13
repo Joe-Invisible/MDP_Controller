@@ -339,7 +339,10 @@ static void checkCompleted(void)
     float cx=idealPose.xMm+centre*cosf(idealPose.yawRad), cy=idealPose.yMm+centre*sinf(idealPose.yawRad);
     float ex=0.5f*(length*fabsf(cosf(idealPose.yawRad))+c->bodyWidthMm*fabsf(sinf(idealPose.yawRad)));
     float ey=0.5f*(length*fabsf(sinf(idealPose.yawRad))+c->bodyWidthMm*fabsf(cosf(idealPose.yawRad)));
-    assert(cx-ex > -500 && cx+ex < 0 && fabsf(cy)+ey < 300);
+    assert(cx-ex >= -500+c->parkBackWallBufferMm && cx+ex < 0 &&
+        fabsf(cy)+ey <= 300-c->parkSideWallBufferMm);
+    assert(task2MotionTestRoute.report.minimumParkSideMarginMm >= c->parkSideWallBufferMm);
+    assert(task2MotionTestRoute.report.minimumParkBackMarginMm >= c->parkBackWallBufferMm);
 }
 
 static void testSensorEvents(void)
@@ -652,7 +655,7 @@ static void testRun08RearBypass(void)
             else {float end=yaw+step->distanceMm/step->radiusMm;p.xMm+=step->radiusMm*(sinf(end)-sinf(yaw));p.yMm+=step->radiusMm*(cosf(yaw)-cosf(end));p.yawRad=end;}
         }
         assert(Task2Route_ReplanParkingReturn(&route,&p,751.408508f,8));
-        assert(!route.obstacle2ParkReturnPending && route.stepCount==13);
+        assert(!route.obstacle2ParkReturnPending && route.obstacle2StraightParkReturn && route.stepCount==10);
     }
     puts("PASS: run08 751 mm bound and mirror: short positioning straight, calculated rear arc, separate parking");
 }
@@ -717,9 +720,90 @@ static void testRun10SustainedLowerIR(void)
     puts("PASS: run10 and mirror use onset width 554.3 mm, equal low medians confirm decline, braking confirmation unchanged");
 }
 
+static void testParkWallDistances(void)
+{
+    Task2RouteConfig c=task2RouteConfig;
+    assert(c.parkSideWallBufferMm==100 && c.parkBackWallBufferMm==75);
+    Task2RouteReport report={.minimumObstacleGapMm=INFINITY,.minimumSideMarginMm=INFINITY,
+        .minimumParkWallMarginMm=INFINITY,.minimumParkBackMarginMm=INFINITY,.minimumParkSideMarginMm=INFINITY};
+    /* Entirely outside the park, but only 58 mm from an entrance corner. */
+    Task2RoutePose nearTip={260,170,PI};
+    assert(!Task2Route_CheckPose(&c,&nearTip,&report));
+    near(report.minimumParkSideMarginMm,sqrtf(50*50+30*30),0.01f);
+    c.parkSideWallBufferMm=35;
+    report=(Task2RouteReport){.minimumObstacleGapMm=INFINITY,.minimumSideMarginMm=INFINITY,
+        .minimumParkWallMarginMm=INFINITY,.minimumParkBackMarginMm=INFINITY,.minimumParkSideMarginMm=INFINITY};
+    assert(Task2Route_CheckPose(&c,&nearTip,&report));
+    c.parkSideWallBufferMm=100;
+    report=(Task2RouteReport){.minimumObstacleGapMm=INFINITY,.minimumSideMarginMm=INFINITY,
+        .minimumParkWallMarginMm=INFINITY,.minimumParkBackMarginMm=INFINITY,.minimumParkSideMarginMm=INFINITY};
+    Task2RoutePose centred={-163.5f,0,PI};
+    assert(Task2Route_CheckPose(&c,&centred,&report));
+    near(report.minimumParkBackMarginMm,126.5f,0.01f);
+    near(report.minimumParkSideMarginMm,200,0.01f);
+    report=(Task2RouteReport){.minimumObstacleGapMm=INFINITY,.minimumSideMarginMm=INFINITY,
+        .minimumParkWallMarginMm=INFINITY,.minimumParkBackMarginMm=INFINITY,.minimumParkSideMarginMm=INFINITY};
+    Task2RoutePose oldAxleTarget={-250,0,PI};
+    assert(!Task2Route_CheckPose(&c,&oldAxleTarget,&report));
+    near(report.minimumParkBackMarginMm,40,0.01f);
+    Task2Route rejected;c.parkSideWallBufferMm=-1;
+    assert(!Task2Route_Create(&c,&rejected));
+    puts("PASS: 100 mm side/tip and 75 mm back buffers; centred whole-body stop; old axle target rejected");
+}
+
+static void testRecordedStraightParking(void)
+{
+    for(unsigned run=0;run<2;++run)for(int mirror=-1;mirror<=1;mirror+=2)
+    {
+        Task2RouteConfig c=task2RouteConfig;
+        int side=run ? 1 : -1;side*=mirror;
+        c.firstArrow=-side;c.secondArrow=side;
+        c.cruiseSpeedCps=7000;c.approachSpeedCps=3000;c.obstacle2DepartureSpeedCps=2000;
+        c.parkToObstacle1Mm=run ? 1041.3075f : 1054.17004f;
+        float width=run ? 554.2737f : 549.136108f;
+        Task2RoutePose start=run
+            ? (Task2RoutePose){2119.3374f,mirror*500.973938f,mirror*.0021392107f}
+            : (Task2RoutePose){2114.65723f,mirror*-556.693787f,mirror*.00684380531f};
+        Task2Route route={.config=c,.stepCount=7,.obstacle2IRDeparture=true,.obstacle2ParallelReturnPending=true};
+        assert(Task2Route_ReplanParallelReturn(&route,&start,width,6));
+        assert(route.obstacle2TangentRearArc && route.obstacle2DirectRearArc && route.stepCount==8);
+        task2MotionTestRoute=route;resetHardware(0);idealPose=start;
+        RobotTestFixture fixture;
+        assert(RobotTestFixture_InitMotionController(&fixture,&task2MotionTestControllerConfig));
+        starts=1;uint32_t motionStart=HAL_GetTick();
+        for(unsigned i=7;i<route.stepCount;++i)
+        {
+            Task2RouteStep step=route.steps[i];
+            assert((step.radiusMm==0 ? MotionController_MoveStraight(&fixture.motionController,step.distanceMm,step.speedCps)
+                : MotionController_MoveArc(&fixture.motionController,step.distanceMm,step.radiusMm,step.speedCps))==0);
+            unsigned updates=0;
+            while(MotionController_IsBusy(&fixture.motionController))
+            {
+                HAL_Delay(10);assert(MotionController_Update(&fixture.motionController,0.01f)==0);
+                assert(++updates<10000);
+            }
+            if(route.obstacle2ParkReturnPending && i+1==route.stepCount)
+            {
+                assert(Task2Route_ReplanParkingReturn(&route,&idealPose,width,i));
+                assert(route.obstacle2StraightParkReturn && route.stepCount==9);
+                task2MotionTestRoute=route;
+            }
+        }
+        assert(idealReport.minimumParkSideMarginMm>=100 && idealReport.minimumParkBackMarginMm>=75);
+        float centre=c.bodyCenterAheadOfRearAxleMm+c.frontProtrusionMm/2;
+        float cx=idealPose.xMm+centre*cosf(idealPose.yawRad),cy=idealPose.yMm+centre*sinf(idealPose.yawRad);
+        float ex=(c.bodyLengthMm+c.frontProtrusionMm)/2*fabsf(cosf(idealPose.yawRad))+c.bodyWidthMm/2*fabsf(sinf(idealPose.yawRad));
+        float ey=(c.bodyLengthMm+c.frontProtrusionMm)/2*fabsf(sinf(idealPose.yawRad))+c.bodyWidthMm/2*fabsf(cosf(idealPose.yawRad));
+        assert(cx-ex>=-425 && cx+ex<0 && fabsf(cy)+ey<=200);
+        printf("PASS: run%u mirror%d rear arc -> one parking straight: %u ms, side %.1f mm, back %.1f mm, centre (%.1f, %.1f)\n",
+            run+9,mirror,HAL_GetTick()-motionStart,idealReport.minimumParkSideMarginMm,idealReport.minimumParkBackMarginMm,cx,cy);
+    }
+}
+
 int main(void)
 {
     setbuf(stdout, NULL);
+    testParkWallDistances();
     testSensorEvents();
     testStraightIREdgeMethods();
     testRun10SustainedLowerIR();
@@ -864,6 +948,7 @@ int main(void)
     }
     puts("PASS: unknown actual 300 mm O2 with nominal 500 mm planning in both mirrors; ambiguous ADC timeout");
     testRecordedQuarterReturn();
+    testRecordedStraightParking();
     puts("PASS: measured asymmetric frame, one startup range, frozen configuration, invalid input, cancellation, timeout and IMU fault");
     printf("Planner pose checks: max startup %u, max return %u\n",maxStartupChecks,maxReturnChecks);
     return 0;

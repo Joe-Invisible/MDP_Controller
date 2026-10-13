@@ -43,19 +43,27 @@ validation; ADC is used for presence/trend, not converted to a range.
 After braking, the route has three separately planned stopped stages:
 
 1. R275 quarter-turn opposite to departure, ending parallel at heading zero.
-2. Rear bypass from the measured quarter-turn stop. The radius and return lane
-   are calculated from the observed width, body dimensions and fixed arena side
-   limits. A direct arc is preferred. If its entry clips O2, a geometrically
-   bracketed positioning straight is refined with at most ten checks; there is
-   no radius grid or parking search in this stage.
-3. Parking join from the measured rear-arc stop. Up to four longitudinal parking
-   choices are considered, with a bounded scalar solve and unequal alignment-arc
-   angles to account for the measured heading error.
+2. Rear bypass from the measured quarter-turn stop. Its radius follows from
+   obstacle clearance and available arena side space. Prefer a tangent rear arc
+   aimed through the carpark's body-centre target, so one straight can finish the
+   return. Entry collisions get a bounded positioning-straight refinement. The
+   predicted tangent straight must clear O1, O2 and the buffered carpark. If it
+   cannot, retain the parallel rear-arc/alignment fallback.
+3. From the measured rear-arc stop, recheck the straight with that actual heading.
+   Its length places the whole body's centre closest to (-250, 0), accounting for
+   the rear axle's offset. If the straight cannot fit, use the existing four-choice
+   parking join with unequal alignment angles. A direct return can park diagonally;
+   full-body containment and wall buffers, rather than exact 180-degree yaw, decide
+   acceptance. `obstacle2TangentRearArc` and `obstacle2StraightParkReturn` identify
+   these choices in the export.
 
 The R275 turn, positioning straight and rear arc retain the agreed reduced
 obstacle-buffer exception. Body overlap and side-boundary violations are still
 rejected. Straight return and parking keep the normal 100 mm obstacle buffer,
-35 mm side/park-mouth margin and 15 mm park back-wall margin. The larger of nominal
+35 mm arena side margin. Carpark walls have separate margins: **100 mm for
+both side walls and their entrance tips**, and **75 mm for the back wall**.
+Distances to the finite wall segments are checked even while the chassis is
+outside the park mouth, so corner approaches cannot evade the side buffer. The larger of nominal
 and observed width is checked, with the original arena side boundaries retained.
 
 The fixed O1 template is validated offline, with no online sweep. Variable O2
@@ -71,6 +79,13 @@ Exports include `routeSetupMs`, `returnSetupMs` (R275), `parallelReturnSetupMs`
 (rear bypass), and `parkingReturnSetupMs`, plus the measured stops at each stage.
 Pending flags identify the stage: `obstacle2ReturnPending`,
 `obstacle2ParallelReturnPending`, and `obstacle2ParkReturnPending`.
+
+The initial rear-axle coordinate remains -250 mm. The finish target instead
+centres the entire collision footprint, including its front protrusion. At a
+180-degree heading, the rear axle finishes at -163.5 mm, with 126.5 mm nominal
+back-wall clearance and 200 mm side clearance. The tangent straight accounts for
+its diagonal heading when targeting the body centre. Stopping and sensor/control
+errors still require physical verification.
 
 ## Configuration
 
@@ -169,7 +184,12 @@ also replay run08 ADC (about 507 mm from onset versus the former 751 mm estimate
 its original 751 mm return bound and mirror, run10's abrupt drop settling at an
 unchanged median (about 554 mm from onset versus its former 651 mm fallback),
 noise/rebounds, initial absence, and
-an actual 300 mm obstacle while the planner still assumes 500 mm.
+an actual 300 mm obstacle while the planner still assumes 500 mm. Recorded
+run09/run10 quarter-turn poses and their mirrors use one parking straight after
+the rear arc, with the entire simulated robot inside: minimum wall gaps in the
+controller fixture exceed 110 mm at the sides/tips and 102 mm at the back.
+Explicit checks reject the old rear-axle finish target and close approaches to
+an entrance tip even when the whole chassis is still outside the park.
 The run03 recorded stop with a 647 mm width bound and its mirror execute through
 the real stopped controller fixture, verifying the measured quarter-turn stop,
 direct back arc, obstacle crossings, full-body clearance and parking.

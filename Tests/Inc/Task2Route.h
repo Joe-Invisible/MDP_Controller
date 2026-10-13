@@ -9,6 +9,7 @@
 #define TASK2_ROUTE_O2_DEPARTURE_STEP 4U
 #define TASK2_ROUTE_O2_IR_STRAIGHT_STEP 5U
 #define TASK2_ROUTE_START_X_MM (-250.0f)
+#define TASK2_ROUTE_PARK_CENTER_X_MM (-250.0f)
 #ifndef TASK2_ROUTE_RUNTIME_POSE_CHECK_LIMIT
 #define TASK2_ROUTE_RUNTIME_POSE_CHECK_LIMIT 12288U
 #endif
@@ -32,8 +33,9 @@ typedef struct
     float parkToObstacle1Mm;       /* Park mouth to O1 front face. */
     float obstacleFaceGapMm;       /* O1 back face to O2 front face. */
     float obstacleBufferMm;        /* Minimum nominal outer-body clearance. */
-    float parkBackWallBufferMm;
-    float boundaryBufferMm;         /* Nominal margin from arena/park walls. */
+    float parkBackWallBufferMm; /* Back wall has a separate, slightly smaller margin. */
+    float parkSideWallBufferMm; /* Also protects the two entrance wall tips. */
+    float boundaryBufferMm;         /* Nominal margin from arena side boundaries. */
     float obstacle2EndSpaceMm;     /* Worst-case available space at each end. */
 
     float cruiseSpeedCps;
@@ -55,9 +57,9 @@ typedef struct
     float obstacle2ApproachMaxMm;
     float obstacle2DepartureWidthReserveMm; /* Whole-width reserve for sensing delay/model. */
     float obstacle2DepartureSpeedCps;
-    float obstacle2IRAcquisitionSpeedCps; /* Brief soft cap near the IR yaw gate, before presence is armed. */
+    float obstacle2IRAcquisitionSpeedCps; /* Soft cap on the IR straight until presence is armed. */
     float secondDepartureRadiusMm;
-    float secondIRDepartureRadiusMm; /* Opposite arrows: looser, IR-terminated arc. */
+    float secondIRDepartureRadiusMm; /* Opposite arrows: looser arc to the stopped 90-degree heading. */
     float secondIRDepartureGuardExtraMm; /* Beyond confirmation and braking estimates. */
     float secondBackExtraRadiusMm; /* Back radius = W2/2 + this value. */
 
@@ -123,6 +125,8 @@ typedef struct
     float totalYawRad;
     bool obstacle2IRDeparture;
     bool obstacle2ReturnPending;
+    bool obstacle2TangentRearArc; /* Rear arc aims along a straight into the park. */
+    bool obstacle2StraightParkReturn; /* Actual measured stop allowed one parking straight. */
     bool obstacle2DirectRearArc; /* False: a forward positioning straight was needed. */
     bool obstacle2ParkReturnPending; /* Plan parking after the measured rear-arc stop. */
     bool obstacle2ParallelReturnPending; /* Plan the rest after the measured R275 stop. */
