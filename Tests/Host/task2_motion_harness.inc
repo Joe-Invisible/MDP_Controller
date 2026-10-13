@@ -249,7 +249,9 @@ static void checkCompleted(void)
     assert(task2MotionTestDetection.detected && task2MotionTestDetection.observedWidthMm>=300);
     if(task2MotionTestRoute.obstacle2IRDeparture)
     {
-        assert(!task2MotionTestRoute.obstacle2ReturnPending);
+        assert(!task2MotionTestRoute.obstacle2ReturnPending && !task2MotionTestRoute.obstacle2ParallelReturnPending);
+        assert(task2MotionTestRoute.report.obstacleBufferExceptionUsed);
+        near(task2MotionTestResult.obstacle2ParallelStoppedPose.yawRad,0,0.04f);
         assert(task2MotionTestDetection.source==(task2MotionTestRoute.config.secondArrow==1
             ? TASK2_SENSOR_RIGHT_IR : TASK2_SENSOR_LEFT_IR));
     }
@@ -468,6 +470,68 @@ static void testTraverseFallback(void)
     puts("PASS: front/back traverse fallback through real stopped controller, end-space clearance and parking");
 }
 
+static void testRecordedQuarterReturn(void)
+{
+    for (int side=-1; side<=1; side+=2)
+    {
+        Task2RouteConfig c=task2RouteConfig;
+        c.parkToObstacle1Mm=1050.73999f;c.firstArrow=-side;c.secondArrow=side;
+        /* Treat the inferred 647 mm obstacle as real for this regression,
+         * keeping the logged 750 mm side boundary. */
+        c.obstacle2WidthMm=647.003174f;c.obstacle2EndSpaceMm=750-c.obstacle2WidthMm/2;
+        Task2Route route={.config=c,.stepCount=6,.obstacle2IRDeparture=true,.obstacle2ReturnPending=true};
+        Task2RoutePose stop={1859.04907f,side*217.813293f,side*1.57820058f};
+        /* The buffer exception still rejects body overlap and side-wall loss. */
+        Task2Route rejected = route;
+        Task2RoutePose collision = {c.parkToObstacle1Mm + 150 + c.obstacleFaceGapMm, 0, side*PI/2};
+        assert(!Task2Route_ReplanObstacle2(&rejected,&collision,647.003174f,5));
+        assert(!strcmp(rejected.report.reason,"NO_IR_QUARTER_TURN"));
+        rejected = route;
+        Task2RoutePose wall = stop;
+        wall.yMm = side*700;
+        assert(!Task2Route_ReplanObstacle2(&rejected,&wall,647.003174f,5));
+        assert(!strcmp(rejected.report.reason,"NO_IR_QUARTER_TURN"));
+        assert(Task2Route_ReplanObstacle2(&route,&stop,647.003174f,5));
+        assert(route.obstacle2ParallelReturnPending && route.stepCount==7);
+        near(route.steps[6].radiusMm,-side*275,0);
+        task2MotionTestRoute=route;resetHardware(0);idealPose=stop;
+        RobotTestFixture fixture;
+        assert(RobotTestFixture_InitMotionController(&fixture,&task2MotionTestControllerConfig));
+        starts=1;
+        for(unsigned i=6;i<route.stepCount;++i)
+        {
+            Task2RouteStep step=route.steps[i];
+            assert((step.radiusMm==0 ? MotionController_MoveStraight(&fixture.motionController,step.distanceMm,step.speedCps)
+                : MotionController_MoveArc(&fixture.motionController,step.distanceMm,step.radiusMm,step.speedCps))==0);
+            unsigned updates=0;
+            while(MotionController_IsBusy(&fixture.motionController))
+            {
+                HAL_Delay(10);assert(MotionController_Update(&fixture.motionController,0.01f)==0);
+                assert(++updates<10000);
+            }
+            if(i==6)
+            {
+                near(idealPose.yawRad,0,0.04f);
+                assert(Task2Route_ReplanParallelReturn(&route,&idealPose,647.003174f,6));
+                assert(!route.obstacle2ParallelReturnPending && route.obstacle2DirectRearArc && route.stepCount==12);
+                task2MotionTestRoute=route;
+            }
+        }
+        assert(physicalCrossings[1][0] && physicalCrossings[1][1]);
+        assert(idealReport.minimumObstacleGapMm>0 && idealReport.minimumSideMarginMm>35 && idealReport.minimumParkWallMarginMm>0);
+        float rear=c.bodyCenterAheadOfRearAxleMm-c.bodyLengthMm/2;
+        float front=c.bodyCenterAheadOfRearAxleMm+c.bodyLengthMm/2+c.frontProtrusionMm;
+        for(unsigned f=0;f<2;++f)for(int sign=-1;sign<=1;sign+=2)
+        {
+            float ahead=f?front:rear;
+            float x=idealPose.xMm+ahead*cosf(idealPose.yawRad)-sign*c.bodyWidthMm/2*sinf(idealPose.yawRad);
+            float y=idealPose.yMm+ahead*sinf(idealPose.yawRad)+sign*c.bodyWidthMm/2*cosf(idealPose.yawRad);
+            assert(x>-500 && x<0 && fabsf(y)<300);
+        }
+    }
+    puts("PASS: run03 stop and its mirror, R275 measured quarter stop, direct calculated rear arc and parking");
+}
+
 int main(void)
 {
     setbuf(stdout, NULL);
@@ -514,7 +578,7 @@ int main(void)
         else if(task2MotionTestRoute.stepCount==14)++traverseReturns;
     }
     assert(shortReturns+alignedReturns+traverseReturns+irReturns==runs);
-    assert(runs==112 && rejected==12 && stoppedRejected==4);
+    assert(runs==128 && rejected==0 && stoppedRejected==0);
     printf("Return variants: %u direct, %u aligned, %u traverses, %u IR-directed\n",shortReturns,alignedReturns,traverseReturns,irReturns);
     printf("PASS: 128 layouts: %u completed, %u rejected before motors, %u rejected while stopped at edge\n", runs, rejected, stoppedRejected);
     unsigned fastCompleted=0, fastRejected=0;
@@ -575,6 +639,7 @@ int main(void)
     puts("PASS: IR never acquired, IR ADC fault, and ultrasonic background cannot terminate opposite-arrow departure");
     task2RouteConfig=tuned;resetHardware(0);Task2MotionTestRun();checkCompleted();
     puts("PASS: current published tuning and arrow configuration");
+    testRecordedQuarterReturn();
     puts("PASS: measured asymmetric frame, one startup range, frozen configuration, invalid input, cancellation, timeout and IMU fault");
     printf("Planner pose checks: max startup %u, max return %u\n",maxStartupChecks,maxReturnChecks);
     return 0;

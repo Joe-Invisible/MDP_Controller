@@ -526,6 +526,20 @@ void Task2MotionTestRun(void)
                     Task2ObstacleSensors_Stop();
                 }
             }
+            if (task2MotionTestRoute.obstacle2ParallelReturnPending &&
+                task2MotionTestResult.completedSteps == task2MotionTestRoute.stepCount)
+            {
+                task2MotionTestResult.obstacle2ParallelStoppedPose = estimatedPose;
+                uint32_t parallelSetupStart = HAL_GetTick();
+                bool returnPlanned = Task2Route_ReplanParallelReturn(&task2MotionTestRoute,
+                    &estimatedPose, task2MotionTestDetection.observedWidthMm, task2MotionTestStepIndex);
+                task2MotionTestResult.parallelReturnSetupMs = HAL_GetTick() - parallelSetupStart;
+                if (!returnPlanned)
+                {
+                    task2MotionTestResult.status = MOTIONCONTROLLER_STATUS_PROFILE_ERROR;
+                    break;
+                }
+            }
             if (task2MotionTestResult.completedSteps == task2MotionTestRoute.stepCount)
                 task2MotionTestState = TASK2_TEST_COMPLETE;
             else

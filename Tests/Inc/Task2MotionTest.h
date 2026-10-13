@@ -46,6 +46,8 @@ typedef struct
     uint32_t elapsedMs;
     uint32_t routeSetupMs;
     uint32_t returnSetupMs;
+    uint32_t parallelReturnSetupMs;
+    Task2RoutePose obstacle2ParallelStoppedPose;
     uint32_t startupPlannerPoseChecks;
     uint32_t completedSteps;
     float measuredTravelMm;

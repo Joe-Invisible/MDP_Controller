@@ -56,12 +56,26 @@ When that fails, it tries a direct return arc or a straight return with stopped
 centreline-recovery arcs. Opposite-side cases that cannot clear the front corner
 use a front traverse, R275 end cap, back traverse and exit turn, followed by the
 return and parking alignment. These are bounded geometry searches, not a fused
-route. After an IR stop near 90 degrees, the return uses a checked end-cap arc,
-back straight, exit arc and return/parking alignment. An earlier IR stop can use
-the tangent return search when it fits. The initial IR plan contains six guarded
-prefix primitives (`obstacle2ReturnPending=true`); the actual stopped pose and
-width determine its suffix. Storage capacity is 16 steps; `route.stepCount` is
-the actual length.
+route. After an IR edge stop, an opposite-arrow run adds an **R275 quarter-turn
+opposite to the departure direction**, ending parallel at heading 0. It stops;
+the remaining return is planned from that measured pose. The preferred next
+primitive is a direct arc around O2's rear to heading +/-180. Its radius is
+calculated from the measured lateral position and the opposite return lane,
+rather than searched in 25 mm increments. If a direct arc collides, one
+calculated forward positioning straight is tried before the back arc. Only
+four parking joins remain in this IR return planner.
+
+The user-authorized obstacle-buffer exception covers the quarter-turn and rear
+bypass (including the optional positioning straight). These retain full-body
+collision checks with positive model separation, and all side/parking boundary
+buffers. The straight return and parking retain the normal 100 mm obstacle
+buffer. `obstacleBufferExceptionUsed` makes this visible in the export;
+`obstacle2DirectRearArc` distinguishes direct and positioned back arcs.
+
+The initial IR plan contains six guarded prefix primitives
+(`obstacle2ReturnPending=true`). At the edge, only the quarter-turn is appended
+(`obstacle2ParallelReturnPending=true`). After its stop, the return is appended.
+Storage capacity is 16 steps; `route.stepCount` is the actual length.
 
 Firmware trusts the fixed O1 template validated offline: steps 0-2 have no
 online footprint sweep. It certifies only the variable O2 approach, departure
@@ -76,6 +90,8 @@ Candidates must cross O2 outward and back; a clear loop in front is rejected.
 The OLED shows `Route setup`, `Sensor init`, then `Controller init` after the O1
 reading. Exports include `routeSetupMs`, `returnSetupMs`,
 `startupPlannerPoseChecks` and the final report's `plannerPoseChecks`.
+`returnSetupMs` covers quarter-turn planning; `parallelReturnSetupMs` covers the
+remaining return, with `obstacle2ParallelStoppedPose` recording its start.
 `clearanceFromStep` identifies where the reported geometry coverage begins
 (zero-based step 3 for normal MCU routes). Earliest camera previews are computed
 only offline (`recognitionPreviewValid`); the test still records actual simulated
@@ -189,12 +205,11 @@ face intersections. It
 checks 128 layouts (both O1 positions, all arrows, four gaps and four widths),
 edge acquisition/confirmation, mounted sensor geometry, IR hysteresis, stopping,
 cancellation, absent/stuck/faulted sensors and exports in both planner modes.
-Both modes complete 112 layouts, reject 12 before motors start, and reject four
-infeasible actual brake-stop returns while stationary at the IR edge. The
-reference-edge startup screen cannot guarantee the later stopped pose has a
-return; suffix preflight remains mandatory. The difficult synthetic return also
-completes within the MCU work limit. All eight faster mirrored IR layouts at
-7000/3000/2000 CPS complete, including the current published configuration.
+Both modes exercise all 128 layouts, the difficult synthetic return, all eight
+faster mirrored IR layouts at 7000/3000/2000 CPS, and current published tuning.
+The run03 recorded stop with a 647 mm width bound and its mirror execute through
+the real stopped controller fixture, verifying the measured quarter-turn stop,
+direct back arc, obstacle crossings, full-body clearance and parking.
 It does not model real
 acoustic reflections, servo lag, wheel slip or camera latency.
 

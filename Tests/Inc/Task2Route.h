@@ -97,6 +97,7 @@ typedef struct
     float minimumParkSideMarginMm;
     uint32_t plannerPoseChecks;
     bool planningBudgetExceeded;
+    bool obstacleBufferExceptionUsed; /* IR quarter-turn/rear bypass, including positioning straight. */
     uint32_t clearanceFromStep; /* MCU margins exclude the trusted O1 template. */
     bool recognitionPreviewValid; /* Earliest camera preview is computed only on PC. */
     /* Earliest eligible camera pose, including the angled O2 approach. */
@@ -121,6 +122,8 @@ typedef struct
     float totalYawRad;
     bool obstacle2IRDeparture;
     bool obstacle2ReturnPending;
+    bool obstacle2DirectRearArc; /* False: a forward positioning straight was needed. */
+    bool obstacle2ParallelReturnPending; /* Plan the rest after the measured R275 stop. */
     Task2RouteReport report;
 } Task2Route;
 
@@ -142,6 +145,8 @@ bool Task2Route_Obstacle1CameraVisible(const Task2RouteConfig *config,
 
 /* Replace the unexecuted suffix after an edge stop. Width is an observed
  * conservative planning bound; configured width remains the test footprint. */
+bool Task2Route_ReplanParallelReturn(Task2Route *route, const Task2RoutePose *pose,
+    float observedWidthMm, unsigned completedQuarterStep);
 bool Task2Route_ReplanObstacle2(Task2Route *route, const Task2RoutePose *stoppedPose,
     float observedWidthMm, unsigned completedDepartureStep);
 
