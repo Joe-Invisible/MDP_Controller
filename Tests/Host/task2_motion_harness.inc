@@ -657,11 +657,72 @@ static void testRun08RearBypass(void)
     puts("PASS: run08 751 mm bound and mirror: short positioning straight, calculated rear arc, separate parking");
 }
 
+static void testRun10SustainedLowerIR(void)
+{
+    const Task2ObstacleObservation recorded[] = {
+        {.valid=true,.value=882,.pose={1857.30145586f,118.14909938f,1.575795050f}},
+        {.valid=true,.value=869,.pose={1857.30145586f,118.14909938f,1.575795050f}},
+        {.valid=true,.value=876,.pose={1857.30145586f,118.14909938f,1.575795050f}},
+        {.valid=true,.value=870,.pose={1857.28970928f,120.58934344f,1.575424910f}},
+        {.valid=true,.value=879,.pose={1857.21619497f,133.31811882f,1.577718500f}},
+        {.valid=true,.value=785,.pose={1857.07262692f,150.06964181f,1.581014630f}},
+        {.valid=true,.value=273,.pose={1856.89343000f,166.62295500f,1.582228060f}},
+        {.valid=true,.value=267,.pose={1856.69716890f,183.17607856f,1.583076360f}},
+        {.valid=true,.value=280,.pose={1856.48929064f,199.92693253f,1.583335040f}}
+    };
+    Task2ObstacleSensorConfig config=task2ObstacleSensorConfig;
+    Task2RouteConfig route=task2RouteConfig;
+    route.parkToObstacle1Mm=1041.3075f;
+    for(int side=-1;side<=1;side+=2)
+    {
+        route.firstArrow=-side;route.secondArrow=side;
+        Task2ObstacleSensor sensor=side==1 ? TASK2_SENSOR_RIGHT_IR : TASK2_SENSOR_LEFT_IR;
+        Task2SensorMount mirrored={135,side*-33.5f,side*-90.0f};
+        if(side==1)config.rightIR=mirrored;else config.leftIR=mirrored;
+        Task2ObstacleObservation o=recorded[0];o.pose.yMm*=side;o.pose.yawRad*=side;
+        Task2ObstacleDetection state={0};
+        Task2ObstacleDetection_BeginIRTraverse(&state,&o.pose);
+        for(unsigned i=0;i<sizeof(recorded)/sizeof(recorded[0]);++i)
+        {
+            o=recorded[i];o.pose.yMm*=side;o.pose.yawRad*=side;
+            Task2ObstacleDetection_Observe(&state,&config,&route,sensor,&o,true);
+            if(i+1<sizeof(recorded)/sizeof(recorded[0]))assert(!state.detected);
+        }
+        assert(state.detected && state.edgeMethod==TASK2_EDGE_IR_TREND);
+        assert(state.irFilteredAdc==273 && state.irDeclineSamples==3);
+        assert(state.absent[sensor]==3);
+        near(state.observedWidthMm,554.2737f,0.1f);
+        assert(hypotf(state.edgePose.xMm-state.firstAbsentPose[sensor].xMm,
+            state.edgePose.yMm-state.firstAbsentPose[sensor].yMm)>40);
+        /* A substantial drop can settle above the absence threshold too. */
+        o=recorded[0];o.pose.yMm*=side;o.pose.yawRad*=side;
+        state=(Task2ObstacleDetection){0};
+        Task2ObstacleDetection_BeginIRTraverse(&state,&o.pose);
+        const float plateau[]={900,900,900,600,600,600,600};
+        for(unsigned i=0;i<7;++i)
+        {
+            o.value=plateau[i];o.pose.yMm+=side*10;
+            Task2ObstacleDetection_Observe(&state,&config,&route,sensor,&o,true);
+        }
+        assert(state.armed[sensor] && state.irTrendCandidateValid && !state.detected);
+        Task2RoutePose onset=state.irTrendCandidatePose;
+        for(unsigned i=0;i<3;++i)
+        {
+            o.value=300;o.pose.yMm+=side*10;
+            Task2ObstacleDetection_Observe(&state,&config,&route,sensor,&o,true);
+        }
+        assert(state.detected && state.edgeMethod==TASK2_EDGE_IR_TREND);
+        near(state.edgePose.yMm,onset.yMm,0);
+    }
+    puts("PASS: run10 and mirror use onset width 554.3 mm, equal low medians confirm decline, braking confirmation unchanged");
+}
+
 int main(void)
 {
     setbuf(stdout, NULL);
     testSensorEvents();
     testStraightIREdgeMethods();
+    testRun10SustainedLowerIR();
     testRun08RearBypass();
     const Task2RouteConfig tuned=task2RouteConfig;
     task2RouteConfig.cruiseSpeedCps=5000;

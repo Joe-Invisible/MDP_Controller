@@ -70,6 +70,7 @@ static void ObserveIRTrend(Task2ObstacleDetection *s, const Task2ObstacleSensorC
     const Task2RoutePose *oldest = &s->irHistoryPose[(s->irHistoryCount - 3U) % 3U];
     float windowTravel = hypotf(o->pose.xMm - oldest->xMm, o->pose.yMm - oldest->yMm);
     bool newPlateau = !s->irTrendCandidateValid && median > c->irAbsentAdc &&
+        s->irPeakAdc - median < c->irTrendMinDropAdc &&
         high - low <= c->irTrendReboundAdc && windowTravel >= c->irTrendMinTravelMm;
     if (!s->irPeakAdc || median >= s->irPeakAdc || newPlateau)
     {
@@ -90,7 +91,9 @@ static void ObserveIRTrend(Task2ObstacleDetection *s, const Task2ObstacleSensorC
     float travel = hypotf(middle.xMm - s->irPeakPose.xMm, middle.yMm - s->irPeakPose.yMm);
     if (travel < 1.0f)
         return;
-    if (median < previous && s->irDeclineSamples < c->irTrendSamples)
+    /* Confirm a sustained lower level, including equal medians after an abrupt
+     * drop. Rebound/near-peak samples above have already reset confirmation. */
+    if (s->irDeclineSamples < c->irTrendSamples)
         ++s->irDeclineSamples;
     if (s->irDeclineSamples >= c->irTrendSamples && travel >= c->irTrendMinTravelMm &&
         s->irPeakAdc - median >= c->irTrendMinDropAdc)

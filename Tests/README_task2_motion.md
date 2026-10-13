@@ -33,7 +33,7 @@ state times out after 1500 ms; cancellation and overall/braking timeouts remain.
 The edge estimate and braking event are distinct. During the straight, a three-
 sample median rejects isolated spikes. The detector retains the plateau pose
 before a sustained decline: default minimum filtered drop 200 ADC counts, three
-decreasing filtered observations and 20 mm travel. Upward excursions >50 counts
+sustained lower filtered observations (equal values count) and 20 mm travel. Upward excursions >50 counts
 cancel a candidate; a stable new plateau can replace an unconfirmed one. Final
 absence confirms the event, but width is calculated from the retained onset
 pose. If there is no usable trend candidate, the first absent pose remains an
@@ -166,7 +166,9 @@ Both modes check all 128 layouts: 122 complete and six narrow, 1500 mm-gap cases
 reject before motors initialize under the full-90-degree policy. All eight faster
 mirrored cases at 7000/3000/2000 CPS and current published tuning complete. Tests
 also replay run08 ADC (about 507 mm from onset versus the former 751 mm estimate),
-its original 751 mm return bound and mirror, noise/rebounds, initial absence, and
+its original 751 mm return bound and mirror, run10's abrupt drop settling at an
+unchanged median (about 554 mm from onset versus its former 651 mm fallback),
+noise/rebounds, initial absence, and
 an actual 300 mm obstacle while the planner still assumes 500 mm.
 The run03 recorded stop with a 647 mm width bound and its mirror execute through
 the real stopped controller fixture, verifying the measured quarter-turn stop,
