@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SOURCE = r'''
 #include "Task2MotionTest.h"
 Task2MotionTestConfig task2MotionTestConfig = {.measureObstacle1AtStartup=true};
-Task2ObstacleSensorConfig task2MotionTestSensorConfig = {.ultrasonic={210,0,0},.samplePeriodMs=60};
+Task2ObstacleSensorConfig task2MotionTestSensorConfig = {.ultrasonic={210,0,0},.leftIR={110,37.5,90},.rightIR={110,-33.5,-90},.irPresentAdc=700,.irAbsentAdc=400,.samplePeriodMs=60};
 Task2ObstacleDetection task2MotionTestDetection = {.detected=true,.observedWidthMm=540};
 Task2MotionTestStartupRange task2MotionTestStartupRange = {.attempted=true,.valid=true,.sensorToObstacleMm=1090,.parkToObstacle1Mm=1050};
 Task2MotionTestState task2MotionTestState = TASK2_TEST_COMPLETE;
@@ -47,6 +47,8 @@ def main():
             log = output.read_text()
             assert log.rstrip().endswith("=== EXPORT COMPLETE ===")
             assert "aheadMm = 210" in log
+            assert "irPresentAdc = 700" in log and "irAbsentAdc = 400" in log
+            assert "leftMm = 37.5" in log and "leftMm = -33.5" in log
             assert "sensorToObstacleMm = 1090" in log
             assert "observedWidthMm = 540" in log and "samplePeriodMs = 60" in log
             assert "arrow2RecognitionElapsedMs = 3210" in log

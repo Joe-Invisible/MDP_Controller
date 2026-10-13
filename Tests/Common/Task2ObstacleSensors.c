@@ -45,10 +45,10 @@ uint32_t Task2ObstacleSensors_Poll(const Task2ObstacleSensorConfig *c, uint32_t 
             GP2Y0A21YK_Measurement measurement;
             bool ok = GP2Y0A21YK_Read(&leftIR, &measurement) == GP2Y0A21YK_OK;
             out[1] = (Task2ObstacleObservation){.valid = ok, .fault = !ok,
-                .value = ok ? measurement.voltageV : 0.0f, .pose = *pose};
+                .value = ok ? measurement.rawAdc : 0.0f, .pose = *pose};
             ok = GP2Y0A21YK_Read(&rightIR, &measurement) == GP2Y0A21YK_OK;
             out[2] = (Task2ObstacleObservation){.valid = ok, .fault = !ok,
-                .value = ok ? measurement.voltageV : 0.0f, .pose = *pose};
+                .value = ok ? measurement.rawAdc : 0.0f, .pose = *pose};
             mask |= 6U;
         }
     }

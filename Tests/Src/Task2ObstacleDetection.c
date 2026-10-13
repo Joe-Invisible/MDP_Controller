@@ -9,9 +9,8 @@ bool Task2ObstacleDetection_ValidConfig(const Task2ObstacleSensorConfig *c)
         !isfinite(c->ultrasonicBeamHalfAngleDeg) || c->ultrasonicBeamHalfAngleDeg < 0.0f ||
         c->ultrasonicBeamHalfAngleDeg >= 45.0f || !isfinite(c->edgeUncertaintyMm) ||
         c->edgeUncertaintyMm < 0.0f || !isfinite(c->ultrasonicRangeToleranceMm) ||
-        c->ultrasonicRangeToleranceMm <= 0.0f || !isfinite(c->irPresentVoltageV) ||
-        !isfinite(c->irAbsentVoltageV) || c->irAbsentVoltageV < 0.0f ||
-        c->irPresentVoltageV <= c->irAbsentVoltageV)
+        c->ultrasonicRangeToleranceMm <= 0.0f || c->irPresentAdc > 4095U ||
+        c->irPresentAdc <= c->irAbsentAdc)
         return false;
     const Task2SensorMount *mounts[] = {&c->ultrasonic, &c->leftIR, &c->rightIR};
     for (unsigned i = 0U; i < TASK2_SENSOR_COUNT; ++i)
@@ -67,15 +66,15 @@ void Task2ObstacleDetection_Observe(Task2ObstacleDetection *s,
     else
     {
         /* An ADC error cannot be used as an absent-face measurement. */
-        if (!o->valid)
+        if (!o->valid || o->value < 0.0f || o->value > 4095.0f)
         {
             s->fault = true;
             return;
         }
         if (cosf(p.yawRad) <= 0.05f || face <= p.xMm)
             return;
-        present = o->value >= c->irPresentVoltageV;
-        absent = o->value <= c->irAbsentVoltageV;
+        present = o->value >= c->irPresentAdc;
+        absent = o->value <= c->irAbsentAdc;
     }
     if (present)
     {

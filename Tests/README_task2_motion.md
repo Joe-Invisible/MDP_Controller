@@ -61,21 +61,30 @@ Edit **`task2ObstacleSensorConfig` in `Src/Task2MotionTest.c`** for mounts:
 | Sensor | Ahead of rear axle | Left of rear axle | Beam yaw relative to chassis |
 |---|---:|---:|---:|
 | Ultrasonic | 210 mm, measured | 0 mm | 0 degrees |
-| Left IR | 110 mm, assumed | +100 mm, assumed | +90 degrees, assumed |
-| Right IR | 110 mm, assumed | -100 mm, assumed | -90 degrees, assumed |
+| Left IR | 110 mm, assumed | +37.5 mm, measured | +90 degrees, assumed |
+| Right IR | 110 mm, assumed | -33.5 mm, measured | -90 degrees, assumed |
+
+The lateral IR offsets use the measured 189 mm width between the outer sides of
+the front wheels: left inset 57 mm gives `189/2 - 57 = 37.5`, and right inset
+61 mm gives `-(189/2 - 61) = -33.5`. This reference does not change the 200 mm
+collision footprint.
 
 The same ultrasonic mount is used for startup ranging and moving measurements.
 `task2MotionTestConfig` controls startup ranging, control/log periods and
 run/brake timeouts. All sensor configuration is frozen at run start and exported.
 
 Ultrasonic is enabled by default. **Side IR is disabled by default** because its
-positions and voltage thresholds have not been measured. After configuring them,
+forward offsets and beam angles still need verification. After configuring them,
 enable `sideIREnabled`: LEFT departure observes the right IR, RIGHT observes the
 left IR. Only a beam facing the O2 front plane can acquire the face. The IR path
-uses voltage hysteresis and the same acquired-then-lost confirmation logic.
+uses raw ADC hysteresis: **>=700 counts present, <=400 absent**. Counts 401..699
+confirm neither state and reset consecutive-sample confirmation. Three fresh
+present samples must acquire the face before three consecutive absent samples
+can report its edge. These are initial thresholds from oblique passes across O2;
+trend-based edge detection is deferred.
 
 The 15-degree ultrasonic half-angle, 80 mm range-association tolerance, 20 mm
-edge uncertainty, 60 ms sample period and IR thresholds are explicit test
+edge uncertainty and 60 ms sample period are explicit test
 assumptions. They are not calibrated accuracy guarantees. Confirm them using the
 mock obstacle and exported observations before increasing departure speed.
 

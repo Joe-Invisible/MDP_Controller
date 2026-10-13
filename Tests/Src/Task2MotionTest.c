@@ -17,16 +17,18 @@ Task2MotionTestConfig task2MotionTestConfig = {
     .timeoutMs = 60000U,
     .brakeTimeoutMs = 3000U,
 };
-/* IR positions below are editable assumptions. Enable IR only after checking
- * mounts and thresholds. Ultrasonic +210 mm is the measured position. */
+/* IR lateral offsets: 189 mm outer front-wheel width, left/right insets 57/61 mm.
+ * Forward offsets and beam yaws remain assumptions; check before enabling IR.
+ * ADC thresholds are initial values from oblique O2 passes.
+ * Ultrasonic +210 mm is the measured position. */
 Task2ObstacleSensorConfig task2ObstacleSensorConfig = {
     .ultrasonicEnabled = true, .sideIREnabled = false,
     .ultrasonic = {210.0f, 0.0f, 0.0f},
-    .leftIR = {110.0f, 100.0f, 90.0f},
-    .rightIR = {110.0f, -100.0f, -90.0f},
+    .leftIR = {110.0f, 37.5f, 90.0f},
+    .rightIR = {110.0f, -33.5f, -90.0f},
     .ultrasonicBeamHalfAngleDeg = 15.0f,
     .ultrasonicRangeToleranceMm = 80.0f,
-    .irPresentVoltageV = 0.70f, .irAbsentVoltageV = 0.55f,
+    .irPresentAdc = 700U, .irAbsentAdc = 400U,
     .edgeUncertaintyMm = 20.0f,
     .samplePeriodMs = 60U, .acquisitionTimeoutMs = 1500U,
     .presentSamples = 3U, .absentSamples = 3U,

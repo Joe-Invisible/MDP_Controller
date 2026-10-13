@@ -18,8 +18,8 @@ typedef struct
     Task2SensorMount rightIR;
     float ultrasonicBeamHalfAngleDeg; /* Explicit cone model, not calibrated accuracy. */
     float ultrasonicRangeToleranceMm;
-    float irPresentVoltageV;
-    float irAbsentVoltageV;
+    uint16_t irPresentAdc; /* Inclusive raw 12-bit ADC thresholds. */
+    uint16_t irAbsentAdc;
     float edgeUncertaintyMm;
     uint32_t samplePeriodMs;
     uint32_t acquisitionTimeoutMs;
@@ -34,7 +34,7 @@ typedef struct
 {
     bool valid;
     bool fault; /* ADC/trigger fault is distinct from a completed no-echo timeout. */
-    float value; /* mm for ultrasonic; volts for IR. */
+    float value; /* mm for ultrasonic; raw ADC counts (0..4095) for IR. */
     Task2RoutePose pose; /* Pose when the measurement was triggered. */
 } Task2ObstacleObservation;
 
