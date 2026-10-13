@@ -141,6 +141,30 @@ int main(void) {
     assert(strcmp(reply, "STOPPED 202\n") == 0);
     Receive("202:L90;F100;R90", "STOPPED 202\n", false);
 
+    /* T2 is one numbered batch with the usual sequence, BUSY, Q and S rules. */
+    Receive("203:T2;F10", "NAK 203 T2_STANDALONE\n", false);
+    Receive("203:F10;T2", "NAK 203 T2_STANDALONE\n", false);
+    Receive("T2", "NAK - T2_STANDALONE\n", false);
+    Receive("204:T2", "NAK 203 SEQ\n", false);
+    Receive("203:T2", "", false);
+    assert(CommandSession_Current(&session)->type == COMMAND_TASK2);
+    Receive("Q", "BUSY 203\n", false);
+    Receive("203:T2", "BUSY 203\n", false);         /* a repeated start never restarts */
+    Receive("204:T2", "NAK 204 BUSY\n", false);
+    Receive("204:F10", "NAK 204 BUSY\n", false);
+    FinishCommand("DONE 203\n");
+    Receive("203:T2", "DONE 203\n", false);
+    Receive("203:F10", "NAK 203 ID_REUSE\n", false);
+    Receive("204:T2", "", false);
+    Receive("S", "", true);
+    Receive("Q", "STOPPING 204\n", false);
+    CommandSession_Stopped(&session, reply);
+    assert(strcmp(reply, "STOPPED 204\n") == 0);
+    Receive("205:T2", "", false);
+    CommandSession_Fault(&session, "T2_STATE", reply);
+    assert(strcmp(reply, "FAULT 205 T2_STATE\n") == 0);
+    Receive("206:T2", "NAK 206 FAULT\n", false);
+
     puts("session_test: all checks passed");
     return 0;
 }

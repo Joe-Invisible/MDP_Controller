@@ -70,6 +70,14 @@ bool CommandSession_Receive(CommandSession *session, const char *line,
 
     /* Reject the entire batch before moving, including embedded stops. */
     for (size_t i = 0; i < frame.count; ++i) {
+        if (commands[i].type == COMMAND_TASK2) {
+            /* The course reports per-run events tagged with the batch id. */
+            if (frame.count != 1U || !frame.hasSeq) {
+                Reply(reply, "NAK", frame.hasSeq, frame.seq, "T2_STANDALONE");
+                return false;
+            }
+            continue;
+        }
         CommandMotion motion;
         if (!CommandMotion_Resolve(&commands[i], &motion)) {
             Reply(reply, "NAK", frame.hasSeq, frame.seq,

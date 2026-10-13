@@ -148,6 +148,27 @@ int main(void) {
 	/* Garbage resembling line noise */
 	CHECK(Parse("\x7f\x03garbage", cmd, &n) == COMMANDPARSER_ERROR_BAD_COMMAND);
 
+	/* T2 starts the Task 2 course: no parameter; T2L/T2R carry arrow 1 as +1/-1. */
+	CHECK(Parse("12:T2", cmd, &n) == COMMANDPARSER_OK);
+	CHECK(n == 1 && cmd[0].type == COMMAND_TASK2 && cmd[0].param == 0.0f
+			&& lastFrame.hasSeq && lastFrame.seq == 12);
+	CHECK(Parse("12:T2L", cmd, &n) == COMMANDPARSER_OK && n == 1
+			&& cmd[0].type == COMMAND_TASK2 && cmd[0].param == 1.0f);
+	CHECK(Parse("12:T2R", cmd, &n) == COMMANDPARSER_OK && n == 1
+			&& cmd[0].type == COMMAND_TASK2 && cmd[0].param == -1.0f);
+	CHECK(Parse("12:T2LR", cmd, &n) == COMMANDPARSER_ERROR_BAD_COMMAND);
+	CHECK(Parse("12:T2L1", cmd, &n) == COMMANDPARSER_ERROR_BAD_COMMAND);
+	CHECK(Parse("12:T2l", cmd, &n) == COMMANDPARSER_ERROR_BAD_COMMAND);
+	CHECK(Parse("12:T2-", cmd, &n) == COMMANDPARSER_ERROR_BAD_COMMAND);
+	CHECK(strcmp(CommandParser_CommandName(COMMAND_TASK2), "T2") == 0);
+	CHECK(Parse("T2", cmd, &n) == COMMANDPARSER_OK && n == 1);   /* session requires the id */
+	CHECK(Parse("12:T", cmd, &n) == COMMANDPARSER_ERROR_BAD_COMMAND);
+	CHECK(Parse("12:T3", cmd, &n) == COMMANDPARSER_ERROR_BAD_COMMAND);
+	CHECK(Parse("12:T20", cmd, &n) == COMMANDPARSER_ERROR_BAD_COMMAND);
+	CHECK(Parse("12:T2X", cmd, &n) == COMMANDPARSER_ERROR_BAD_COMMAND);
+	CHECK(Parse("12:t2", cmd, &n) == COMMANDPARSER_ERROR_BAD_COMMAND);
+	CHECK(Parse("12:T2;F10", cmd, &n) == COMMANDPARSER_OK && n == 2);  /* session rejects it */
+
 	if (failures == 0)
 		printf("parser_test: all checks passed\n");
 	return failures == 0 ? 0 : 1;

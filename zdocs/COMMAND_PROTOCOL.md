@@ -327,3 +327,37 @@ Host debounce check:
 cc -Wall -Wextra -Werror -IApps/Inc hosttests/button_test.c -o /tmp/button_test
 /tmp/button_test
 ```
+
+## Task 2 course (`T2`)
+
+`r:T2` is a numbered batch with one command: it must be alone and numbered
+(`NAK r T2_STANDALONE` otherwise). `r:T2L` / `r:T2R` start it with arrow 1
+when the RPi read it before START; that is the only way an arrow reaches the
+run before `A r 1 X`. Sequence, duplicate, `BUSY`, `Q`, `S`,
+`FAULT` and `STOPPED` behave as for any batch; `DONE r` means parked and
+stationary. While it runs, the RPi and STM also exchange (r = the batch id):
+
+| Direction | Line | Meaning |
+| --- | --- | --- |
+| RPi -> STM | `A - 1 L` / `A - 1 R` / `A - 1 -` | Before START only: arrow 1 already seen (`-` clears it), so the route can be planned before START. Planning only: never the run's arrow; dropped when a run starts |
+| STM -> RPi | `ACK - 1 L` / `NAK - n STATE` | Stored / during a run, or n is not 1 |
+| STM -> RPi | `EV r APPROACH n` | Approaching obstacle n (2: camera past obstacle 1's face) |
+| RPi -> STM | `A r n L` / `A r n R` | Arrow on obstacle n |
+| STM -> RPi | `ACK r n L` | Stored; repeated for a resend |
+| STM -> RPi | `NAK r n ARROW` / `NAK r n STATE` | Other side already stored (kept) / wrong run or not approaching n |
+| STM -> RPi | `EV r WAIT n` | Stopped at the decision point without arrow n; never guesses |
+| RPi -> STM | `W r mm` | Obstacle 2 bullseye span (reserved; a lower bound, not its width) |
+| STM -> RPi | `ACK r W mm` / `NAK r W STATE` | Stored / after ROUND2 or another run |
+| STM -> RPi | `EV r ROUND 2` | Committed to the way round obstacle 2 |
+| RPi -> STM | `Q T` | Course state |
+| STM -> RPi | `T r STAGE a1 a2` | e.g. `T 12 WAIT2 L -`; `T - IDLE - -` before any run |
+| STM -> RPi | `EV r SUMMARY x1 x2 w2 path` | Log line just before `DONE r`; `-` if not measured |
+
+Stages: `IDLE APPROACH1 WAIT1 SWERVE1 APPROACH2 WAIT2 ROUND2 HOME DONE STOPPED FAULT`.
+`Apps/Src/Task2Commands.c` holds this state (host-tested). The route lives in
+`Apps/Src/Task2Course.c` behind `Task2CourseIo` (straight, arc, busy, brake);
+each primitive is guarded by the movement watchdog.
+`Apps/Src/Task2Run.c` decides when DONE, STOPPED and FAULT may be reported
+(host-tested in `hosttests/task2_run_test.c`); MotionTask only calls it. `TASK2_COURSE_DRY_RUN=1`
+(the default) runs timed stages without motion and shows `T2 DRY RUN` on the
+OLED: a bench test of the RPi link only.

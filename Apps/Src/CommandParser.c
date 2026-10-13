@@ -13,6 +13,7 @@ static CommandParserStatus ParseOneCommand(const char **cursor, Command *out) {
 
 	CommandType type;
 	bool needsParam = true;
+	float param = 0.0f;
 
 	switch (*p) {
 	case 'F': type = COMMAND_FORWARD;  break;
@@ -29,12 +30,23 @@ static CommandParserStatus ParseOneCommand(const char **cursor, Command *out) {
 	case 'R': type = COMMAND_RIGHT;    break;
 	case 'U': type = COMMAND_ULTRASONIC; break;
 	case 'S': type = COMMAND_STOP; needsParam = false; break;
+	case 'T':
+		if (p[1] != '2')
+			return COMMANDPARSER_ERROR_BAD_COMMAND;
+		type = COMMAND_TASK2;
+		needsParam = false;
+		p++;
+		/* Optional arrow 1, decided before START: carried in param as +1 (L) / -1 (R). */
+		if (p[1] == 'L' || p[1] == 'R') {
+			param = p[1] == 'L' ? 1.0f : -1.0f;
+			p++;
+		}
+		break;
 	default:
 		return COMMANDPARSER_ERROR_BAD_COMMAND;
 	}
 	p++;
 
-	float param = 0.0f;
 	if (needsParam) {
 		/*
 		 * strtof is far more permissive than this grammar: it accepts
@@ -152,6 +164,7 @@ const char *CommandParser_CommandName(CommandType type) {
 	case COMMAND_ULTRASONIC: return "U";
 	case COMMAND_BACK_LEFT:  return "BL";
 	case COMMAND_BACK_RIGHT: return "BR";
+	case COMMAND_TASK2:      return "T2";
 	default:                 return "?";
 	}
 }

@@ -16,6 +16,8 @@
  *   frame    :=  [seq ':'] command (';' command)*
  *   command  :=  'F' number | 'B' number | 'L' number | 'R' number
  *             |  'BL' number | 'BR' number | 'U' number | 'S'
+ *             |  'T2' ['L'|'R']              (Task 2 course, with arrow 1 if already known;
+ *                                              alone in a numbered frame)
  *   number   :=  positive decimal, fraction allowed (e.g. 100, 90.5)
  *   seq      :=  0..255, wrapping
  *
@@ -36,12 +38,13 @@ typedef enum {
 	COMMAND_ULTRASONIC, /* U<remaining sensor gap mm> */
 	COMMAND_BACK_LEFT,	/* BL<deg>: reverse arc, steering left */
 	COMMAND_BACK_RIGHT,	/* BR<deg>: reverse arc, steering right */
+	COMMAND_TASK2,		/* T2: run the Task 2 course; T2L/T2R: arrow 1 already known (param +1/-1) */
 } CommandType;
 
 typedef struct {
 	CommandType type;
 	/*
-	 * Positive magnitude. Meaningless for COMMAND_STOP.
+	 * Positive magnitude. Meaningless for COMMAND_STOP and COMMAND_TASK2.
 	 */
 	float param;
 } Command;

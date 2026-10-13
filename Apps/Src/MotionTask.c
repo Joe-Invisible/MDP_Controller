@@ -25,6 +25,7 @@
 #include "StartButton.h"
 #include "SensorTask.h"
 #include "UltrasonicApproach.h"
+#include "Task2Run.h"
 #include "userbutton.h"
 #include "OLEDManager.h"
 
@@ -150,6 +151,9 @@ static char reply[COMMANDSESSION_REPLY_SIZE];
 static MotionWatchdog watchdog;
 static UltrasonicApproach ultrasonicApproach;
 static bool ultrasonicCommand;
+static Task2Run task2;
+_Static_assert(TASK2COMMANDS_REPLY_SIZE == COMMANDSESSION_REPLY_SIZE,
+               "Task 2 replies share the session reply buffer");
 static CommandProgress commandProgress;
 static bool progressTracking;
 static char progressReply[COMMANDPROGRESS_REPLY_SIZE];
@@ -280,10 +284,83 @@ static bool MotionTask_ReadLine(char **line) {
     return false;
 }
 
+/* One Task 2 primitive, guarded by the movement watchdog like any batch command. */
+static const char *MotionTask_Task2Move(float distanceMm, float radiusMm, float speedCps) {
+    if (MotionController_IsBusy(&motionController))
+        return "T2_BUSY";
+    float completionToleranceMm = radiusMm == 0.0f
+        ? COMMANDMOTION_STRAIGHT_COMPLETION_TOLERANCE_MM
+        : runtimeMotionConfig.motionCompletionToleranceMm;
+    if (!MotionProfile_Init(&motionController.motionProfile,
+                            runtimeMotionConfig.motionAccelerationMmps2,
+                            runtimeMotionConfig.motionDecelerationMmps2,
+                            completionToleranceMm))
+        return "REJECTED";
+    float mmPerCount = 3.14159265358979323846f *
+        runtimeMotionConfig.kinematics->rearWheelDiameterMm /
+        runtimeMotionConfig.kinematics->rearEncoderCountsPerRev;
+    if (!MotionWatchdog_Start(&watchdog, HAL_GetTick(), distanceMm,
+                             fabsf(speedCps) * mmPerCount,
+                             radiusMm != 0.0f ? WATCH_PREPARE : WATCH_MOVE))
+        return "REJECTED";
+    MotionControllerStatus status = radiusMm != 0.0f
+        ? MotionController_MoveArc(&motionController, distanceMm, radiusMm, speedCps)
+        : MotionController_MoveStraight(&motionController, distanceMm, speedCps);
+    return status == MOTIONCONTROLLER_STATUS_OK ? NULL : "REJECTED";
+}
+
+static const char *MotionTask_Task2Straight(void *context, float distanceMm, float speedCps) {
+    (void)context;
+    return MotionTask_Task2Move(distanceMm, 0.0f, speedCps);
+}
+
+static const char *MotionTask_Task2Arc(void *context, float distanceMm, float radiusMm,
+                                       float speedCps) {
+    (void)context;
+    return radiusMm != 0.0f ? MotionTask_Task2Move(distanceMm, radiusMm, speedCps) : "REJECTED";
+}
+
+static bool MotionTask_Task2Busy(void *context) {
+    (void)context;
+    return MotionController_IsBusy(&motionController);
+}
+
+static void MotionTask_Task2Brake(void *context) {
+    (void)context;
+    MotionController_Brake(&motionController);
+}
+
+static const Task2CourseIo task2CourseIo = {
+    .moveStraight = MotionTask_Task2Straight,
+    .moveArc = MotionTask_Task2Arc,
+    .busy = MotionTask_Task2Busy,
+    .brake = MotionTask_Task2Brake,
+    .requestSpeed = NULL,
+};
+
+static void MotionTask_SendTask2Events(void) {
+    char event[TASK2COMMANDS_REPLY_SIZE];
+    while (Task2Run_NextEvent(&task2, event))
+        CommandLink_Send(event);
+}
+
 static const char *MotionTask_Start(const Command *cmd) {
     ultrasonicCommand = false;
     progressTracking = false;
     CommandProgress_Attempt(&commandProgress, (unsigned)session.next + 1U, cmd);
+    if (cmd->type == COMMAND_TASK2) {
+        Task2CommandArrow arrow1 = cmd->param > 0.0f ? TASK2_COMMAND_ARROW_LEFT
+                                 : cmd->param < 0.0f ? TASK2_COMMAND_ARROW_RIGHT : TASK2_COMMAND_ARROW_NONE;
+        const char *fault = Task2Run_Start(&task2, session.seq, arrow1, &task2CourseIo, HAL_GetTick());
+        if (fault != NULL)
+            return fault;
+#if TASK2_COURSE_DRY_RUN
+        OLED_Post(&cmdStatus, "T2 DRY RUN %u", (unsigned)session.seq);
+#else
+        OLED_Post(&cmdStatus, "T2 run %u", (unsigned)session.seq);
+#endif
+        return NULL;
+    }
     CommandMotion motion;
     if (!CommandMotion_Resolve(cmd, &motion))
         return "REJECTED";
@@ -331,6 +408,7 @@ static const char *MotionTask_Start(const Command *cmd) {
 static void MotionTask_Fault(const char *reason) {
     MotionTask_Capture(reason);
     ultrasonicCommand = false;
+    Task2Run_Fault(&task2);
     /* Brake actively; the session stays faulted until standalone S.
      * A U range-verification fault can occur after an earlier stop: track
      * this braking phase too, without fabricating pre-start measurements.
@@ -378,6 +456,27 @@ static bool MotionTask_UpdateUltrasonic(void) {
     return true;
 }
 
+/* Returns false once the course has finished or faulted. */
+static bool MotionTask_UpdateTask2(void) {
+    const char *fault = NULL;
+    Task2RunStatus status = Task2Run_Update(&task2, MotionController_IsBusy(&motionController),
+                                            HAL_GetTick(), &fault);
+    if (status == TASK2RUN_FAULT) {
+        MotionTask_SendTask2Events();
+        MotionTask_Fault(fault);
+        return false;
+    }
+    /* DONE means parked and stationary; until then the watchdog keeps guarding. */
+    if (status == TASK2RUN_DONE) {
+        MotionTask_SendTask2Events();
+        MotionTask_Capture("DONE");
+        CommandSession_CommandDone(&session, reply);
+        CommandLink_Send(reply);
+        return false;
+    }
+    return true;
+}
+
 /* Querying never changes the motion session or consumes a batch ID. */
 static bool MotionTask_SensorQuery(const char *line) {
     char sensorReply[SENSOR_REPLY_SIZE];
@@ -416,6 +515,7 @@ void MotionTask(void *argument) {
     (void)argument;
     OLED_Register(&cmdStatus, "CMD");
     CommandSession_Init(&session);
+    Task2Run_Init(&task2);
 
     const char *initError = MotionTask_InitControllers();
     if (initError != NULL) {
@@ -449,13 +549,14 @@ void MotionTask(void *argument) {
                            HAL_GetTick());
         bool busy = MotionController_IsBusy(&motionController);
         if (!busy) MotionTask_SampleProgress();
-        if (!busy && commandRunning && !ultrasonicCommand) {
+        if (!busy && commandRunning && !ultrasonicCommand && !task2.active) {
             MotionTask_Capture("DONE");
             CommandSession_CommandDone(&session, reply);
             CommandLink_Send(reply);
             commandRunning = false;
         }
         if (!busy) {
+            Task2Run_Stationary(&task2);
             CommandSession_Stopped(&session, reply);
             CommandLink_Send(reply);
         }
@@ -493,6 +594,8 @@ void MotionTask(void *argument) {
                 reply[0] = '\0';
             } else if (MotionTask_SensorQuery(line)) {
                 reply[0] = '\0';
+            } else if (Task2Run_Receive(&task2, line, reply)) {
+                /* A/W/Q T: answered from the course state, never a batch. */
             } else if (strcmp(line, "BUTTON") == 0) {
                 snprintf(reply, sizeof(reply), "BUTTON %lu %u\n",
                          (unsigned long)startButton.count,
@@ -506,6 +609,7 @@ void MotionTask(void *argument) {
                     MotionController_Brake(&motionController);
                     commandRunning = false;
                     ultrasonicCommand = false;
+                    Task2Run_Stop(&task2);
                 }
             }
             CommandLink_Send(reply);
@@ -531,6 +635,9 @@ void MotionTask(void *argument) {
 
         if (commandRunning && ultrasonicCommand)
             commandRunning = MotionTask_UpdateUltrasonic();
+        if (commandRunning && task2.active)
+            commandRunning = MotionTask_UpdateTask2();
+        MotionTask_SendTask2Events();
 
         uint32_t now = osKernelGetTickCount();
         uint32_t elapsedTicks = now - previousUpdate;
