@@ -121,9 +121,13 @@ static MotionControllerStatus LaunchStep(void)
         task2MotionTestStepIndex == TASK2_ROUTE_O2_DEPARTURE_STEP)
         distance = step->radiusMm * (task2MotionTestRoute.config.secondArrow * TASK2_PI * 0.5f -
             estimatedPose.yawRad);
-    MotionControllerStatus status = step->radiusMm == 0.0f
-        ? MotionController_MoveStraight(&fixture.motionController, distance, step->speedCps)
-        : MotionController_MoveArc(&fixture.motionController, distance, step->radiusMm, step->speedCps);
+    MotionControllerStatus status;
+    if (step->sensorTerminated)
+        status = MotionController_MoveStraightContinuous(&fixture.motionController, step->speedCps);
+    else if (step->radiusMm == 0.0f)
+        status = MotionController_MoveStraight(&fixture.motionController, distance, step->speedCps);
+    else
+        status = MotionController_MoveArc(&fixture.motionController, distance, step->radiusMm, step->speedCps);
     if (status == MOTIONCONTROLLER_STATUS_OK && (task2MotionTestStepIndex == 0U ||
         task2MotionTestStepIndex == TASK2_ROUTE_O2_APPROACH_STEP))
         status = MotionController_RequestCruiseSpeed(&fixture.motionController,
@@ -500,10 +504,10 @@ void Task2MotionTestRun(void)
                 if (!edgeBraking || !task2MotionTestDetection.detected)
                 {
                     if (!task2MotionTestRoute.obstacle2IRDeparture ||
-                        task2MotionTestStepIndex == TASK2_ROUTE_O2_IR_STRAIGHT_STEP)
+                        task2MotionTestRoute.steps[task2MotionTestStepIndex].sensorTerminated)
                     {
                         task2MotionTestResult.status = MOTIONCONTROLLER_STATUS_INVALID_STATE;
-                        break; /* Last guard endpoint reached without a confirmed edge. */
+                        break; /* Unexpected completion without an edge; sensor cruise has no endpoint. */
                     }
                 }
                 else

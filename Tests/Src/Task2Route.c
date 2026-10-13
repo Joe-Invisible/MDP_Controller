@@ -461,14 +461,14 @@ static bool BuildTraverseTail(const Task2RouteConfig *c, const Task2RouteConfig 
         if (planningWork.exhausted)
             return false;
         float rd = c->secondDepartureRadiusMm + 25.0f * d;
-        out[0] = (Task2RouteStep){rd * (0.5f * ROUTE_PI - h), side * rd, c->obstacle2DepartureSpeedCps};
+        out[0] = (Task2RouteStep){.distanceMm = rd * (0.5f * ROUTE_PI - h), .radiusMm = side * rd, .speedCps = c->obstacle2DepartureSpeedCps};
         Task2RoutePose front = Advance(p, out[0].distanceMm, out[0].radiusMm);
         float edgeY = 0.5f * width - 25.0f + 10.0f * offset;
-        out[1] = (Task2RouteStep){edgeY - side * front.yMm, 0.0f, c->obstacle2DepartureSpeedCps};
+        out[1] = (Task2RouteStep){.distanceMm = edgeY - side * front.yMm, .radiusMm = 0.0f, .speedCps = c->obstacle2DepartureSpeedCps};
         float radius = ROUTE_MIN_RADIUS_MM;
-        out[2] = (Task2RouteStep){ROUTE_PI * radius, -side * radius, c->cruiseSpeedCps};
-        out[3] = (Task2RouteStep){2.0f * edgeY, 0.0f, c->cruiseSpeedCps};
-        out[4] = (Task2RouteStep){0.5f * ROUTE_PI * radius, -side * radius, c->cruiseSpeedCps};
+        out[2] = (Task2RouteStep){.distanceMm = ROUTE_PI * radius, .radiusMm = -side * radius, .speedCps = c->cruiseSpeedCps};
+        out[3] = (Task2RouteStep){.distanceMm = 2.0f * edgeY, .radiusMm = 0.0f, .speedCps = c->cruiseSpeedCps};
+        out[4] = (Task2RouteStep){.distanceMm = 0.5f * ROUTE_PI * radius, .radiusMm = -side * radius, .speedCps = c->cruiseSpeedCps};
         Task2RoutePose returnStart = front;
         for (unsigned i = 1U; i < 5U; ++i)
             returnStart = Advance(returnStart, out[i].distanceMm, out[i].radiusMm);
@@ -477,10 +477,10 @@ static bool BuildTraverseTail(const Task2RouteConfig *c, const Task2RouteConfig 
         float angle = acosf(1.0f - lateral / (2.0f * rejoinRadius));
         float parkStraight = 100.0f + 100.0f * park;
         float sx = TASK2_ROUTE_START_X_MM + parkStraight + 2.0f * rejoinRadius * sinf(angle);
-        out[5] = (Task2RouteStep){returnStart.xMm - sx, 0.0f, c->cruiseSpeedCps};
-        out[6] = (Task2RouteStep){rejoinRadius * angle, -side * rejoinRadius, c->cruiseSpeedCps};
-        out[7] = (Task2RouteStep){rejoinRadius * angle, side * rejoinRadius, c->cruiseSpeedCps};
-        out[8] = (Task2RouteStep){parkStraight, 0.0f, c->approachSpeedCps};
+        out[5] = (Task2RouteStep){.distanceMm = returnStart.xMm - sx, .radiusMm = 0.0f, .speedCps = c->cruiseSpeedCps};
+        out[6] = (Task2RouteStep){.distanceMm = rejoinRadius * angle, .radiusMm = -side * rejoinRadius, .speedCps = c->cruiseSpeedCps};
+        out[7] = (Task2RouteStep){.distanceMm = rejoinRadius * angle, .radiusMm = side * rejoinRadius, .speedCps = c->cruiseSpeedCps};
+        out[8] = (Task2RouteStep){.distanceMm = parkStraight, .radiusMm = 0.0f, .speedCps = c->approachSpeedCps};
         if (CandidateSweep(bounds, p, out, 9U))
         {
             *count = 9U;
@@ -549,9 +549,9 @@ static bool BuildTail(const Task2RouteConfig *c, Task2RoutePose p,
                     continue;
                 returnLength = delta * returnRadius;
             }
-            out[0] = (Task2RouteStep){rd * (join - h), side * rd, c->obstacle2DepartureSpeedCps};
-            out[1] = (Task2RouteStep){rb * (join - rh), -side * rb, c->cruiseSpeedCps};
-            out[2] = (Task2RouteStep){returnLength, side * returnRadius, c->cruiseSpeedCps};
+            out[0] = (Task2RouteStep){.distanceMm = rd * (join - h), .radiusMm = side * rd, .speedCps = c->obstacle2DepartureSpeedCps};
+            out[1] = (Task2RouteStep){.distanceMm = rb * (join - rh), .radiusMm = -side * rb, .speedCps = c->cruiseSpeedCps};
+            out[2] = (Task2RouteStep){.distanceMm = returnLength, .radiusMm = side * returnRadius, .speedCps = c->cruiseSpeedCps};
             unsigned n = 3U;
             if (curvedReturn == 2U)
             {
@@ -562,10 +562,10 @@ static bool BuildTail(const Task2RouteConfig *c, Task2RoutePose p,
                 float angle = acosf(1.0f - rb / (2.0f * radius));
                 float parkStraight = 100.0f + 100.0f * k;
                 float sx = TASK2_ROUTE_START_X_MM + parkStraight + 2.0f * radius * sinf(angle);
-                out[2] = (Task2RouteStep){bx - sx, 0.0f, c->cruiseSpeedCps};
-                out[3] = (Task2RouteStep){radius * angle, -side * radius, c->cruiseSpeedCps};
-                out[4] = (Task2RouteStep){radius * angle, side * radius, c->cruiseSpeedCps};
-                out[5] = (Task2RouteStep){parkStraight, 0.0f, c->approachSpeedCps};
+                out[2] = (Task2RouteStep){.distanceMm = bx - sx, .radiusMm = 0.0f, .speedCps = c->cruiseSpeedCps};
+                out[3] = (Task2RouteStep){.distanceMm = radius * angle, .radiusMm = -side * radius, .speedCps = c->cruiseSpeedCps};
+                out[4] = (Task2RouteStep){.distanceMm = radius * angle, .radiusMm = side * radius, .speedCps = c->cruiseSpeedCps};
+                out[5] = (Task2RouteStep){.distanceMm = parkStraight, .radiusMm = 0.0f, .speedCps = c->approachSpeedCps};
                 n = 6U;
             }
             if (CandidateSweep(&bounds, p, out, n))
@@ -614,8 +614,7 @@ static bool BuildIRQuarterTurn(const Task2RouteConfig *c, Task2RoutePose p,
     float h = c->secondArrow * p.yawRad;
     if (bounds.obstacle2EndSpaceMm <= 0.0f || h <= 0.0f || h >= ROUTE_PI)
         return false;
-    *turn = (Task2RouteStep){ROUTE_MIN_RADIUS_MM * h,
-        -c->secondArrow * ROUTE_MIN_RADIUS_MM, c->cruiseSpeedCps};
+    *turn = (Task2RouteStep){.distanceMm = ROUTE_MIN_RADIUS_MM * h, .radiusMm = -c->secondArrow * ROUTE_MIN_RADIUS_MM, .speedCps = c->cruiseSpeedCps};
     return CheckIROutbound(&bounds, p, turn, 1U);
 }
 
@@ -643,7 +642,7 @@ static bool BuildParallelReturn(const Task2RouteConfig *c, Task2RoutePose p,
         {
             float front = c->bodyCenterAheadOfRearAxleMm + 0.5f * c->bodyLengthMm + c->frontProtrusionMm;
             float clearX = centre + 50.0f + front + 21.0f;
-            out[0] = (Task2RouteStep){(clearX - p.xMm) / cosf(h), 0.0f, c->cruiseSpeedCps};
+            out[0] = (Task2RouteStep){.distanceMm = (clearX - p.xMm) / cosf(h), .radiusMm = 0.0f, .speedCps = c->cruiseSpeedCps};
             if (out[0].distanceMm <= 0.0f)
                 continue;
             arcStart = Advance(p, out[0].distanceMm, 0.0f);
@@ -651,7 +650,7 @@ static bool BuildParallelReturn(const Task2RouteConfig *c, Task2RoutePose p,
         float radius = (side * arcStart.yMm + returnY) / (1.0f + cosf(h));
         if (!isfinite(radius) || radius < ROUTE_MIN_RADIUS_MM)
             continue;
-        out[arcIndex] = (Task2RouteStep){radius * (ROUTE_PI + h), -side * radius, c->cruiseSpeedCps};
+        out[arcIndex] = (Task2RouteStep){.distanceMm = radius * (ROUTE_PI + h), .radiusMm = -side * radius, .speedCps = c->cruiseSpeedCps};
         unsigned outboundCount = arcIndex + 1U;
         if (!CheckIROutbound(&bounds, p, out, outboundCount))
             continue;
@@ -665,10 +664,10 @@ static bool BuildParallelReturn(const Task2RouteConfig *c, Task2RoutePose p,
                 return false;
             float parkStraight = 100.0f + 100.0f * park;
             float sx = TASK2_ROUTE_START_X_MM + parkStraight + 2.0f * rejoinRadius * sinf(angle);
-            out[outboundCount] = (Task2RouteStep){returnStart.xMm - sx, 0.0f, c->cruiseSpeedCps};
-            out[outboundCount + 1U] = (Task2RouteStep){rejoinRadius * angle, -side * rejoinRadius, c->cruiseSpeedCps};
-            out[outboundCount + 2U] = (Task2RouteStep){rejoinRadius * angle, side * rejoinRadius, c->cruiseSpeedCps};
-            out[outboundCount + 3U] = (Task2RouteStep){parkStraight, 0.0f, c->approachSpeedCps};
+            out[outboundCount] = (Task2RouteStep){.distanceMm = returnStart.xMm - sx, .radiusMm = 0.0f, .speedCps = c->cruiseSpeedCps};
+            out[outboundCount + 1U] = (Task2RouteStep){.distanceMm = rejoinRadius * angle, .radiusMm = -side * rejoinRadius, .speedCps = c->cruiseSpeedCps};
+            out[outboundCount + 2U] = (Task2RouteStep){.distanceMm = rejoinRadius * angle, .radiusMm = side * rejoinRadius, .speedCps = c->cruiseSpeedCps};
+            out[outboundCount + 3U] = (Task2RouteStep){.distanceMm = parkStraight, .radiusMm = 0.0f, .speedCps = c->approachSpeedCps};
             unsigned n = outboundCount + 4U;
             if (CandidateSweepFrom(&bounds, p, out, n, outboundCount, p.xMm >= centre))
             {
@@ -757,8 +756,7 @@ static bool BuildIRDeparture(const Task2RouteConfig *c, Task2RoutePose p,
 {
     float side = c->secondArrow, radius = side * turnRadius;
     float face = c->parkToObstacle1Mm + 100.0f + c->obstacleFaceGapMm;
-    step[0] = (Task2RouteStep){turnRadius * (0.5f * ROUTE_PI - side * p.yawRad),
-        radius, c->obstacle2DepartureSpeedCps};
+    step[0] = (Task2RouteStep){.distanceMm = turnRadius * (0.5f * ROUTE_PI - side * p.yawRad), .radiusMm = radius, .speedCps = c->obstacle2DepartureSpeedCps};
     Task2RoutePose front = Advance(p, step[0].distanceMm, radius);
     float x = front.xMm + ir->mount.aheadMm * cosf(front.yawRad) - ir->mount.leftMm * sinf(front.yawRad);
     float y = front.yMm + ir->mount.aheadMm * sinf(front.yawRad) + ir->mount.leftMm * cosf(front.yawRad);
@@ -768,8 +766,9 @@ static bool BuildIRDeparture(const Task2RouteConfig *c, Task2RoutePose p,
     float hit = side * (y + (face - x) * tanf(ray));
     if (!isfinite(hit))
         return false;
-    step[1] = (Task2RouteStep){fmaxf(0.0f, 0.5f * c->obstacle2WidthMm - hit) + ir->guardTravelMm,
-        0.0f, c->obstacle2DepartureSpeedCps};
+    /* Nominal preview for offline geometry, never an execution distance cap. */
+    step[1] = (Task2RouteStep){.distanceMm = fmaxf(0.0f, 0.5f * c->obstacle2WidthMm - hit) + ir->guardTravelMm,
+        .sensorTerminated = true, .radiusMm = 0.0f, .speedCps = c->obstacle2DepartureSpeedCps};
     float edgeTravel = step[0].distanceMm + fmaxf(0.0f, 0.5f * c->obstacle2WidthMm - hit);
 #if TASK2_ROUTE_EXHAUSTIVE_CHECKS
     bool acquired = false;
@@ -813,8 +812,8 @@ static bool BuildIRDeparture(const Task2RouteConfig *c, Task2RoutePose p,
 #endif
     if (acquisitionEnd - acquireTravel < ir->acquisitionTravelMm)
         return false;
-    /* Screen return room at the reference edge. Guard travel is a safe
-     * departure limit, not a prediction of the actual stopped pose. The actual
+    /* Screen return room at the nominal reference edge. Preview travel is
+     * not an execution limit or a prediction of the actual stopped pose. The actual
      * brake stop must pass suffix preflight before any return motion starts. */
     Task2RoutePose predictedStop = edgeTravel < step[0].distanceMm
         ? Advance(p, edgeTravel, radius) : Advance(front, edgeTravel - step[0].distanceMm, 0.0f);
@@ -1172,7 +1171,7 @@ static bool ValidatePath(Task2Route *route)
     {
         if (!crossed[0][0])
             return Reject(route, "INCOMPLETE_O1_BYPASS");
-        report->finishPose = pose; /* Guard pose; parking suffix is still pending. */
+        report->finishPose = pose; /* Nominal preview pose; parking suffix is still pending. */
         report->valid = true;
         report->reason = "OK_IR_PREFIX";
         return true;

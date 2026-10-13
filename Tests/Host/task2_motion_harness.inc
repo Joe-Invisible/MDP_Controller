@@ -17,6 +17,7 @@ static bool physicalCrossings[2][2];
 static uint32_t sensorTick, sensorDue;
 static bool sensorPending;
 static unsigned irReads;
+static float irStraightPreviewMm;
 static unsigned maxStartupChecks, maxReturnChecks;
 static Task2ObstacleObservation pendingObservation;
 
@@ -80,8 +81,15 @@ uint32_t Task2ObstacleSensors_Poll(const Task2ObstacleSensorConfig *c, uint32_t 
                 float ray=idealPose.yawRad+ir->yawDeg*PI/180;
                 bool onFace=cosf(ray)>0.05f && face>sx &&
                     fabsf(sy+(face-sx)*tanf(ray))<=r->obstacle2WidthMm/2;
+                float adc = scenario==7 ? 300 : onFace || scenario==5 || scenario==11 ? 900 : 300;
+                if (scenario == 10 && cosf(ray) > 0.05f && face > sx)
+                {
+                    float beyond = r->secondArrow * (sy + (face-sx)*tanf(ray)) - r->obstacle2WidthMm/2;
+                    /* Gradual cone loss reaches 400 about 125 mm beyond the centre-ray edge. */
+                    adc = fmaxf(300, fminf(900, 900 - 4 * beyond));
+                }
                 out[i+1]=(Task2ObstacleObservation){.valid=scenario!=8,.fault=scenario==8,
-                    .value=scenario==7 ? 300 : onFace || scenario==5 ? 900 : 300,.pose=*pose};
+                    .value=adc,.pose=*pose};
             }
             mask|=6U;
         }
@@ -194,13 +202,20 @@ void SW1_WaitForPressAndRelease(void)
         near(robot->motionController.arcYawRatePID.kp,200,0);
         near(robot->motionController.arcYawRatePID.ki,100,0);
         assert(!robot->motionController.config->useMatchedYawRateReferenceFilter);
+        irStraightPreviewMm = task2MotionTestRoute.steps[TASK2_ROUTE_O2_IR_STRAIGHT_STEP].distanceMm;
         ++starts;
         runStartTick = tick;
         if (mutateAtReady) task2RouteConfig.firstArrow = -task2RouteConfig.firstArrow;
     }
     HAL_Delay(1000); /* Manual waiting must not count towards motion timing. */
 }
-int SW1_ReadState(void) { return scenario == 1 && tick-runStartTick > 2000; }
+int SW1_ReadState(void)
+{
+    return (scenario == 1 && tick-runStartTick > 2000) ||
+        (scenario == 11 && task2MotionTestStepIndex == TASK2_ROUTE_O2_IR_STRAIGHT_STEP &&
+         fabsf(robot->motionController.travelledDistanceMm) >
+            task2MotionTestRoute.steps[TASK2_ROUTE_O2_IR_STRAIGHT_STEP].distanceMm + 20);
+}
 
 static void resetHardware(unsigned nextScenario)
 {
@@ -625,7 +640,8 @@ int main(void)
         assert(robot->motionController.mode==MOTIONCONTROLLER_IDLE);
         if(s==1)assert(task2MotionTestResult.cancelled);
         if(s==2)assert(task2MotionTestResult.timedOut);
-        if(s>=3)assert(task2MotionTestResult.status!=0);
+        if(s==5)assert(task2MotionTestResult.timedOut && task2MotionTestDetection.armed[original.secondArrow==1 ? TASK2_SENSOR_RIGHT_IR : TASK2_SENSOR_LEFT_IR]);
+        else if(s>=3)assert(task2MotionTestResult.status!=0);
     }
     for(unsigned s=7;s<=8;++s)
     {
@@ -639,6 +655,31 @@ int main(void)
     puts("PASS: IR never acquired, IR ADC fault, and ultrasonic background cannot terminate opposite-arrow departure");
     task2RouteConfig=tuned;resetHardware(0);Task2MotionTestRun();checkCompleted();
     puts("PASS: current published tuning and arrow configuration");
+    for (int side=-1; side<=1; side+=2)
+    {
+        task2RouteConfig=original;
+        task2RouteConfig.parkToObstacle1Mm=1050;
+        task2RouteConfig.obstacleFaceGapMm=1050;
+        task2RouteConfig.obstacle2WidthMm=500;
+        task2RouteConfig.firstArrow=-side;task2RouteConfig.secondArrow=side;
+        resetHardware(10);Task2MotionTestRun();
+        assert(task2MotionTestResult.obstacle2EdgeStopped && task2MotionTestDetection.detected);
+        assert(task2MotionTestRoute.steps[5].sensorTerminated);
+        assert(task2MotionTestStepResults[5].measuredDistanceMm > irStraightPreviewMm + 20);
+        unsigned absent=0;
+        for (unsigned i=0;i<task2MotionTestLogCount;++i)
+        {
+            const Task2MotionTestSample *sample=&task2MotionTestLog[i];
+            if(sample->irFresh && sample->irAdc<=400)++absent;
+        }
+        assert(absent>=3);
+        /* Replay with no disappearance, cancel only after passing the old preview cap. */
+        resetHardware(11);Task2MotionTestRun();
+        assert(task2MotionTestResult.cancelled && !task2MotionTestResult.obstacle2EdgeStopped);
+        assert(robot->motionController.mode==MOTIONCONTROLLER_IDLE);
+        assert(fabsf(robot->motionController.travelledDistanceMm) > task2MotionTestRoute.steps[5].distanceMm);
+    }
+    puts("PASS: mirrored gradual IR disappearance beyond nominal edge, continuous-straight cancellation and no-absence timeout");
     testRecordedQuarterReturn();
     puts("PASS: measured asymmetric frame, one startup range, frozen configuration, invalid input, cancellation, timeout and IMU fault");
     printf("Planner pose checks: max startup %u, max return %u\n",maxStartupChecks,maxReturnChecks);

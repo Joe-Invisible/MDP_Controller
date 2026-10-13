@@ -625,7 +625,8 @@ static MotionControllerStatus MotionController_StartMotion(
     MotionController *controller,
     float distanceMm,
     float speedCps,
-    MotionControllerMode mode)
+    MotionControllerMode mode,
+    bool continuous)
 {
     float mmPerCount =
         MotionController_GetMmPerCount(controller);
@@ -647,16 +648,16 @@ static MotionControllerStatus MotionController_StartMotion(
             ? controller->config->straightDecelerationMmps2
             : controller->config->arcDecelerationMmps2;
 
-    if (!MotionProfile_Start(
-            &controller->motionProfile,
-            targetDistanceMm,
-            maxSpeedMmps))
+    bool profileStarted = continuous
+        ? MotionProfile_StartContinuous(&controller->motionProfile, maxSpeedMmps)
+        : MotionProfile_Start(&controller->motionProfile, targetDistanceMm, maxSpeedMmps);
+    if (!profileStarted)
     {
         return MOTIONCONTROLLER_STATUS_PROFILE_ERROR;
     }
 
     controller->motionDirection = distanceMm > 0.0f ? 1 : -1;
-    controller->targetDistanceMm = targetDistanceMm;
+    controller->targetDistanceMm = continuous ? 0.0f : targetDistanceMm;
 
     controller->maxSpeedCps = speedCps;
     controller->targetSpeedCps = 0.0f;
@@ -739,10 +740,11 @@ static void MotionController_SelectPathTuning(
     PIDController_Reset(&controller->arcYawRatePID);
 }
 
-MotionControllerStatus MotionController_MoveStraight(
+static MotionControllerStatus MotionController_StartStraight(
     MotionController *controller,
     float distanceMm,
-    float speedCps)
+    float speedCps,
+    bool continuous)
 {
     if (controller == NULL)
         return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
@@ -766,7 +768,7 @@ MotionControllerStatus MotionController_MoveStraight(
         controller,
         distanceMm,
         speedCps,
-        MOTIONCONTROLLER_STRAIGHT);
+        MOTIONCONTROLLER_STRAIGHT, continuous);
 
     if (status != MOTIONCONTROLLER_STATUS_OK)
     {
@@ -810,6 +812,19 @@ MotionControllerStatus MotionController_MoveStraight(
             : MOTIONCONTROLLER_STRAIGHT;
 
     return MOTIONCONTROLLER_STATUS_OK;
+}
+
+MotionControllerStatus MotionController_MoveStraight(
+    MotionController *controller, float distanceMm, float speedCps)
+{
+    return MotionController_StartStraight(controller, distanceMm, speedCps, false);
+}
+
+MotionControllerStatus MotionController_MoveStraightContinuous(
+    MotionController *controller, float signedSpeedCps)
+{
+    return MotionController_StartStraight(controller,
+        signedSpeedCps < 0.0f ? -1.0f : 1.0f, fabsf(signedSpeedCps), true);
 }
 
 MotionControllerStatus MotionController_RequestCruiseSpeed(
@@ -896,7 +911,7 @@ MotionControllerStatus MotionController_MoveArc(
         controller,
         distanceMm,
         speedCps,
-        MOTIONCONTROLLER_ARC);
+        MOTIONCONTROLLER_ARC, false);
 
     if (status != MOTIONCONTROLLER_STATUS_OK)
     {
@@ -994,7 +1009,7 @@ MotionControllerStatus MotionController_FollowProfile(
     status = MotionController_StartMotion(
         controller, profile->signedDistanceMm, profile->maxSpeedCps,
         initialSample.straightTuningWeight == 1.0f
-            ? MOTIONCONTROLLER_STRAIGHT : MOTIONCONTROLLER_ARC);
+            ? MOTIONCONTROLLER_STRAIGHT : MOTIONCONTROLLER_ARC, false);
     if (status != MOTIONCONTROLLER_STATUS_OK)
     {
         return status;

@@ -285,6 +285,13 @@ MotionControllerStatus MotionController_MoveStraight(
 	float distanceMm,
 	float speedCps);
 
+/* Caller-terminated straight with the same steering preparation and control.
+ * signedSpeedCps selects forward/reverse; magnitude is the cruise ceiling.
+ * No distance endpoint. The owner must call Brake/Stop, including on timeout.
+ */
+MotionControllerStatus MotionController_MoveStraightContinuous(
+    MotionController *controller, float signedSpeedCps);
+
 /* Soft cruise request for the current motion, including fused profiles.
  * Launch with the intended upper cruise speed, then request approach speed;
  * raise it again on recognition. Speed must not exceed the launched ceiling.

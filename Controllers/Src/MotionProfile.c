@@ -68,12 +68,22 @@ bool MotionProfile_Start(
         return false;
     }
 
+    profile->continuous = false;
     profile->targetDistanceMm = distanceMm;
     profile->maxSpeedMmps = maxSpeedMmps;
     profile->targetSpeedMmps = 0.0f;
     profile->requestedCruiseSpeedMmps = 0.0f;
     profile->active = true;
 
+    return true;
+}
+
+bool MotionProfile_StartContinuous(MotionProfile *profile, float maxSpeedMmps)
+{
+    if (!isfinite(maxSpeedMmps) || !MotionProfile_Start(profile, 1.0f, maxSpeedMmps))
+        return false;
+    profile->targetDistanceMm = 0.0f; /* No endpoint in continuous mode. */
+    profile->continuous = true;
     return true;
 }
 
@@ -92,6 +102,10 @@ float MotionProfile_Update(
 {
     if (profile == NULL || !profile->active)
         return 0.0f;
+
+    if (profile->continuous)
+        return MotionProfile_UpdateWithBrakingLimit(
+            profile, travelledDistanceMm, dt, profile->maxSpeedMmps);
 
     float remainingDistanceMm = fmaxf(
         0.0f, profile->targetDistanceMm - fmaxf(0.0f, travelledDistanceMm));
@@ -118,7 +132,7 @@ float MotionProfile_UpdateWithBrakingLimit(
     float remainingDistanceMm =
         profile->targetDistanceMm - travelledDistanceMm;
 
-    if (remainingDistanceMm <= profile->completionToleranceMm)
+    if (!profile->continuous && remainingDistanceMm <= profile->completionToleranceMm)
     {
         MotionProfile_Stop(profile);
         return 0.0f;

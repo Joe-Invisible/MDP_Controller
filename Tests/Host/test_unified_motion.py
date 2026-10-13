@@ -418,8 +418,42 @@ static void testStandaloneCruiseRequests(void)
     }
 }
 
+static void testContinuousStraight(void)
+{
+    for (int direction = -1; direction <= 1; direction += 2)
+    {
+        Fixture f;
+        setup(&f, false);
+        assert(MotionController_MoveStraightContinuous(&f.motion, direction * 2000.0f) == 0);
+        prepare(&f, MOTIONCONTROLLER_STRAIGHT_PREPARING, MOTIONCONTROLLER_STRAIGHT);
+        assert(f.motion.motionProfile.continuous && f.motion.targetDistanceMm == 0);
+        for (unsigned i = 0; i < 3000; ++i)
+        {
+            f.leftMotor.state.encCount += direction;
+            f.rightMotor.state.encCount += direction;
+            update(&f, DT);
+            assert(f.motion.mode == MOTIONCONTROLLER_STRAIGHT);
+        }
+        assert(fabsf(f.motion.travelledDistanceMm) > 300);
+        near(f.motion.targetSpeedCps, direction * 2000.0f, 0.1f);
+        assert(MotionController_RequestCruiseSpeed(&f.motion, 1000) == 0);
+        for (unsigned i = 0; i < 1000; ++i) update(&f, DT);
+        near(f.motion.targetSpeedCps, direction * 1000.0f, 0.1f);
+        assert(MotionController_Brake(&f.motion) == 0);
+        for (unsigned i = 0; i < f.config.stopStableSampleCount; ++i) update(&f, DT);
+        assert(!MotionController_IsBusy(&f.motion));
+        assert(MotionController_MoveStraight(&f.motion, 50, 1000) == 0);
+        assert(!f.motion.motionProfile.continuous);
+        assert(MotionController_Stop(&f.motion) == 0);
+        assert(MotionController_MoveStraightContinuous(&f.motion, 0) == MOTIONCONTROLLER_STATUS_INVALID_SPEED);
+        assert(MotionController_MoveStraightContinuous(&f.motion, NAN) == MOTIONCONTROLLER_STATUS_INVALID_SPEED);
+    }
+    puts("PASS: caller-terminated forward/reverse straight, cruise requests, braking and finite-motion reset");
+}
+
 int main(void)
 {
+    testContinuousStraight();
     testStandaloneCruiseRequests();
     testStraightSignsAndGeometry();
     testFixedStraightFeedforward();

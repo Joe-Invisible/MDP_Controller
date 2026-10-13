@@ -108,7 +108,8 @@ typedef struct
 
 typedef struct
 {
-    float distanceMm;
+    float distanceMm; /* Preview length only when sensorTerminated is true. */
+    bool sensorTerminated; /* Straight runs until its owner confirms the edge. */
     float radiusMm; /* Zero: straight; positive: left; negative: right. */
     float speedCps; /* Hard ceiling; both approaches use soft speed requests. */
 } Task2RouteStep;
@@ -133,7 +134,7 @@ extern const char *const task2RouteStepNames[TASK2_ROUTE_STEP_COUNT];
 
 /* MCU: bounded continuous-clearance certificates. PC: optional 1 mm sweeps. */
 bool Task2Route_Create(const Task2RouteConfig *config, Task2Route *route);
-/* Opposite-arrow prefix: guard is checked now; suffix is built at the IR stop. */
+/* Opposite-arrow prefix: nominal preview is checked; suffix is built at the IR stop. */
 bool Task2Route_CreateIR(const Task2RouteConfig *config,
     const Task2RouteIRDeparture *ir, Task2Route *route);
 
