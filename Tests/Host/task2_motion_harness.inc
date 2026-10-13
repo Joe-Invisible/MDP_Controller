@@ -15,6 +15,7 @@ static Task2RouteReport idealReport;
 
 static uint32_t sensorTick, sensorDue;
 static bool sensorPending;
+static unsigned irReads;
 static Task2ObstacleObservation pendingObservation;
 
 bool Task2ObstacleSensors_Init(const Task2ObstacleSensorConfig *config)
@@ -29,6 +30,8 @@ uint32_t Task2ObstacleSensors_Poll(const Task2ObstacleSensorConfig *c, uint32_t 
     const Task2RoutePose *pose, Task2ObstacleObservation out[TASK2_SENSOR_COUNT])
 {
     uint32_t mask = 0;
+    if (task2MotionTestStepIndex == TASK2_ROUTE_O2_APPROACH_STEP)
+        assert(!c->sideIREnabled);
     if (sensorPending && now >= sensorDue)
     {
         out[0] = pendingObservation;
@@ -55,7 +58,7 @@ uint32_t Task2ObstacleSensors_Poll(const Task2ObstacleSensorConfig *c, uint32_t 
         pendingObservation=(Task2ObstacleObservation){.valid=isfinite(range),
             .value=isfinite(range)?range:0,.pose=*pose};
         if(scenario==4)pendingObservation.valid=false;
-        if(scenario==5)
+        if(scenario==5 || scenario==9)
         {
             pendingObservation.valid=true;
             pendingObservation.value=(face-x)/fmaxf(cosf(angle),0.05f);
@@ -63,6 +66,23 @@ uint32_t Task2ObstacleSensors_Poll(const Task2ObstacleSensorConfig *c, uint32_t 
         if(scenario==6)pendingObservation.fault=true;
         sensorDue=now+(pendingObservation.valid?5:50);
         sensorPending=true;
+        if (c->sideIREnabled)
+        {
+            ++irReads;
+            const Task2SensorMount *mounts[]={&c->leftIR,&c->rightIR};
+            for(unsigned i=0;i<2;++i)
+            {
+                const Task2SensorMount *ir=mounts[i];
+                float sx=idealPose.xMm+ir->aheadMm*cosf(idealPose.yawRad)-ir->leftMm*sinf(idealPose.yawRad);
+                float sy=idealPose.yMm+ir->aheadMm*sinf(idealPose.yawRad)+ir->leftMm*cosf(idealPose.yawRad);
+                float ray=idealPose.yawRad+ir->yawDeg*PI/180;
+                bool onFace=cosf(ray)>0.05f && face>sx &&
+                    fabsf(sy+(face-sx)*tanf(ray))<=r->obstacle2WidthMm/2;
+                out[i+1]=(Task2ObstacleObservation){.valid=scenario!=8,.fault=scenario==8,
+                    .value=scenario==7 ? 300 : onFace || scenario==5 ? 900 : 300,.pose=*pose};
+            }
+            mask|=6U;
+        }
     }
     return mask;
 }
@@ -158,6 +178,7 @@ static void resetHardware(unsigned nextScenario)
     robot = NULL;
     tick = runStartTick = starts = rangeReads = rangeWaits = 0;
     leftFraction = rightFraction = 0;
+    irReads = 0U;
     rangeOk = true; mutateAtReady = false;
     idealPose = (Task2RoutePose){TASK2_ROUTE_START_X_MM,0,0};
     idealReport = (Task2RouteReport){.minimumObstacleGapMm=INFINITY,
@@ -187,15 +208,34 @@ static void checkCompleted(void)
     near(task2MotionTestStepResults[TASK2_ROUTE_O2_APPROACH_STEP].measuredDistanceMm,
         task2MotionTestRoute.steps[TASK2_ROUTE_O2_APPROACH_STEP].distanceMm, 10);
     assert(task2MotionTestDetection.detected && task2MotionTestDetection.observedWidthMm>=300);
+    if(task2MotionTestRoute.obstacle2IRDeparture)
+    {
+        assert(!task2MotionTestRoute.obstacle2ReturnPending);
+        assert(task2MotionTestDetection.source==(task2MotionTestRoute.config.secondArrow==1
+            ? TASK2_SENSOR_RIGHT_IR : TASK2_SENSOR_LEFT_IR));
+    }
     assert(task2MotionTestLogCount > 1 && !task2MotionTestResult.logTruncated);
     assert(task2MotionTestLog[task2MotionTestLogCount-1].mode == MOTIONCONTROLLER_IDLE);
     for (unsigned i=0; i<task2MotionTestRoute.stepCount; ++i)
         if (i != TASK2_ROUTE_O2_DEPARTURE_STEP && task2MotionTestRoute.steps[i].radiusMm != 0)
+        {
+            if(!task2MotionTestStepResults[i].yawPredictedReached)
+                fprintf(stderr,"Yaw exit step %u length %.2f R%.0f, layout %.0f %.0f %.0f %d %d\n",i,task2MotionTestRoute.steps[i].distanceMm,task2MotionTestRoute.steps[i].radiusMm,task2MotionTestRoute.config.parkToObstacle1Mm,task2MotionTestRoute.config.obstacleFaceGapMm,task2MotionTestRoute.config.obstacle2WidthMm,task2MotionTestRoute.config.firstArrow,task2MotionTestRoute.config.secondArrow);
             assert(task2MotionTestStepResults[i].yawPredictedReached);
+        }
     bool accelerated = false, obstacle2Accelerated = false;
+    unsigned freshIRReads=0;
     for (unsigned i=0; i<task2MotionTestLogCount; ++i)
     {
         const Task2MotionTestSample *s=&task2MotionTestLog[i];
+        if(s->irFresh)
+        {
+            ++freshIRReads;
+            assert(s->irObserved && s->irValid && s->irAdc<=4095);
+            assert(task2MotionTestRoute.config.secondArrow*s->routeYawRad*180/PI >=
+                task2MotionTestSensorConfig.irAcquisitionMinYawDeg-0.01f);
+            assert(s->stepIndex>=TASK2_ROUTE_O2_DEPARTURE_STEP);
+        }
         if (s->timeMs < task2MotionTestResult.recognitionElapsedMs)
             assert(s->targetSpeedCps <= task2MotionTestRoute.config.approachSpeedCps+0.5f);
         if (s->stepIndex == 0 && s->timeMs > task2MotionTestResult.recognitionElapsedMs &&
@@ -208,12 +248,27 @@ static void checkCompleted(void)
             else if (s->targetSpeedCps > task2MotionTestRoute.config.approachSpeedCps+100)
                 obstacle2Accelerated=true;
         }
-        if (s->stepIndex == TASK2_ROUTE_O2_DEPARTURE_STEP)
+        if (s->stepIndex == TASK2_ROUTE_O2_DEPARTURE_STEP ||
+            (task2MotionTestRoute.obstacle2IRDeparture && s->stepIndex==TASK2_ROUTE_O2_IR_STRAIGHT_STEP &&
+             task2MotionTestRoute.steps[s->stepIndex].radiusMm==0))
             assert(s->targetSpeedCps <= task2MotionTestRoute.config.obstacle2DepartureSpeedCps+0.5f);
+    }
+    assert(freshIRReads>=task2MotionTestSensorConfig.presentSamples+task2MotionTestSensorConfig.absentSamples ||
+        !task2MotionTestRoute.obstacle2IRDeparture);
+    assert(freshIRReads==irReads); /* No selected ADC conversion is lost between motion-log entries. */
+    if(task2MotionTestRoute.obstacle2IRDeparture && task2MotionTestRoute.steps[5].radiusMm==0)
+    {
+        float heading=0;
+        for(unsigned i=0;i<=4;++i)heading+=task2MotionTestStepResults[i].measuredYawRad;
+        near(heading,task2MotionTestRoute.config.secondArrow*PI/2,0.04f);
+        near(task2MotionTestStepResults[5].measuredYawRad,0,0.02f);
     }
     assert(accelerated);
     /* Short approaches can finish before exceeding the approach speed. */
-    if (task2MotionTestRoute.steps[TASK2_ROUTE_O2_APPROACH_STEP].distanceMm >= 300)
+    float recognitionTravel=hypotf(task2MotionTestResult.arrow2RecognitionPoseEstimate.xMm-
+        task2MotionTestResult.obstacle1ExitPoseEstimate.xMm,task2MotionTestResult.arrow2RecognitionPoseEstimate.yMm-
+        task2MotionTestResult.obstacle1ExitPoseEstimate.yMm);
+    if (task2MotionTestRoute.steps[TASK2_ROUTE_O2_APPROACH_STEP].distanceMm - recognitionTravel >= 300)
         assert(obstacle2Accelerated);
     const Task2RouteConfig *c=&task2MotionTestRoute.config;
     float centre=c->bodyCenterAheadOfRearAxleMm+0.5f*c->frontProtrusionMm;
@@ -228,6 +283,7 @@ static void testSensorEvents(void)
 {
     Task2ObstacleSensorConfig config=task2ObstacleSensorConfig;
     config.ultrasonic=(Task2SensorMount){0,0,0};
+    config.irAcquisitionMinYawDeg=0; /* Isolate ADC hysteresis tests from the mounting yaw gate. */
     Task2RouteConfig route=task2RouteConfig;
     route.secondArrow=1;
     float face=route.parkToObstacle1Mm+100+route.obstacleFaceGapMm;
@@ -255,20 +311,25 @@ static void testSensorEvents(void)
     for(unsigned i=0;i<3;++i)Task2ObstacleDetection_Observe(&state,&config,&route,0,&o,true);
     assert(state.detected && state.observedWidthMm>width+80);
     config.rightIR=(Task2SensorMount){0,0,0};state=(Task2ObstacleDetection){0};
+    o.pose.yawRad=20*PI/180;
     o.valid=true;o.value=400;
     for(unsigned i=0;i<3;++i)Task2ObstacleDetection_Observe(&state,&config,&route,2,&o,true);
     assert(!state.armed[2] && !state.detected && state.absent[2]==0);
     o.value=700;
-    for(unsigned i=0;i<2;++i)Task2ObstacleDetection_Observe(&state,&config,&route,2,&o,false);
+    state=(Task2ObstacleDetection){0};
+    for(unsigned i=0;i<5;++i)Task2ObstacleDetection_Observe(&state,&config,&route,2,&o,false);
+    assert(!state.armed[2] && !state.irObserved[1]);
+    for(unsigned i=0;i<2;++i)Task2ObstacleDetection_Observe(&state,&config,&route,2,&o,true);
     assert(!state.armed[2]);
-    o.value=699;Task2ObstacleDetection_Observe(&state,&config,&route,2,&o,false);
+    o.value=699;Task2ObstacleDetection_Observe(&state,&config,&route,2,&o,true);
     assert(state.present[2]==0);
     o.value=700;
-    for(unsigned i=0;i<3;++i)Task2ObstacleDetection_Observe(&state,&config,&route,2,&o,false);
+    for(unsigned i=0;i<3;++i)Task2ObstacleDetection_Observe(&state,&config,&route,2,&o,true);
     assert(state.armed[2]);
     const float noisyPresent[]={900,750,850,700,800};
     for(unsigned i=0;i<5;++i){o.value=noisyPresent[i];Task2ObstacleDetection_Observe(&state,&config,&route,2,&o,true);}
     o.value=401;
+    o.pose.yawRad=40*PI/180;
     for(unsigned i=0;i<5;++i)Task2ObstacleDetection_Observe(&state,&config,&route,2,&o,true);
     assert(!state.detected && state.absent[2]==0);
     o.value=400;
@@ -283,6 +344,24 @@ static void testSensorEvents(void)
     state=(Task2ObstacleDetection){0};
     o.valid=false;Task2ObstacleDetection_Observe(&state,&config,&route,2,&o,true);
     assert(state.fault && !state.detected);
+    /* Run02's early side return cannot arm IR; the genuine face near 85 deg can. */
+    state=(Task2ObstacleDetection){0};config.rightIR=(Task2SensorMount){135,-33.5,-90};
+    config.irAcquisitionMinYawDeg=80;
+    o=(Task2ObstacleObservation){.valid=true,.value=900,.pose={face-478.43f,-174.20f,37.44f*PI/180}};
+    for(unsigned i=0;i<5;++i)Task2ObstacleDetection_Observe(&state,&config,&route,2,&o,true);
+    assert(!state.armed[2] && state.present[2]==0);
+    o.pose=(Task2RoutePose){face-375.55f,11.50f,75*PI/180};
+    for(unsigned i=0;i<5;++i)Task2ObstacleDetection_Observe(&state,&config,&route,2,&o,true);
+    assert(!state.armed[2] && !state.irObserved[1]);
+    o.pose.yawRad=80*PI/180;
+    for(unsigned i=0;i<2;++i)Task2ObstacleDetection_Observe(&state,&config,&route,2,&o,true);
+    assert(state.irObserved[1] && !state.armed[2]);
+    o.pose=(Task2RoutePose){face-375.55f,11.50f,85*PI/180};
+    for(unsigned i=0;i<3;++i)Task2ObstacleDetection_Observe(&state,&config,&route,2,&o,true);
+    assert(state.armed[2] && state.irObserved[1] && state.lastIRAdc[1]==900);
+    o.value=300;o.pose=(Task2RoutePose){face-345,80,100*PI/180};
+    for(unsigned i=0;i<3;++i)Task2ObstacleDetection_Observe(&state,&config,&route,2,&o,true);
+    assert(state.detected && state.source==TASK2_SENSOR_RIGHT_IR);
     state=(Task2ObstacleDetection){0};o.valid=true;o.value=4096;
     Task2ObstacleDetection_Observe(&state,&config,&route,2,&o,true);
     assert(state.fault && !state.detected);
@@ -304,7 +383,7 @@ static void testTraverseFallback(void)
     config.obstacle2WidthMm=500;config.firstArrow=-1;config.secondArrow=1;
     assert(Task2Route_Create(&config,&route));
     Task2RoutePose stopped={1050,-300,80*PI/180};
-    assert(Task2Route_ReplanObstacle2(&route,&stopped,500));
+    assert(Task2Route_ReplanObstacle2(&route,&stopped,500,TASK2_ROUTE_O2_DEPARTURE_STEP));
     assert(route.stepCount==14);
     task2MotionTestRoute=route;
     resetHardware(0);
@@ -344,7 +423,7 @@ int main(void)
     const Task2MotionTestConfig originalTest=task2MotionTestConfig;
     task2MotionTestConfig.measureObstacle1AtStartup=false;
     const float positions[]={600,1050}, gaps[]={600,750,1050,1500}, widths[]={300,350,400,500};
-    unsigned runs=0, shortReturns=0, alignedReturns=0, traverseReturns=0;
+    unsigned runs=0, shortReturns=0, alignedReturns=0, traverseReturns=0, irReturns=0;
     for(unsigned p=0;p<2;++p)for(unsigned g=0;g<4;++g)for(unsigned w=0;w<4;++w)
     for(int left=-1;left<=1;left+=2)for(int right=-1;right<=1;right+=2)
     {
@@ -354,14 +433,28 @@ int main(void)
         task2RouteConfig.recognitionCameraRangeMm=1000;
         resetHardware(0); Task2MotionTestRun();
         if(!task2MotionTestResult.passed)fprintf(stderr,"Failed %u: %u %s, width %.1f, stop %.1f %.1f %.1f\n",runs,task2MotionTestResult.status,task2MotionTestRoute.report.reason,task2MotionTestDetection.observedWidthMm,task2MotionTestResult.obstacle2StoppedPose.xMm,task2MotionTestResult.obstacle2StoppedPose.yMm,task2MotionTestResult.obstacle2StoppedPose.yawRad*180/PI);
+        if(!task2MotionTestResult.passed)fprintf(stderr,"IR state: armed %d %d absent %u %u first %.2f %.2f %.3f / %.2f %.2f %.3f, ADC %u %u, step%u final %.1f %.1f %.3f\n",task2MotionTestDetection.armed[1],task2MotionTestDetection.armed[2],task2MotionTestDetection.absent[1],task2MotionTestDetection.absent[2],task2MotionTestDetection.firstAbsentPose[1].xMm,task2MotionTestDetection.firstAbsentPose[1].yMm,task2MotionTestDetection.firstAbsentPose[1].yawRad,task2MotionTestDetection.firstAbsentPose[2].xMm,task2MotionTestDetection.firstAbsentPose[2].yMm,task2MotionTestDetection.firstAbsentPose[2].yawRad,task2MotionTestDetection.lastIRAdc[0],task2MotionTestDetection.lastIRAdc[1],task2MotionTestStepIndex,idealPose.xMm,idealPose.yMm,idealPose.yawRad);
         checkCompleted(); ++runs;
-        if(task2MotionTestRoute.stepCount==8)++shortReturns;
-        if(task2MotionTestRoute.stepCount==11)++alignedReturns;
-        if(task2MotionTestRoute.stepCount==14)++traverseReturns;
+        if(task2MotionTestRoute.obstacle2IRDeparture)++irReturns;
+        else if(task2MotionTestRoute.stepCount==8)++shortReturns;
+        else if(task2MotionTestRoute.stepCount==11)++alignedReturns;
+        else if(task2MotionTestRoute.stepCount==14)++traverseReturns;
     }
-    assert(shortReturns+alignedReturns+traverseReturns==runs);
-    printf("Return variants: %u direct, %u aligned, %u traverses\n",shortReturns,alignedReturns,traverseReturns);
+    assert(shortReturns+alignedReturns+traverseReturns+irReturns==runs && irReturns==64);
+    printf("Return variants: %u direct, %u aligned, %u traverses, %u IR-directed\n",shortReturns,alignedReturns,traverseReturns,irReturns);
     puts("PASS: 128 sensor-driven stopped routes, arrows, 600-1500mm gaps, widths, acquisition, observed-edge replanning and footprints");
+    for(unsigned g=0;g<2;++g)for(unsigned w=0;w<2;++w)for(int side=-1;side<=1;side+=2)
+    {
+        task2RouteConfig=original;task2RouteConfig.obstacleFaceGapMm=g ? 1050 : 600;
+        task2RouteConfig.obstacle2WidthMm=w ? 500 : 300;
+        task2RouteConfig.firstArrow=-side;task2RouteConfig.secondArrow=side;
+        task2RouteConfig.cruiseSpeedCps=7000;task2RouteConfig.approachSpeedCps=3000;
+        task2RouteConfig.obstacle2DepartureSpeedCps=2000;
+        resetHardware(0);Task2MotionTestRun();
+        if(!task2MotionTestResult.passed)fprintf(stderr,"Fast IR failure %.0f %.0f %d: %s\n",task2RouteConfig.obstacleFaceGapMm,task2RouteConfig.obstacle2WidthMm,side,task2MotionTestRoute.report.reason);
+        checkCompleted();
+    }
+    puts("PASS: mirrored IR departures at 7000/3000/2000 CPS including run02 layout");
     task2RouteConfig=original;
     testTraverseFallback();
     task2MotionTestConfig=originalTest;
@@ -388,6 +481,16 @@ int main(void)
         if(s==2)assert(task2MotionTestResult.timedOut);
         if(s>=3)assert(task2MotionTestResult.status!=0);
     }
+    for(unsigned s=7;s<=8;++s)
+    {
+        task2RouteConfig=original;resetHardware(s);Task2MotionTestRun();
+        assert(!task2MotionTestResult.passed && starts==1 && !task2MotionTestResult.obstacle2EdgeStopped);
+        assert(robot->motionController.mode==MOTIONCONTROLLER_IDLE);
+        assert(s==7 ? !task2MotionTestDetection.armed[TASK2_SENSOR_LEFT_IR] : task2MotionTestDetection.fault);
+        if(s==7)assert(task2MotionTestDetection.irAcquisitionTimedOut);
+    }
+    task2RouteConfig=original;resetHardware(9);Task2MotionTestRun();checkCompleted();
+    puts("PASS: IR never acquired, IR ADC fault, and ultrasonic background cannot terminate opposite-arrow departure");
     puts("PASS: measured asymmetric frame, one startup range, frozen configuration, invalid input, cancellation, timeout and IMU fault");
     return 0;
 }

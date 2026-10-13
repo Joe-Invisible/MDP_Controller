@@ -10,7 +10,8 @@ bool Task2ObstacleDetection_ValidConfig(const Task2ObstacleSensorConfig *c)
         c->ultrasonicBeamHalfAngleDeg >= 45.0f || !isfinite(c->edgeUncertaintyMm) ||
         c->edgeUncertaintyMm < 0.0f || !isfinite(c->ultrasonicRangeToleranceMm) ||
         c->ultrasonicRangeToleranceMm <= 0.0f || c->irPresentAdc > 4095U ||
-        c->irPresentAdc <= c->irAbsentAdc)
+        c->irPresentAdc <= c->irAbsentAdc || !isfinite(c->irAcquisitionMinYawDeg) ||
+        c->irAcquisitionMinYawDeg < 0.0f || c->irAcquisitionMinYawDeg > 90.0f)
         return false;
     const Task2SensorMount *mounts[] = {&c->ultrasonic, &c->leftIR, &c->rightIR};
     for (unsigned i = 0U; i < TASK2_SENSOR_COUNT; ++i)
@@ -35,15 +36,24 @@ void Task2ObstacleDetection_Observe(Task2ObstacleDetection *s,
 {
     if (!s || !c || !r || !o || sensor >= TASK2_SENSOR_COUNT || s->detected || s->fault)
         return;
+    /* Side returns during the straight approach cannot identify O2. */
+    if (sensor != TASK2_SENSOR_ULTRASONIC &&
+        (!departing || !c->sideIREnabled || r->secondArrow * o->pose.yawRad * 180.0f / PI < c->irAcquisitionMinYawDeg ||
+         sensor != (r->secondArrow == TASK2_ARROW_LEFT ? TASK2_SENSOR_RIGHT_IR : TASK2_SENSOR_LEFT_IR)))
+        return;
+    if (sensor != TASK2_SENSOR_ULTRASONIC)
+    {
+        unsigned i = sensor - TASK2_SENSOR_LEFT_IR;
+        s->irObserved[i] = true;
+        s->irValid[i] = o->valid && !o->fault && isfinite(o->value) && o->value >= 0.0f && o->value <= 4095.0f;
+        s->lastIRAdc[i] = s->irValid[i] ? (uint16_t)o->value : 0U;
+    }
     if (o->fault || !isfinite(o->pose.xMm) || !isfinite(o->pose.yMm) ||
         !isfinite(o->pose.yawRad) || (o->valid && !isfinite(o->value)))
     {
         s->fault = true;
         return;
     }
-    if (sensor != TASK2_SENSOR_ULTRASONIC &&
-        sensor != (r->secondArrow == TASK2_ARROW_LEFT ? TASK2_SENSOR_RIGHT_IR : TASK2_SENSOR_LEFT_IR))
-        return;
     const Task2SensorMount *m = sensor == TASK2_SENSOR_ULTRASONIC ? &c->ultrasonic :
         sensor == TASK2_SENSOR_LEFT_IR ? &c->leftIR : &c->rightIR;
     Task2RoutePose p = SensorPose(o->pose, m);
@@ -72,8 +82,18 @@ void Task2ObstacleDetection_Observe(Task2ObstacleDetection *s,
             return;
         }
         if (cosf(p.yawRad) <= 0.05f || face <= p.xMm)
+        {
+            s->present[sensor] = s->absent[sensor] = 0U;
             return;
-        present = o->value >= c->irPresentAdc;
+        }
+        float faceY = p.yMm + (face - p.xMm) * tanf(p.yawRad);
+        bool onFace = isfinite(faceY) && fabsf(faceY) <= r->obstacle2WidthMm * 0.5f;
+        if (!s->armed[sensor] && !onFace)
+        {
+            s->present[sensor] = s->absent[sensor] = 0U;
+            return; /* A forward-facing beam can still hit a side obstacle. */
+        }
+        present = onFace && o->value >= c->irPresentAdc;
         absent = o->value <= c->irAbsentAdc;
     }
     if (present)
@@ -85,6 +105,11 @@ void Task2ObstacleDetection_Observe(Task2ObstacleDetection *s,
         return;
     }
     s->present[sensor] = 0U;
+    if (sensor == TASK2_SENSOR_ULTRASONIC && r->firstArrow != r->secondArrow)
+    {
+        s->absent[sensor] = 0U;
+        return; /* Opposite-arrow departure terminates on side IR only. */
+    }
     if (!absent || !departing || !s->armed[sensor])
     {
         s->absent[sensor] = 0U;
@@ -102,9 +127,12 @@ void Task2ObstacleDetection_Observe(Task2ObstacleDetection *s,
     if (cosf(ray) <= 0.05f || face <= p.xMm)
         return;
     float edge = r->secondArrow * (p.yMm + (face - p.xMm) * tanf(ray));
-    if (!isfinite(edge) || edge < 150.0f)
+    float width = 2.0f * (edge + c->edgeUncertaintyMm);
+    /* Apply the minimum width to the conservative bound, allowing the stated
+     * pose/edge uncertainty at the minimum 300 mm obstacle width. */
+    if (!isfinite(edge) || edge <= 0.0f || !isfinite(width) || width < 300.0f)
         return;
-    s->observedWidthMm = 2.0f * (edge + c->edgeUncertaintyMm);
+    s->observedWidthMm = width;
     s->edgePose = s->firstAbsentPose[sensor];
     s->source = sensor;
     s->detected = true;

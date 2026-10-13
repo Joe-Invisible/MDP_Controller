@@ -4,6 +4,7 @@ import argparse
 import json
 import math
 import os
+import re
 from pathlib import Path
 import shlex
 import subprocess
@@ -19,7 +20,7 @@ PROBE = r'''
 #include <stdio.h>
 #include <stdlib.h>
 int main(int argc, char **argv) {
-    if (argc != 6) return 2;
+    if (argc != 16) return 2;
     Task2RouteConfig c = task2RouteConfig;
     if (atoi(argv[1])) c.firstArrow = atoi(argv[1]);
     if (atoi(argv[2])) c.secondArrow = atoi(argv[2]);
@@ -27,10 +28,26 @@ int main(int argc, char **argv) {
     if (atof(argv[4])) c.obstacleFaceGapMm = atof(argv[4]);
     if (atof(argv[5])) c.obstacle2WidthMm = atof(argv[5]);
     Task2Route route;
-    if (!Task2Route_Create(&c, &route)) { fprintf(stderr,"Preflight: %s\n",route.report.reason); return 1; }
+    int ok;
+    if(c.firstArrow!=c.secondArrow) {
+        Task2SensorMount left,right;
+        if(sscanf(argv[6],"%f,%f,%f",&left.aheadMm,&left.leftMm,&left.yawDeg)!=3 ||
+           sscanf(argv[7],"%f,%f,%f",&right.aheadMm,&right.leftMm,&right.yawDeg)!=3)return 2;
+        float speed=c.obstacle2DepartureSpeedCps*atof(argv[8]);
+        float acquisitionSpeed=(c.obstacle2IRAcquisitionSpeedCps<c.obstacle2DepartureSpeedCps?
+            c.obstacle2IRAcquisitionSpeedCps:c.obstacle2DepartureSpeedCps)*atof(argv[8]);
+        Task2RouteIRDeparture ir={.mount=c.secondArrow==1?right:left,
+            .guardTravelMm=speed*((atof(argv[10])+1)*atof(argv[9])+atof(argv[11]))/1000+
+                speed*speed/(2*atof(argv[12]))+c.secondIRDepartureGuardExtraMm,.edgeUncertaintyMm=atof(argv[13]),
+            .acquisitionMinYawDeg=atof(argv[14]),
+            .acquisitionTravelMm=acquisitionSpeed*(atof(argv[15])*atof(argv[9])+atof(argv[11]))/1000};
+        ok=Task2Route_CreateIR(&c,&ir,&route);
+    } else ok=Task2Route_Create(&c,&route);
+    if (!ok) { fprintf(stderr,"Preflight: %s\n",route.report.reason); return 1; }
     printf("{\"first\":%d,\"second\":%d,\"o1\":%.6f,\"gap\":%.6f,\"width\":%.6f,",c.firstArrow,c.secondArrow,c.parkToObstacle1Mm,c.obstacleFaceGapMm,c.obstacle2WidthMm);
     printf("\"buffer\":%.6f,\"side\":%.6f,\"body_length\":%.6f,\"body_width\":%.6f,\"body_centre\":%.6f,\"protrusion\":%.6f,",c.obstacleBufferMm,c.obstacle2EndSpaceMm+c.obstacle2WidthMm/2,c.bodyLengthMm,c.bodyWidthMm,c.bodyCenterAheadOfRearAxleMm,c.frontProtrusionMm);
     printf("\"camera_offset\":%.6f,\"recognition_range\":%.6f,\"total\":%.6f,\"minimum_gap\":%.6f,",c.bodyCenterAheadOfRearAxleMm+c.bodyLengthMm/2-c.cameraBehindFrontMm,c.recognitionCameraRangeMm,route.totalTravelMm,route.report.minimumObstacleGapMm);
+    printf("\"return_pending\":%s,",route.obstacle2ReturnPending?"true":"false");
     printf("\"recognition\":[");
     for(int i=0;i<2;i++)printf("%s[%.6f,%.6f,%.6f]",i?",":"",route.report.recognitionPose[i].xMm,route.report.recognitionPose[i].yMm,route.report.recognitionPose[i].yawRad);
     printf("],\"steps\":[");
@@ -49,9 +66,32 @@ def planned_route(args):
             str(work / "probe.c"), str(ROOT / "Tests/Src/Task2Route.c"), "-lm", "-o", str(work / "probe")]
         subprocess.run(command, check=True)
         directions = {None: 0, "left": 1, "right": -1}
+        # Read current numeric defaults rather than duplicating measured mounts
+        # and controller timing in this geometry-only probe.
+        test_source = (ROOT / "Tests/Src/Task2MotionTest.c").read_text()
+        controller_source = (ROOT / "Controllers/Src/MotionControllerConfig.c").read_text()
+        def numeric(source, pattern):
+            match = re.search(pattern, source)
+            if not match:
+                raise ValueError(f"Cannot read numeric default: {pattern}")
+            return float(match.group(1))
+        mounts = []
+        for name in ("leftIR", "rightIR"):
+            values = re.search(r"\." + name + r"\s*=\s*\{([^}]+)\}", test_source).group(1)
+            mounts.append(",".join(str(float(value.strip().rstrip("fF"))) for value in values.split(",")))
+        diameter = numeric(controller_source, r"#define WHEEL_DIAMETER_MM\s+([\d.]+)")
+        counts = numeric(controller_source, r"#define MG512P30_QUAD_RESOLUTION\s+([\d.]+)")
+        timing = [diameter * math.pi / counts,
+            numeric(test_source, r"\.samplePeriodMs\s*=\s*([\d.]+)"),
+            numeric(test_source, r"\.absentSamples\s*=\s*([\d.]+)"),
+            numeric(test_source, r"\.controlPeriodMs\s*=\s*([\d.]+)"),
+            numeric(test_source, r"arcDecelerationMmps2\s*=\s*([\d.]+)"),
+            numeric(test_source, r"\.edgeUncertaintyMm\s*=\s*([\d.]+)"),
+            numeric(test_source, r"\.irAcquisitionMinYawDeg\s*=\s*([\d.]+)"),
+            numeric(test_source, r"\.presentSamples\s*=\s*([\d.]+)")]
         result = subprocess.run([str(work / "probe"), str(directions[args.first_arrow]),
             str(directions[args.second_arrow]), str(args.park_to_o1 or 0), str(args.gap or 0),
-            str(args.width or 0)], check=True, capture_output=True, text=True)
+            str(args.width or 0), *mounts, *(str(value) for value in timing)], check=True, capture_output=True, text=True)
         return json.loads(result.stdout)
 
 
@@ -81,7 +121,9 @@ def main():
     notes = fig.add_axes([0.80, 0.23, 0.19, 0.60]); notes.axis("off")
     colours = ["#506888", "#007c91", "#ad5b06", "#1a8a60", "#746bb0", "#bd4668", "#3d67b0", "#7d5697", "#b47a27", "#488e63", "#6281a8", "#88577e", "#98633c", "#5c6a97", "#7c853b", "#885e6e"]
     names = ["Approach O1", "O1 departure", "O1 bypass exit", "Approach O2", "O2 departure guard", "O2 back arc"]
-    if len(c["steps"]) == 7:
+    if c["return_pending"]:
+        names = names[:4] + ["IR departure arc (90° cap)", "IR straight guard"]
+    elif len(c["steps"]) == 7:
         names += ["Return to park"]
     elif len(c["steps"]) == 10:
         names += ["Return straight", "Park align 1", "Park align 2", "Park straight"]
@@ -100,7 +142,8 @@ def main():
     for side in [-c["side"], c["side"]]:
         axis.axhline(side, color="#b04d50", linestyle="--", linewidth=0.9)
     axis.axhline(0, color="#9faab4", linestyle=":", linewidth=0.8)
-    pose = np.array([-250.0, 0.0, 0.0]); boundaries = [pose.copy()]; x_max = pose[0]
+    pose = np.array([-250.0, 0.0, 0.0]); boundaries = [pose.copy()]
+    x_max = max(pose[0], faces[1] + 100 + c["buffer"])
     for i, (distance, radius, speed) in enumerate(c["steps"]):
         ds = np.linspace(0, distance, max(4, int(distance / 3)+1))
         if radius == 0:
@@ -129,7 +172,7 @@ def main():
     for pose, style in [(boundaries[0], "--"), (boundaries[-1], "-")]:
         axis.add_patch(Polygon(body(pose,c), fill=False, edgecolor="#354350", linestyle=style, linewidth=1.0))
         axis.arrow(pose[0],pose[1],55*math.cos(pose[2]),55*math.sin(pose[2]),head_width=18,color="#354350",zorder=7)
-    axis.annotate("Start / finish", (-250,0), xytext=(-490,-470), arrowprops={"arrowstyle":"-", "color":"#5c6975"}, color="#5c6975", fontsize=9)
+    axis.annotate("Start" if c["return_pending"] else "Start / finish", (-250,0), xytext=(-490,-470), arrowprops={"arrowstyle":"-", "color":"#5c6975"}, color="#5c6975", fontsize=9)
     for i, (x,y,angle) in enumerate(c["recognition"]):
         lens = (x+c["camera_offset"]*math.cos(angle),y+c["camera_offset"]*math.sin(angle))
         axis.plot([lens[0],faces[i]],[lens[1],0],color="#33946f",alpha=0.5,linestyle="--",linewidth=0.8)
@@ -139,11 +182,12 @@ def main():
     axis.set_xlim(-550,x_max+180)
     axis.set_ylim(-c["side"]-100,c["side"]+100)
     arrows = lambda value: "LEFT" if value == 1 else "RIGHT"
-    fig.text(0.07,0.945,"Task 2 · stopped primitive route",fontsize=20,weight="bold",color="#273644")
+    fig.text(0.07,0.945,"Task 2 · IR departure prefix" if c["return_pending"] else "Task 2 · stopped primitive route",fontsize=20,weight="bold",color="#273644")
     fig.text(0.07,0.90,f'O1 {arrows(c["first"])} · O2 {arrows(c["second"])} · O2 width {c["width"]:.0f} mm · travel {c["total"]/1000:.2f} m',fontsize=11,color="#5c6975")
     notes.text(0,0.10,f'Nominal body clearance\n{c["minimum_gap"]:.1f} mm minimum',fontsize=10,color="#273644")
     fig.text(0.07,0.11,f'Circles: stopped primitive boundaries. Green diamonds: nominal camera recognition poses.\nGrey: {c["buffer"]:.0f} mm obstacle buffer. Path tracks the rear axle; preflight checks the complete footprint.',fontsize=9,color="#5c6975")
-    fig.text(0.07,0.045,f'Configured layout: park → O1 {c["o1"]:.0f} mm; O1 back → O2 {c["gap"]:.0f} mm. No rear arena boundary.\nNominal guarded departure; live edge detection stops and replans its suffix. Tracking error is not represented.',fontsize=9,color="#5c6975")
+    suffix_note = 'Return is created from the live IR stop; this graph ends at the straight guard.' if c["return_pending"] else 'Nominal guarded departure; live edge detection stops and replans its suffix.'
+    fig.text(0.07,0.045,f'Configured layout: park → O1 {c["o1"]:.0f} mm; O1 back → O2 {c["gap"]:.0f} mm. No rear arena boundary.\n{suffix_note} Tracking error is not represented.',fontsize=9,color="#5c6975")
     args.output.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(args.output,dpi=180,metadata={"Date":None} if args.output.suffix==".svg" else None)
     if args.output.suffix==".svg":

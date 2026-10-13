@@ -404,8 +404,21 @@ and departure, brakes on a confirmed edge, and rebuilds the bypass/return from
 the stopped pose. Sensor mounts, cone assumptions, confirmation counts, IR
 thresholds and uncertainty are configurable and frozen. Side IR is now enabled
 with raw ADC thresholds 700/400 and measured lateral offsets +37.5/-33.5 mm;
-forward offsets and beam angles remain provisional. Either ultrasonic or the
-selected IR can confirm the edge. Tangent straight return is
+forward offsets are now measured at left 155/right 135 mm. IR acquisition is
+restricted to moving departure and beam intersection with the configured face,
+so approach returns from side obstacles cannot arm it. Opposite-arrow departure
+uses IR exclusively: a configurable R325 arc is terminated by confirmed absence
+or capped at mirrored 90 degrees, then a straight at the stopped heading continues
+until confirmed absence if needed. IR becomes eligible at mirrored 80 degrees
+(configurable); a brief 500 CPS acquisition cap gives three fresh readings time
+to confirm presence, then restores departure speed. Acquisition has a 1500 ms
+timeout from the yaw gate. Preflight checks an uncertainty-inset acquisition
+window and can try tighter radii down to R275. The checked straight guard includes
+confirmation/braking travel plus 30 mm extra by default. Its return is planned
+from the actual stopped pose with a checked end cap, back traverse and exit arc;
+earlier stops can use the existing tangent search. Fresh selected IR reads each
+produce an ADC/validity/confirmation log entry marked irFresh. Same-arrow
+departure still permits ultrasonic edges. Tangent straight return is
 preferred; clearance-checked return arcs, parking alignment and front/back
 traverses cover harder layouts. Failure to acquire, confirm or fit a suffix stops
 the test. The configured O2 layout remains the geometric test reference; live

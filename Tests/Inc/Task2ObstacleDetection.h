@@ -4,13 +4,6 @@
 
 typedef struct
 {
-    float aheadMm;
-    float leftMm;
-    float yawDeg; /* Beam direction relative to chassis +x. */
-} Task2SensorMount;
-
-typedef struct
-{
     bool ultrasonicEnabled;
     bool sideIREnabled;
     Task2SensorMount ultrasonic;
@@ -20,6 +13,7 @@ typedef struct
     float ultrasonicRangeToleranceMm;
     uint16_t irPresentAdc; /* Inclusive raw 12-bit ADC thresholds. */
     uint16_t irAbsentAdc;
+    float irAcquisitionMinYawDeg; /* Mirrored chassis yaw; side IR becomes eligible here. */
     float edgeUncertaintyMm;
     uint32_t samplePeriodMs;
     uint32_t acquisitionTimeoutMs;
@@ -46,13 +40,18 @@ typedef struct
     Task2RoutePose firstAbsentPose[TASK2_SENSOR_COUNT];
     bool detected;
     bool fault;
+    bool irAcquisitionTimedOut;
     Task2ObstacleSensor source;
     float lastUltrasonicRangeMm;
+    uint16_t lastIRAdc[2]; /* Left, right; last ADC read, before geometry checks. */
+    bool irObserved[2];
+    bool irValid[2];
     float observedWidthMm;
     Task2RoutePose edgePose;
 } Task2ObstacleDetection;
 
 bool Task2ObstacleDetection_ValidConfig(const Task2ObstacleSensorConfig *config);
+/* Ultrasonic may acquire on approach; IR observations require departing=true. */
 void Task2ObstacleDetection_Observe(Task2ObstacleDetection *state,
     const Task2ObstacleSensorConfig *config, const Task2RouteConfig *route,
     Task2ObstacleSensor sensor, const Task2ObstacleObservation *observation,

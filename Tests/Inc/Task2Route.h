@@ -7,6 +7,7 @@
 #define TASK2_ROUTE_STEP_COUNT 16U /* Storage capacity; use route.stepCount. */
 #define TASK2_ROUTE_O2_APPROACH_STEP 3U
 #define TASK2_ROUTE_O2_DEPARTURE_STEP 4U
+#define TASK2_ROUTE_O2_IR_STRAIGHT_STEP 5U
 #define TASK2_ROUTE_START_X_MM (-250.0f)
 
 typedef enum
@@ -48,7 +49,10 @@ typedef struct
     float obstacle2ApproachMaxMm;
     float obstacle2DepartureWidthReserveMm; /* Whole-width reserve for sensing delay/model. */
     float obstacle2DepartureSpeedCps;
+    float obstacle2IRAcquisitionSpeedCps; /* Brief soft cap near the IR yaw gate, before presence is armed. */
     float secondDepartureRadiusMm;
+    float secondIRDepartureRadiusMm; /* Opposite arrows: looser, IR-terminated arc. */
+    float secondIRDepartureGuardExtraMm; /* Beyond confirmation and braking estimates. */
     float secondBackExtraRadiusMm; /* Back radius = W2/2 + this value. */
 
 } Task2RouteConfig;
@@ -59,6 +63,22 @@ typedef struct
     float yMm;
     float yawRad;
 } Task2RoutePose;
+
+typedef struct
+{
+    float aheadMm;
+    float leftMm;
+    float yawDeg; /* Beam direction relative to chassis +x. */
+} Task2SensorMount;
+
+typedef struct
+{
+    Task2SensorMount mount;
+    float guardTravelMm; /* Confirmation, braking and additional travel reserve. */
+    float edgeUncertaintyMm;
+    float acquisitionMinYawDeg;
+    float acquisitionTravelMm; /* Fresh-sample confirmation window at departure speed. */
+} Task2RouteIRDeparture;
 
 typedef struct
 {
@@ -89,6 +109,8 @@ typedef struct
     uint32_t stepCount;
     float totalTravelMm;
     float totalYawRad;
+    bool obstacle2IRDeparture;
+    bool obstacle2ReturnPending;
     Task2RouteReport report;
 } Task2Route;
 
@@ -98,6 +120,9 @@ extern const char *const task2RouteStepNames[TASK2_ROUTE_STEP_COUNT];
 
 /* Pure 1 mm swept-footprint preflight of stopped circular/straight primitives. */
 bool Task2Route_Create(const Task2RouteConfig *config, Task2Route *route);
+/* Opposite-arrow prefix: guard is checked now; suffix is built at the IR stop. */
+bool Task2Route_CreateIR(const Task2RouteConfig *config,
+    const Task2RouteIRDeparture *ir, Task2Route *route);
 
 /* Instantaneous recognition simulation: whole horizontal O1 target in view. */
 bool Task2Route_ObstacleCameraVisible(const Task2RouteConfig *config,
@@ -108,7 +133,7 @@ bool Task2Route_Obstacle1CameraVisible(const Task2RouteConfig *config,
 /* Replace the unexecuted suffix after an edge stop. Width is an observed
  * conservative planning bound; configured width remains the test footprint. */
 bool Task2Route_ReplanObstacle2(Task2Route *route, const Task2RoutePose *stoppedPose,
-    float observedWidthMm);
+    float observedWidthMm, unsigned completedDepartureStep);
 
 /* Independent footprint checks, also usable for host ideal execution checks. */
 /* O1-only footprint check; also useful for host geometry regressions. */

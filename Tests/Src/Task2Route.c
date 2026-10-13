@@ -46,8 +46,11 @@ Task2RouteConfig task2RouteConfig = {
     .obstacle1ExitYawDeg = 19.0f,
     .obstacle2ApproachMaxMm = 1000.0f,
     .obstacle2DepartureSpeedCps = 1000.0f,
+    .obstacle2IRAcquisitionSpeedCps = 500.0f,
     .obstacle2DepartureWidthReserveMm = 100.0f,
     .secondDepartureRadiusMm = 275.0f,
+    .secondIRDepartureRadiusMm = 325.0f,
+    .secondIRDepartureGuardExtraMm = 30.0f,
     .secondBackExtraRadiusMm = 250.0f,
 
 
@@ -110,9 +113,12 @@ static bool ValidConfig(const Task2RouteConfig *config)
         config->recognitionTargetWidthMm, config->firstArcCameraRangeMm,
         config->firstRejoinBeyondFaceMm, config->firstRadiusMm,
         config->secondArcCameraRangeMm, config->secondDepartureRadiusMm,
+        config->secondIRDepartureRadiusMm,
+        config->secondIRDepartureGuardExtraMm,
         config->secondBackExtraRadiusMm,
         config->obstacle1ExitYawDeg, config->obstacle2ApproachMaxMm,
         config->obstacle2DepartureSpeedCps, config->obstacle2DepartureWidthReserveMm,
+        config->obstacle2IRAcquisitionSpeedCps,
     };
     for (size_t i = 0U; i < sizeof(positive) / sizeof(positive[0]); ++i)
         if (!isfinite(positive[i]) || positive[i] <= 0.0f)
@@ -133,6 +139,7 @@ static bool ValidConfig(const Task2RouteConfig *config)
         config->cameraBehindFrontMm <= config->bodyLengthMm &&
         config->firstRadiusMm >= ROUTE_MIN_RADIUS_MM &&
         config->secondDepartureRadiusMm >= ROUTE_MIN_RADIUS_MM &&
+        config->secondIRDepartureRadiusMm >= ROUTE_MIN_RADIUS_MM &&
         config->approachSpeedCps <= config->cruiseSpeedCps;
 }
 
@@ -335,7 +342,120 @@ static bool BuildTail(const Task2RouteConfig *c, Task2RoutePose p,
     return BuildTraverseTail(c, &bounds, p, width, out, count);
 }
 
-static bool BuildSteps(Task2Route *route)
+/* After the side IR passes the outward edge, a clockwise end cap reaches the
+ * back of O2. A straight back traverse and stopped exit arc keep the return
+ * inside the guaranteed side corridor; all candidates use the full footprint. */
+static bool BuildIREdgeReturn(const Task2RouteConfig *c, Task2RoutePose p,
+    float width, Task2RouteStep out[9], unsigned *count)
+{
+    Task2RouteConfig bounds = *c;
+    float sideLimit = 0.5f * c->obstacle2WidthMm + c->obstacle2EndSpaceMm;
+    bounds.obstacle2WidthMm = fmaxf(c->obstacle2WidthMm, width);
+    bounds.obstacle2EndSpaceMm = sideLimit - 0.5f * bounds.obstacle2WidthMm;
+    if (bounds.obstacle2EndSpaceMm <= 0.0f)
+        return false;
+    float side = c->secondArrow, h = side * p.yawRad;
+    if (h <= 0.0f || h >= ROUTE_PI)
+        return false;
+    if (h < 85.0f * ROUTE_PI / 180.0f && BuildTail(c, p, width, out, count) && out[0].distanceMm >= 10.0f)
+        return true;
+    for (unsigned r = 0U; r < 16U; ++r)
+    for (unsigned offset = 0U; offset < 3U; ++offset)
+    for (unsigned park = 0U; park < 4U; ++park)
+    {
+        float rb = ROUTE_MIN_RADIUS_MM + 25.0f * r;
+        float returnY = 0.5f * bounds.obstacle2WidthMm + 0.5f * c->bodyWidthMm +
+            c->obstacleBufferMm + 20.0f + 10.0f * offset;
+        float exitRadius = ROUTE_MIN_RADIUS_MM;
+        out[0] = (Task2RouteStep){rb * (h + 0.5f * ROUTE_PI), -side * rb, c->cruiseSpeedCps};
+        Task2RoutePose back = Advance(p, out[0].distanceMm, out[0].radiusMm);
+        out[1] = (Task2RouteStep){side * back.yMm + returnY - exitRadius, 0.0f, c->cruiseSpeedCps};
+        out[2] = (Task2RouteStep){0.5f * ROUTE_PI * exitRadius, -side * exitRadius, c->cruiseSpeedCps};
+        Task2RoutePose returnStart = Advance(Advance(back, out[1].distanceMm, 0.0f),
+            out[2].distanceMm, out[2].radiusMm);
+        float rejoinRadius = fmaxf(ROUTE_MIN_RADIUS_MM, 0.5f * returnY + 50.0f);
+        float angle = acosf(1.0f - returnY / (2.0f * rejoinRadius));
+        float parkStraight = 100.0f + 100.0f * park;
+        float sx = TASK2_ROUTE_START_X_MM + parkStraight + 2.0f * rejoinRadius * sinf(angle);
+        out[3] = (Task2RouteStep){returnStart.xMm - sx, 0.0f, c->cruiseSpeedCps};
+        out[4] = (Task2RouteStep){rejoinRadius * angle, -side * rejoinRadius, c->cruiseSpeedCps};
+        out[5] = (Task2RouteStep){rejoinRadius * angle, side * rejoinRadius, c->cruiseSpeedCps};
+        out[6] = (Task2RouteStep){parkStraight, 0.0f, c->approachSpeedCps};
+        if (Sweep(&bounds, p, out, 7U, 5.0f, true) &&
+            Sweep(&bounds, p, out, 7U, ROUTE_SAMPLE_SPACING_MM, true))
+        {
+            *count = 7U;
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool BuildIRDeparture(const Task2RouteConfig *c, Task2RoutePose p,
+    const Task2RouteIRDeparture *ir, float turnRadius, Task2RouteStep *step)
+{
+    float side = c->secondArrow, radius = side * turnRadius;
+    float face = c->parkToObstacle1Mm + 100.0f + c->obstacleFaceGapMm;
+    step[0] = (Task2RouteStep){turnRadius * (0.5f * ROUTE_PI - side * p.yawRad),
+        radius, c->obstacle2DepartureSpeedCps};
+    Task2RoutePose front = Advance(p, step[0].distanceMm, radius);
+    float x = front.xMm + ir->mount.aheadMm * cosf(front.yawRad) - ir->mount.leftMm * sinf(front.yawRad);
+    float y = front.yMm + ir->mount.aheadMm * sinf(front.yawRad) + ir->mount.leftMm * cosf(front.yawRad);
+    float ray = front.yawRad + ir->mount.yawDeg * ROUTE_PI / 180.0f;
+    if (face <= x || cosf(ray) <= 0.05f)
+        return false;
+    float hit = side * (y + (face - x) * tanf(ray));
+    if (!isfinite(hit))
+        return false;
+    step[1] = (Task2RouteStep){fmaxf(0.0f, 0.5f * c->obstacle2WidthMm - hit) + ir->guardTravelMm,
+        0.0f, c->obstacle2DepartureSpeedCps};
+    float edgeTravel = step[0].distanceMm + fmaxf(0.0f, 0.5f * c->obstacle2WidthMm - hit);
+    bool acquired = false;
+    float acquireTravel = INFINITY;
+    float innerHalf = fmaxf(0.0f, 0.5f * c->obstacle2WidthMm - ir->edgeUncertaintyMm);
+    float acquisitionEnd = step[0].distanceMm + fmaxf(0.0f, innerHalf - hit);
+    bool acquisitionEnded = false;
+    for (float d = 0.0f; d < step[0].distanceMm; d += 1.0f)
+    {
+        Task2RoutePose pose = Advance(p, d, radius);
+        if (side * pose.yawRad * 180.0f / ROUTE_PI < ir->acquisitionMinYawDeg)
+            continue;
+        float sx = pose.xMm + ir->mount.aheadMm * cosf(pose.yawRad) - ir->mount.leftMm * sinf(pose.yawRad);
+        float sy = pose.yMm + ir->mount.aheadMm * sinf(pose.yawRad) + ir->mount.leftMm * cosf(pose.yawRad);
+        float a = pose.yawRad + ir->mount.yawDeg * ROUTE_PI / 180.0f;
+        if (face <= sx || cosf(a) <= 0.05f)
+            continue;
+        float fy = sy + (face - sx) * tanf(a);
+        if (!acquired && fabsf(fy) <= innerHalf)
+        {
+            acquired = true;
+            acquireTravel = d;
+        }
+        if (acquired && !acquisitionEnded && side * fy > innerHalf)
+        {
+            acquisitionEnd = d;
+            acquisitionEnded = true;
+        }
+        if (acquired && side * fy > 0.5f * c->obstacle2WidthMm)
+        {
+            edgeTravel = d;
+            break;
+        }
+    }
+    if (!acquired)
+        acquireTravel = step[0].distanceMm + fmaxf(0.0f, -innerHalf - hit);
+    if (acquisitionEnd - acquireTravel < ir->acquisitionTravelMm)
+        return false;
+    Task2RouteStep tail[9];
+    unsigned count;
+    float stopTravel = edgeTravel + ir->guardTravelMm;
+    Task2RoutePose predictedStop = stopTravel < step[0].distanceMm
+        ? Advance(p, stopTravel, radius) : Advance(front, stopTravel - step[0].distanceMm, 0.0f);
+    return Sweep(c, p, step, 2U, 1.0f, false) &&
+        BuildIREdgeReturn(c, predictedStop, c->obstacle2WidthMm + 2.0f * ir->edgeUncertaintyMm, tail, &count);
+}
+
+static bool BuildSteps(Task2Route *route, const Task2RouteIRDeparture *ir)
 {
     const Task2RouteConfig *c = &route->config;
     float firstStart = c->parkToObstacle1Mm - CameraOffset(c) - c->firstArcCameraRangeMm;
@@ -358,41 +478,63 @@ static bool BuildSteps(Task2Route *route)
     float lateral = -dx * sinf(start.yawRad) - start.yMm * cosf(start.yawRad);
     /* 500 mm is the recognition baseline. If a departure cannot fit there,
      * try an earlier endpoint within camera range, retaining the same straight. */
-    for (float range = c->secondArcCameraRangeMm;
-         range <= c->recognitionCameraRangeMm; range += 25.0f)
+    for (unsigned radiusTry = 0U; radiusTry < (ir ? 3U : 1U); ++radiusTry)
     {
-        if (fabsf(lateral) >= range)
-            continue;
-        float travel = forward - sqrtf(range * range - lateral * lateral);
-        if (travel < 0.0f || travel > c->obstacle2ApproachMaxMm)
-            continue;
-        Task2RoutePose departure = Advance(start, travel, 0.0f);
-        if (!Task2Route_ObstacleCameraVisible(c, &departure, 1U))
-            continue;
-        SetStep(route, 3U, travel, 0.0f);
-        unsigned count = 0U;
-        if (Sweep(c, (Task2RoutePose){TASK2_ROUTE_START_X_MM, 0.0f, 0.0f}, route->steps, 4U, 1.0f, false) &&
-            BuildTail(c, departure, c->obstacle2WidthMm + c->obstacle2DepartureWidthReserveMm,
-                &route->steps[4], &count))
+        float irRadius = radiusTry == 2U ? ROUTE_MIN_RADIUS_MM
+            : fmaxf(ROUTE_MIN_RADIUS_MM, c->secondIRDepartureRadiusMm - 25.0f * radiusTry);
+        for (float range = c->secondArcCameraRangeMm;
+             range <= c->recognitionCameraRangeMm; range += 25.0f)
         {
-            route->stepCount = 4U + count;
-            return true;
+            if (fabsf(lateral) >= range)
+                continue;
+            float travel = forward - sqrtf(range * range - lateral * lateral);
+            if (travel < 0.0f || travel > c->obstacle2ApproachMaxMm)
+                continue;
+            Task2RoutePose departure = Advance(start, travel, 0.0f);
+            if (!Task2Route_ObstacleCameraVisible(c, &departure, 1U))
+                continue;
+            SetStep(route, 3U, travel, 0.0f);
+            unsigned count = 0U;
+            if (ir)
+            {
+                if (Sweep(c, (Task2RoutePose){TASK2_ROUTE_START_X_MM, 0.0f, 0.0f}, route->steps, 4U, 1.0f, false) &&
+                    BuildIRDeparture(c, departure, ir, irRadius, &route->steps[4]))
+                {
+                    route->stepCount = 6U;
+                    route->obstacle2IRDeparture = route->obstacle2ReturnPending = true;
+                    return true;
+                }
+                continue;
+            }
+            if (Sweep(c, (Task2RoutePose){TASK2_ROUTE_START_X_MM, 0.0f, 0.0f}, route->steps, 4U, 1.0f, false) &&
+                BuildTail(c, departure, c->obstacle2WidthMm + c->obstacle2DepartureWidthReserveMm,
+                    &route->steps[4], &count))
+            {
+                route->stepCount = 4U + count;
+                return true;
+            }
         }
     }
     return Reject(route, "NO_O2_APPROACH_OR_RETURN");
 }
 
-bool Task2Route_ReplanObstacle2(Task2Route *route, const Task2RoutePose *pose, float width)
+bool Task2Route_ReplanObstacle2(Task2Route *route, const Task2RoutePose *pose, float width,
+    unsigned completedDepartureStep)
 {
     Task2RouteStep tail[9];
     unsigned count = 0U;
     if (!route || !pose || !isfinite(width) || width < 300.0f ||
+        (completedDepartureStep != TASK2_ROUTE_O2_DEPARTURE_STEP &&
+         !(route->obstacle2IRDeparture && completedDepartureStep == TASK2_ROUTE_O2_IR_STRAIGHT_STEP)) ||
         !isfinite(pose->xMm) || !isfinite(pose->yMm) || !isfinite(pose->yawRad) ||
-        !BuildTail(&route->config, *pose, width, tail, &count))
+        !(route->obstacle2IRDeparture
+            ? BuildIREdgeReturn(&route->config, *pose, width, tail, &count)
+            : BuildTail(&route->config, *pose, width, tail, &count)))
         return route ? Reject(route, "NO_OBSERVED_EDGE_RETURN") : false;
     for (unsigned i = 0U; i < count; ++i)
-        route->steps[5U + i] = tail[i];
-    route->stepCount = 5U + count;
+        route->steps[completedDepartureStep + 1U + i] = tail[i];
+    route->stepCount = completedDepartureStep + 1U + count;
+    route->obstacle2ReturnPending = false;
     route->totalTravelMm = route->totalYawRad = 0.0f;
     for (unsigned i = 0U; i < route->stepCount; ++i)
     {
@@ -563,6 +705,15 @@ static bool ValidatePath(Task2Route *route)
     }
     if (!seen[0] || !seen[1])
         return Reject(route, "NO_CAMERA_HANDOFF");
+    if (route->obstacle2ReturnPending)
+    {
+        if (!crossed[0][0])
+            return Reject(route, "INCOMPLETE_O1_BYPASS");
+        report->finishPose = pose; /* Guard pose; parking suffix is still pending. */
+        report->valid = true;
+        report->reason = "OK_IR_PREFIX";
+        return true;
+    }
     for (unsigned i = 0U; i < 2U; ++i)
         if (!crossed[i][0] || !crossed[i][1])
             return Reject(route, "INCOMPLETE_BYPASS");
@@ -580,7 +731,7 @@ static bool ValidatePath(Task2Route *route)
     return true;
 }
 
-bool Task2Route_Create(const Task2RouteConfig *config, Task2Route *route)
+static bool Create(const Task2RouteConfig *config, const Task2RouteIRDeparture *ir, Task2Route *route)
 {
     if (route == NULL)
         return false;
@@ -589,7 +740,15 @@ bool Task2Route_Create(const Task2RouteConfig *config, Task2Route *route)
         route->config = *config;
     if (config == NULL || !ValidConfig(config))
         return Reject(route, "INVALID_PARAMETERS");
-    if (!BuildSteps(route))
+    if (ir && (config->firstArrow == config->secondArrow ||
+        !isfinite(ir->mount.aheadMm) || !isfinite(ir->mount.leftMm) ||
+        !isfinite(ir->mount.yawDeg) || fabsf(ir->mount.yawDeg) > 180.0f ||
+        !isfinite(ir->guardTravelMm) || ir->guardTravelMm <= 0.0f ||
+        !isfinite(ir->acquisitionMinYawDeg) || ir->acquisitionMinYawDeg < 0.0f || ir->acquisitionMinYawDeg > 90.0f ||
+        !isfinite(ir->acquisitionTravelMm) || ir->acquisitionTravelMm < 0.0f ||
+        !isfinite(ir->edgeUncertaintyMm) || ir->edgeUncertaintyMm < 0.0f))
+        return Reject(route, "INVALID_IR_DEPARTURE");
+    if (!BuildSteps(route, ir))
         return false;
     for (unsigned i = 0U; i < route->stepCount; ++i)
     {
@@ -600,4 +759,17 @@ bool Task2Route_Create(const Task2RouteConfig *config, Task2Route *route)
     if (route->totalTravelMm > ROUTE_MAX_TRAVEL_MM)
         return Reject(route, "TRAVEL_LIMIT");
     return ValidatePath(route);
+}
+
+bool Task2Route_Create(const Task2RouteConfig *config, Task2Route *route)
+{
+    return Create(config, NULL, route);
+}
+
+bool Task2Route_CreateIR(const Task2RouteConfig *config,
+    const Task2RouteIRDeparture *ir, Task2Route *route)
+{
+    if (!ir)
+        return route ? Reject(route, "MISSING_IR_MOUNT") : false;
+    return Create(config, ir, route);
 }

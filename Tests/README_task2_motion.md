@@ -16,13 +16,31 @@ assumed arrow must fit the camera range and field of view. The normal departure
 endpoint is 500 mm camera-to-arrow-centre range; the planner tries earlier
 endpoints in 25 mm range increments if turning clearance requires it.
 
-The departure uses live ultrasonic measurements. A sensor is armed only after
-three fresh O2-consistent readings. Three consecutive absent/inconsistent
-readings during departure confirm a candidate edge; a renewed return resets
-the absence count. An acquisition timeout or reaching the departure guard
-endpoint without a confirmed edge fails the run. Trigger/ADC faults are distinct
-from completed ultrasonic no-echo timeouts. SW1 cancellation and run/brake
-timeouts remain active.
+Same-arrow departure retains ultrasonic edge detection. Opposite-arrow departure
+uses **side IR only** for its edge: LEFT observes right IR, RIGHT observes left IR.
+Its preferred configurable **R325 arc** stops on a confirmed IR disappearance or at mirrored
+**90 degrees**, whichever comes first. If the cap is reached without an edge,
+the next primitive travels straight at the stopped heading until IR confirms an
+edge. Initial absence cannot count as an edge: three present samples must first
+acquire O2, followed by three consecutive absent samples. IR is never read during
+the straight O2 approach or below the configurable **80-degree mirrored chassis
+yaw gate** (`irAcquisitionMinYawDeg`, adjustable toward 85 degrees). Near that gate,
+the arc briefly requests **500 CPS** until three present samples arm IR, then
+restores departure speed. Slowing begins early enough to decelerate before the
+gate. If IR has not acquired within **1500 ms after the gate**, it reports
+`irAcquisitionTimedOut` and stops. Ultrasonic still acquires the face before departure,
+but its later echo losses/background returns cannot end opposite-arrow departure.
+
+The straight has a full-footprint-checked guard based on the reference edge plus
+sample-confirmation, braking and additional travel reserves. Reaching the guard
+without a confirmed edge fails the run. Trigger/ADC faults are distinct from
+completed ultrasonic no-echo timeouts. SW1 cancellation and run/brake timeouts
+remain active.
+
+The planner checks a fresh-sample acquisition window inside the uncertainty
+margin as well as the footprint. It tries the preferred IR radius at earlier
+approach endpoints, then a radius 25 mm tighter and R275 if needed. The selected
+radius is exported in step 5. These remain stopped circular/straight primitives.
 
 Measurements carry the pose at trigger time. The candidate edge uses the
 **first** absent measurement's pose, so confirmation delay does not get added
@@ -33,18 +51,25 @@ the controller brakes; the remaining route is rebuilt from the **stopped pose**,
 not the detection pose. Live departure defaults to **1000 CPS** for this first
 sensor experiment. It can be raised after checking the edge logs.
 
-The planner first tries tangent circular joins and a tangent straight return.
+For same-arrow departure, the planner first tries tangent circular joins and a tangent straight return.
 When that fails, it tries a direct return arc or a straight return with stopped
 centreline-recovery arcs. Opposite-side cases that cannot clear the front corner
 use a front traverse, R275 end cap, back traverse and exit turn, followed by the
 return and parking alignment. These are bounded geometry searches, not a fused
-route. Storage capacity is 16 steps; `route.stepCount` is the actual length.
+route. After an IR stop near 90 degrees, the return uses a checked end-cap arc,
+back straight, exit arc and return/parking alignment. An earlier IR stop can use
+the tangent return search when it fits. The initial IR plan contains six guarded
+prefix primitives (`obstacle2ReturnPending=true`); the actual stopped pose and
+width determine its suffix. Storage capacity is 16 steps; `route.stepCount` is
+the actual length.
 
 Both the initial guard route and the replanned suffix have full rotated-body
 preflight at 1 mm spacing. The suffix checks the larger of the configured test
 width and the observed width bound, while retaining the original arena side
 limits. Defaults reserve 100 mm of whole O2 width for sensing/model delay in
-the initial guard; require 100 mm obstacle clearance, 35 mm side/park-mouth
+the ultrasonic initial guard. IR guard travel uses the configured departure
+speed, sample period/count, controller deceleration and
+`secondIRDepartureGuardExtraMm` (30 mm). Both require 100 mm obstacle clearance, 35 mm side/park-mouth
 clearance, and 15 mm park back-wall clearance. An infeasible suffix leaves the
 robot stopped and reports failure.
 
@@ -61,8 +86,8 @@ Edit **`task2ObstacleSensorConfig` in `Src/Task2MotionTest.c`** for mounts:
 | Sensor | Ahead of rear axle | Left of rear axle | Beam yaw relative to chassis |
 |---|---:|---:|---:|
 | Ultrasonic | 210 mm, measured | 0 mm | 0 degrees |
-| Left IR | 110 mm, assumed | +37.5 mm, measured | +90 degrees, assumed |
-| Right IR | 110 mm, assumed | -33.5 mm, measured | -90 degrees, assumed |
+| Left IR | 155 mm, measured | +37.5 mm, measured | +90 degrees |
+| Right IR | 135 mm, measured | -33.5 mm, measured | -90 degrees |
 
 The lateral IR offsets use the measured 189 mm width between the outer sides of
 the front wheels: left inset 57 mm gives `189/2 - 57 = 37.5`, and right inset
@@ -73,18 +98,30 @@ The same ultrasonic mount is used for startup ranging and moving measurements.
 `task2MotionTestConfig` controls startup ranging, control/log periods and
 run/brake timeouts. All sensor configuration is frozen at run start and exported.
 
-Ultrasonic and **side IR are enabled by default**. IR forward offsets and beam
-angles remain configurable assumptions. `aheadMm` is the receiver-lens centre's
+Ultrasonic and **side IR are enabled by default**. Mount coordinates and beam
+angles remain configurable. `aheadMm` is the receiver-lens centre's
 forward distance from the rear-axle midpoint, parallel to the chassis centreline;
 `leftMm` is its separate lateral offset. LEFT departure observes the right IR,
-RIGHT observes the left IR. Only a beam facing the O2 front plane can acquire
-the face. Either ultrasonic or the selected IR can confirm an edge; enabling IR
-does not make it the exclusive edge source. The IR path
+RIGHT observes the left IR. IR is read only during the moving departure, and
+approach observations cannot arm its detector. Acquisition additionally requires
+the modelled beam to intersect the configured O2 face within its width; merely
+facing its plane does not identify O2. This gate uses the test reference layout
+and cannot prove that a nearer object is absent. Opposite-arrow departures require
+IR enabled and use it exclusively for the edge. Same-arrow departures allow
+ultrasonic or the selected IR to confirm the edge. The IR path
 uses raw ADC hysteresis: **>=700 counts present, <=400 absent**. Counts 401..699
 confirm neither state and reset consecutive-sample confirmation. Three fresh
 present samples must acquire the face before three consecutive absent samples
 can report its edge. These are initial thresholds from oblique passes across O2;
 trend-based edge detection is deferred.
+
+Every fresh selected IR read creates a log entry marked **`irFresh=true`**,
+including during the departure arc after the yaw gate and the straight. `irAdc` is valid when `irValid`
+is true; `irObserved` distinguishes no readings yet. Entries include `irArmed`,
+`irPresentSamples` and `irAbsentSamples`. Regular motion entries contain the last
+reading with `irFresh=false`. Faulted reads are logged before stopping. The
+minimum 300 mm width check applies to the uncertainty-expanded width bound,
+rather than rejecting a slightly underestimated 150 mm edge coordinate.
 
 The 15-degree ultrasonic half-angle, 80 mm range-association tolerance, 20 mm
 edge uncertainty and 60 ms sample period are explicit test
@@ -132,18 +169,21 @@ python Tests/Host/test_motion_profile_limits.py
 python Tests/Host/test_task2_export.py --gdb /path/to/gdb
 ```
 
-The host fixture models wheel/gyro tracking and an ideal ultrasonic cone. It
+The host fixture models wheel/gyro tracking, an ideal ultrasonic cone and IR
+face intersections. It
 checks 128 layouts (both O1 positions, all arrows, four gaps and four widths),
 edge acquisition/confirmation, mounted sensor geometry, IR hysteresis, stopping,
-cancellation, absent/stuck/faulted sensors and exports. It does not model real
+cancellation, absent/stuck/faulted sensors and exports. Eight faster mirrored
+IR layouts exercise 7000/3000/2000 CPS. It does not model real
 acoustic reflections, servo lag, wheel slip or camera latency.
 
 ## Route graph
 
 ![Current configured stopped route](task2_motion_route.svg)
 
-This is the nominal guarded route. A live edge stop inserts a departure stop and
-replans the suffix, so an executed route can have more primitives. Regenerate
+For opposite arrows this shows the guarded prefix through the IR straight;
+the return is created after the live edge stop. Same-arrow plots show the full
+nominal guarded route. An executed route can have more primitives. Regenerate
 from the actual C planner (host compiler, NumPy and Matplotlib required):
 
 ```sh

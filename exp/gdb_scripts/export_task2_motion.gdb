@@ -22,7 +22,12 @@ define task2-motion-export
         p task2MotionTestControllerConfig.arcConfig->positivePoints[0] @ task2MotionTestControllerConfig.arcConfig->positivePointCount
         p task2MotionTestControllerConfig.arcConfig->negativePoints[0] @ task2MotionTestControllerConfig.arcConfig->negativePointCount
     end
-    echo Steps: Approach O1 -> O1 depart -> O1 bypass exit -> Approach O2 -> sensor departure -> clearance/back -> Return park\n
+    if task2MotionTestRoute.obstacle2IRDeparture
+        echo Steps: Approach O1 -> O1 depart -> O1 bypass exit -> Approach O2 -> IR arc (90 deg cap) -> IR straight if needed -> sensed return -> Return park\n
+    else
+        echo Steps: Approach O1 -> O1 depart -> O1 bypass exit -> Approach O2 -> sensor departure -> clearance/back -> Return park\n
+    end
+    echo ADC trace: irFresh=true marks every selected IR read; irValid reports conversion validity.\n
     p task2MotionTestStepResults
     p task2MotionTestLogCount
     set $task2_sample_capacity = sizeof(task2MotionTestLog) / sizeof(task2MotionTestLog[0])

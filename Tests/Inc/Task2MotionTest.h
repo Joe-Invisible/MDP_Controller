@@ -93,6 +93,13 @@ typedef struct
     bool ultrasonicArmed;
     uint32_t ultrasonicAbsentSamples;
     float lastUltrasonicRangeMm;
+    bool irObserved;
+    bool irFresh; /* This log entry records a newly completed selected IR read. */
+    bool irValid;
+    bool irArmed;
+    uint16_t irAdc; /* Last selected-side ADC read; valid when irValid. */
+    uint32_t irPresentSamples;
+    uint32_t irAbsentSamples;
     bool obstacle2EdgeDetected;
 } Task2MotionTestSample;
 
