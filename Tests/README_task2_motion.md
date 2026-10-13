@@ -23,6 +23,12 @@ The preferred R325 departure arc completes to mirrored +/-90 degrees with IR
 polling disabled. The continuous straight then begins at that measured stopped
 heading, with no distance endpoint.
 
+Once a valid IR trend candidate exists, the straight's soft cruise request is
+capped at **750 CPS** (`obstacle2IRConfirmationSpeedCps`) until absence confirms
+braking. The usual departure speed applies before that candidate. This reduces
+runout from confirmation delays and intermittent readings; it preserves the
+three-raw-sample absence rule and the no-distance-cap IR execution.
+
 Three initial ADC readings <=400 confirm that O2 has already ended. The robot
 brakes and uses the beam intersection at the straight-start pose as a conservative
 width bound; preceding presence is not required in this case. Otherwise three
@@ -159,16 +165,38 @@ normal; reaching this limit or the preflighted finite departure endpoint without
 confirmation stops the run. The nominal departure endpoint remains a safety
 limit for a stuck USS, rather than evidence of disappearance.
 
-After the measured USS brake stop, the existing geometric return planner checks
-a complete nominal tail. It executes through the rear bypass, then replans
-parking from that measured stop, preferring a straight. A single corrective
-parking arc can use the same bounded body-centre goals as IR returns when a
-straight cannot fit.
-If the rear exit points outward, a buffered R275 heading correction may precede
-parking; its remainder is replanned at the measured correction stop, with at most
-two such corrections. Existing alignment/traverse fallbacks remain. The nominal
-LL/RR return reserves an additional 20 mm of arena side clearance for stop-pose
-error. All parking checks retain the 100 mm side/tip and 75 mm back buffers.
+For LL/RR, use a separate geometry-only lateral departure prefix. At the measured
+O1 exit, skip the O2 approach if simulated recognition already sees the target.
+Otherwise approach only far enough to acquire it near the configured recognition
+range (25 mm range reserve), instead of consuming room until the 500 mm camera
+baseline. USS acquires before outward motion; the stationary acquisition timeout
+still applies. The first sensing leg is an R275 outward turn, with a clearance-
+selected 20–40 degree cap. If disappearance is confirmed during that turn, brake
+there. Otherwise continue on the selected heading along a **finite, preflighted
+diagonal straight**. Failure to obtain an edge before that straight ends stops
+without claiming disappearance. These USS limits describe safe sensing motion;
+the continuous IR straight remains sensor-terminated without a distance cap.
+
+After the measured USS loss stop, plan lateral clearance separately from sensing:
+finish a bounded outward turn if needed, add the diagonal displacement required
+by the observed width, then counterturn to a parallel outside lane. Reserve 40 mm
+for stop-pose error beyond the normal obstacle buffer. The counterturn radius
+is solved analytically from the whole front-corner envelope and available arena
+space, retaining a further 10 mm nominal side reserve. The measured parallel stop
+feeds the rear-bypass planner; a forward positioning straight is added only when
+needed to reach O2. Parking is replanned at the measured rear stop. Straight,
+offset-goal curved and alignment returns remain available, with at most two
+measured heading corrections. The new USS lateral/rear stages check the normal
+**100 mm obstacle buffer**; carpark side/tip and back buffers remain 100/75 mm.
+
+No-echo interrupts do not erase an earlier persistent range-jump onset: they
+provide additional loss evidence. The two confirmation counters remain separate;
+a face-consistent returning echo cancels the onset. This avoids moving the width
+estimate later merely because background echoes alternate with no-echo timeouts.
+
+This is a configured-layout experiment. Camera visibility simulates recognition;
+there is no live camera connection or new USS gap estimator. Planning calls remain
+bounded and can reject observed geometry that has no certified continuation.
 
 Exports include every fresh LL/RR USS observation (`ultrasonicFresh`), validity,
 raw range, filtered/baseline residuals, independent jump/no-echo counters, the
@@ -216,7 +244,7 @@ python Tests/Host/test_motion_profile_limits.py
 python Tests/Host/test_task2_export.py --gdb /path/to/gdb
 ```
 
-The host fixture models wheel/gyro tracking, an ideal ultrasonic cone and IR
+The host fixture models wheel/gyro tracking, configurable ultrasonic cones and IR
 face intersections. It
 checks 128 layouts (both O1 positions, all arrows, four gaps and four widths),
 edge acquisition/confirmation, mounted sensor geometry, median-filtered USS jumps, IR hysteresis, stopping,
@@ -225,7 +253,9 @@ Both modes check all 128 reference layouts: 122 complete and six narrow, 1500 mm
 reject before motors initialize under the full-90-degree policy. The 64 additional LL/RR cases at published speeds all complete with injected
 long-range outliers and isolated no-echo samples, covering both background-jump
 and no-echo departure. Missing acquisition and stuck USS terminate without a
-false edge. All eight faster
+false edge; the stuck-sensor test ends at the finite diagonal sensing limit.
+Both mirrors also complete with a 12.5-degree physical half-cone while the
+detector assumes 7.5 degrees, and run22-style fluctuating background echoes. All eight faster
 mirrored opposite-arrow cases at 7000/3000/2000 CPS and current published tuning complete. Tests
 also replay run08 ADC (about 507 mm from onset versus the former 751 mm estimate),
 its original 751 mm return bound and mirror, run10's abrupt drop settling at an
@@ -243,7 +273,12 @@ completes the rear bypass and parking. Run16 retains its valid 514.8 mm IR
 estimate; the measured stop's original straight violates the O1 buffer (96.1 mm),
 while the new offset-goal arc and its mirror complete through the stopped
 controller fixture with 104.2 mm obstacle, 128.3 mm side/tip and 119.0 mm back
-clearance.
+clearance. Run21's ADC sequence (including its single 548-count interruption)
+and mirror complete through the controller with the 750 CPS confirmation cap,
+stopping at about 247 mm lateral displacement before the R275 return. Its
+original 315 mm stop would violate the quarter-turn side envelope. These ADC
+replays retain conversion timing; actual signal-versus-distance behavior after
+the speed change still needs hardware validation.
 The run03 recorded stop with a 647 mm width bound and its mirror execute through
 the real stopped controller fixture, verifying the measured quarter-turn stop,
 direct back arc, obstacle crossings, full-body clearance and parking.
@@ -255,8 +290,8 @@ acoustic reflections, servo lag, wheel slip or camera latency.
 ![Current configured stopped route](task2_motion_route.svg)
 
 For opposite arrows this shows the nominal preview through the IR straight;
-the remaining stages are created after their measured stops. Same-arrow plots show the full
-nominal guarded route. An executed route can have more primitives. Regenerate
+the remaining stages are created after their measured stops. Same-arrow plots show the capped-turn/finite-straight sensing prefix; the
+remaining stages are constructed at measured stops. An executed route can have more primitives. Regenerate
 from the actual C planner (host compiler, NumPy and Matplotlib required):
 
 ```sh

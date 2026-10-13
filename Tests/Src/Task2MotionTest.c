@@ -126,7 +126,7 @@ static MotionControllerStatus LaunchStep(void)
         distance = step->radiusMm * (task2MotionTestRoute.config.secondArrow * TASK2_PI * 0.5f -
             estimatedPose.yawRad);
     MotionControllerStatus status;
-    if (!task2MotionTestRoute.obstacle2IRDeparture &&
+    if (task2MotionTestRoute.obstacle2LateralDeparture &&
         task2MotionTestStepIndex == TASK2_ROUTE_O2_DEPARTURE_STEP)
     {
         /* Discard any approach trigger still pending before switching windows. */
@@ -168,14 +168,15 @@ static void UpdatePose(void)
 
 static bool ObservingObstacle2(void)
 {
-    if (task2MotionTestRoute.obstacle2IRDeparture && !task2MotionTestRoute.obstacle2ReturnPending)
+    if ((task2MotionTestRoute.obstacle2IRDeparture || task2MotionTestRoute.obstacle2LateralDeparture) &&
+        !task2MotionTestRoute.obstacle2ReturnPending)
         return false;
-    unsigned last = task2MotionTestRoute.obstacle2IRDeparture
+    unsigned last = (task2MotionTestRoute.obstacle2IRDeparture || task2MotionTestRoute.obstacle2LateralDeparture)
         ? TASK2_ROUTE_O2_IR_STRAIGHT_STEP : TASK2_ROUTE_O2_DEPARTURE_STEP;
     return task2MotionTestStepIndex >= TASK2_ROUTE_O2_APPROACH_STEP && task2MotionTestStepIndex <= last;
 }
 
-static MotionControllerStatus LimitIRAcquisitionSpeed(void)
+static MotionControllerStatus LimitIRDepartureSpeed(void)
 {
     MotionController *controller = &fixture.motionController;
     if (!task2MotionTestRoute.obstacle2IRDeparture || !task2MotionTestRoute.obstacle2ReturnPending ||
@@ -188,6 +189,8 @@ static MotionControllerStatus LimitIRAcquisitionSpeed(void)
     float acquisitionSpeed = fminf(speed, c->obstacle2IRAcquisitionSpeedCps);
     if (!task2MotionTestDetection.armed[ir])
         speed = acquisitionSpeed;
+    else if (task2MotionTestDetection.irTrendCandidateValid)
+        speed = fminf(speed, c->obstacle2IRConfirmationSpeedCps);
     return MotionController_RequestCruiseSpeed(controller, speed);
 }
 
@@ -323,7 +326,7 @@ void Task2MotionTestRun(void)
         planned = Task2Route_CreateIR(&task2RouteConfig, &ir, &task2MotionTestRoute);
     }
     else
-        planned = Task2Route_Create(&task2RouteConfig, &task2MotionTestRoute);
+        planned = Task2Route_CreateLateral(&task2RouteConfig, &task2MotionTestRoute);
     task2MotionTestResult.routeSetupMs = HAL_GetTick() - routeSetupStart;
     task2MotionTestResult.startupPlannerPoseChecks = task2MotionTestRoute.report.plannerPoseChecks;
     if (!planned)
@@ -405,7 +408,7 @@ void Task2MotionTestRun(void)
             UpdatePose();
             if (task2MotionTestResult.status == MOTIONCONTROLLER_STATUS_OK && !edgeBraking &&
                 task2MotionTestState == TASK2_TEST_RUNNING)
-                task2MotionTestResult.status = LimitIRAcquisitionSpeed();
+                task2MotionTestResult.status = LimitIRDepartureSpeed();
         }
         if (task2MotionTestState == TASK2_TEST_RUNNING && ObservingObstacle2() && !edgeBraking)
         {
@@ -511,16 +514,27 @@ void Task2MotionTestRun(void)
             {
                 task2MotionTestResult.obstacle1ExitPoseEstimateValid = true;
                 task2MotionTestResult.obstacle1ExitPoseEstimate = estimatedPose;
+                if (task2MotionTestRoute.obstacle2LateralDeparture &&
+                    Task2Route_ObstacleCameraVisible(&task2MotionTestRoute.config, &estimatedPose, 1U))
+                {
+                    task2MotionTestRoute.totalTravelMm -= task2MotionTestRoute.steps[TASK2_ROUTE_O2_APPROACH_STEP].distanceMm;
+                    task2MotionTestRoute.steps[TASK2_ROUTE_O2_APPROACH_STEP].distanceMm = 0.0f;
+                    task2MotionTestResult.arrow2Recognised = true;
+                    task2MotionTestResult.arrow2RecognitionElapsedMs = nowMs - startMs;
+                    task2MotionTestResult.arrow2RecognitionPoseEstimate = estimatedPose;
+                    task2MotionTestStepIndex = TASK2_ROUTE_O2_APPROACH_STEP;
+                    ++task2MotionTestResult.completedSteps;
+                }
             }
             if (ObservingObstacle2() && task2MotionTestStepIndex >= TASK2_ROUTE_O2_DEPARTURE_STEP)
             {
                 if (!edgeBraking || !task2MotionTestDetection.detected)
                 {
-                    if (!task2MotionTestRoute.obstacle2IRDeparture ||
-                        task2MotionTestRoute.steps[task2MotionTestStepIndex].sensorTerminated)
+                    if ((!task2MotionTestRoute.obstacle2IRDeparture && !task2MotionTestRoute.obstacle2LateralDeparture) ||
+                        task2MotionTestStepIndex == TASK2_ROUTE_O2_IR_STRAIGHT_STEP)
                     {
                         task2MotionTestResult.status = MOTIONCONTROLLER_STATUS_INVALID_STATE;
-                        break; /* Unexpected completion without an edge; sensor cruise has no endpoint. */
+                        break; /* IR cruise cannot finish; a finite USS sensing limit is not an edge. */
                     }
                 }
                 else

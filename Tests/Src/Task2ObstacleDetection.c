@@ -97,8 +97,7 @@ static void ObserveUSS(Task2ObstacleDetection *s, const Task2ObstacleSensorConfi
     }
     if (!o->valid)
     {
-        s->present[0] = s->ultrasonicJumpSamples = 0U;
-        s->ultrasonicJumpCandidateValid = false;
+        s->present[0] = 0U;
         if (!active || !s->armed[0])
         {
             s->ultrasonicHistoryCount = 0U;
@@ -106,12 +105,15 @@ static void ObserveUSS(Task2ObstacleDetection *s, const Task2ObstacleSensorConfi
             return;
         }
         if (s->ultrasonicNoEchoSamples++ == 0U)
-            s->ultrasonicNoEchoPose = s->firstAbsentPose[0] = o->pose;
+            s->ultrasonicNoEchoPose = s->firstAbsentPose[0] =
+                s->ultrasonicJumpCandidateValid ? s->ultrasonicJumpPose : o->pose;
         s->absent[0] = s->ultrasonicNoEchoSamples;
         if (s->ultrasonicNoEchoSamples >= c->absentSamples)
             EstimateUSSEdge(s, c, r, s->ultrasonicNoEchoPose, TASK2_EDGE_USS_NO_ECHO);
         return; /* No echo is not a fabricated long-range measurement. */
     }
+    bool precedingNoEcho = s->ultrasonicNoEchoSamples > 0U;
+    Task2RoutePose noEchoPose = s->ultrasonicNoEchoPose;
     s->ultrasonicNoEchoSamples = s->absent[0] = 0U;
     float face = r->parkToObstacle1Mm + 100.0f + r->obstacleFaceGapMm;
     float dx = face - p.xMm, half = c->ultrasonicBeamHalfAngleDeg * PI / 180.0f;
@@ -148,7 +150,7 @@ static void ObserveUSS(Task2ObstacleDetection *s, const Task2ObstacleSensorConfi
         bool rawJump = residual >= s->ultrasonicBaselineResidualMm + c->ultrasonicJumpMm;
         if (rawJump && !s->ultrasonicJumpCandidateValid)
         {
-            s->ultrasonicJumpPose = s->firstAbsentPose[0] = o->pose;
+            s->ultrasonicJumpPose = s->firstAbsentPose[0] = precedingNoEcho ? noEchoPose : o->pose;
             s->ultrasonicJumpCandidateValid = true;
         }
         else if (!rawJump)

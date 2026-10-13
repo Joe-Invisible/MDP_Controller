@@ -22,10 +22,14 @@ define task2-motion-export
         p task2MotionTestControllerConfig.arcConfig->positivePoints[0] @ task2MotionTestControllerConfig.arcConfig->positivePointCount
         p task2MotionTestControllerConfig.arcConfig->negativePoints[0] @ task2MotionTestControllerConfig.arcConfig->negativePointCount
     end
+    if task2MotionTestRoute.obstacle2LateralDeparture
+        echo Steps: O1 -> early O2 recognition (short approach only if needed) -> USS capped turn/finite diagonal sensing -> measured loss stop -> planned lateral clearance and counterturn -> measured parallel stop -> rear bypass -> measured parking\n
+    else
     if task2MotionTestRoute.obstacle2IRDeparture
         echo Steps: Approach O1 -> O1 depart -> O1 bypass exit -> Approach O2 -> IR arc (90 deg cap; IR disabled) -> IR straight (initial absence or trend onset; no distance cap) -> R275 quarter to 0 -> measured parallel stop -> direct rear arc (positioning straight only if needed) -> measured rear stop -> one straight into park (alignment fallback) -> Return park\n
     else
         echo Steps: Approach O1 -> O1 depart -> O1 bypass exit -> Approach O2 -> USS departure (median jump or confirmed no echo) -> measured edge stop -> clearance/back -> measured rear stop -> measured parking (straight/arc/alignment)\n
+    end
     end
     echo ADC trace: raw/median/peak/decline, candidate and edge method; irFresh=true marks every selected IR read; irValid reports conversion validity.\n
     echo USS trace: raw range/validity, median residual/baseline, separate jump and no-echo counts; ultrasonicFresh marks LL/RR observations.\n

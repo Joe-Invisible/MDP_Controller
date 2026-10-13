@@ -4,7 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define TASK2_ROUTE_STEP_COUNT 16U /* Storage capacity; use route.stepCount. */
+#define TASK2_ROUTE_STEP_COUNT 18U /* Storage capacity; use route.stepCount. */
 #define TASK2_ROUTE_O2_APPROACH_STEP 3U
 #define TASK2_ROUTE_O2_DEPARTURE_STEP 4U
 #define TASK2_ROUTE_O2_IR_STRAIGHT_STEP 5U
@@ -58,6 +58,7 @@ typedef struct
     float obstacle2DepartureWidthReserveMm; /* Whole-width reserve for sensing delay/model. */
     float obstacle2DepartureSpeedCps;
     float obstacle2IRAcquisitionSpeedCps; /* Soft cap on the IR straight until presence is armed. */
+    float obstacle2IRConfirmationSpeedCps; /* Slow after a confirmed decline while awaiting absence. */
     float secondDepartureRadiusMm;
     float secondIRDepartureRadiusMm; /* Opposite arrows: looser arc to the stopped 90-degree heading. */
     float secondIRDepartureGuardExtraMm; /* Beyond confirmation and braking estimates. */
@@ -124,6 +125,7 @@ typedef struct
     float totalTravelMm;
     float totalYawRad;
     bool obstacle2IRDeparture;
+    bool obstacle2LateralDeparture; /* Bounded turn/straight for an external edge detector. */
     bool obstacle2ReturnPending;
     bool obstacle2TangentRearArc; /* Rear arc aims along a straight into the park. */
     bool obstacle2StraightParkReturn; /* Actual measured stop allowed one parking straight. */
@@ -140,6 +142,8 @@ extern const char *const task2RouteStepNames[TASK2_ROUTE_STEP_COUNT];
 
 /* MCU: bounded continuous-clearance certificates. PC: optional 1 mm sweeps. */
 bool Task2Route_Create(const Task2RouteConfig *config, Task2Route *route);
+/* Same arrows: early recognition, bounded sensing legs; suffix uses measured edge pose. */
+bool Task2Route_CreateLateral(const Task2RouteConfig *config, Task2Route *route);
 /* Opposite-arrow prefix: nominal preview is checked; suffix is built at the IR stop. */
 bool Task2Route_CreateIR(const Task2RouteConfig *config,
     const Task2RouteIRDeparture *ir, Task2Route *route);

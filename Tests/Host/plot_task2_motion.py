@@ -42,7 +42,7 @@ int main(int argc, char **argv) {
             .acquisitionMinYawDeg=atof(argv[14]),
             .acquisitionTravelMm=acquisitionSpeed*(atof(argv[15])*atof(argv[9])+atof(argv[11]))/1000};
         ok=Task2Route_CreateIR(&c,&ir,&route);
-    } else ok=Task2Route_Create(&c,&route);
+    } else ok=Task2Route_CreateLateral(&c,&route);
     if (!ok) { fprintf(stderr,"Preflight: %s\n",route.report.reason); return 1; }
     printf("{\"first\":%d,\"second\":%d,\"o1\":%.6f,\"gap\":%.6f,\"width\":%.6f,",c.firstArrow,c.secondArrow,c.parkToObstacle1Mm,c.obstacleFaceGapMm,c.obstacle2WidthMm);
     printf("\"buffer\":%.6f,\"side\":%.6f,\"body_length\":%.6f,\"body_width\":%.6f,\"body_centre\":%.6f,\"protrusion\":%.6f,",c.obstacleBufferMm,c.obstacle2EndSpaceMm+c.obstacle2WidthMm/2,c.bodyLengthMm,c.bodyWidthMm,c.bodyCenterAheadOfRearAxleMm,c.frontProtrusionMm);

@@ -17,7 +17,7 @@ static bool physicalCrossings[2][2];
 static uint32_t sensorTick, sensorDue;
 static bool sensorPending;
 static unsigned irReads;
-static unsigned ussReads;
+static unsigned ussReads, lostUSSReads;
 static float irStraightPreviewMm;
 static unsigned maxStartupChecks, maxReturnChecks;
 static Task2ObstacleObservation pendingObservation;
@@ -27,7 +27,7 @@ bool Task2ObstacleSensors_Init(const Task2ObstacleSensorConfig *config)
     (void)config;
     sensorTick = sensorDue = 0U;
     sensorPending = false;
-    ussReads = 0U;
+    ussReads = lostUSSReads = 0U;
     return true;
 }
 void Task2ObstacleSensors_Stop(void) { sensorPending = false; }
@@ -57,7 +57,8 @@ uint32_t Task2ObstacleSensors_Poll(const Task2ObstacleSensorConfig *c, uint32_t 
         float range=INFINITY;
         for(unsigned i=0;i<=120;++i)
         {
-            float a=angle+c->ultrasonicBeamHalfAngleDeg*PI/180*(2.0f*i/120-1);
+            float physicalHalf=scenario==19 ? 12.5f : c->ultrasonicBeamHalfAngleDeg;
+            float a=angle+physicalHalf*PI/180*(2.0f*i/120-1);
             if(cosf(a)<=0.05f || face<=x)continue;
             float d=(face-x)/cosf(a);
             if(fabsf(y+d*sinf(a))<=sensorWidth/2)range=fminf(range,d);
@@ -65,6 +66,13 @@ uint32_t Task2ObstacleSensors_Poll(const Task2ObstacleSensorConfig *c, uint32_t 
         pendingObservation=(Task2ObstacleObservation){.valid=isfinite(range),
             .value=isfinite(range)?range:0,.pose=*pose};
         ++ussReads;
+        if (scenario==19 && !pendingObservation.valid)
+        {
+            /* Run22-style background returns after physical cone loss. */
+            static const float background[]={2270.31689f,2258.99805f,2298.6145f,984.409973f,939.648499f};
+            pendingObservation.valid=true;
+            pendingObservation.value=background[lostUSSReads++ % 5U];
+        }
         if (scenario == 14 || scenario == 15)
         {
             if (!pendingObservation.valid && scenario == 15)
@@ -110,6 +118,12 @@ uint32_t Task2ObstacleSensors_Poll(const Task2ObstacleSensorConfig *c, uint32_t 
                     float beyond = r->secondArrow * (sy + (face-sx)*tanf(ray)) - r->obstacle2WidthMm/2;
                     /* Gradual cone loss reaches 400 about 125 mm beyond the centre-ray edge. */
                     adc = fmaxf(300, fminf(900, 900 - 4 * beyond));
+                }
+                if (scenario == 18)
+                {
+                    static const uint16_t adcRun21[]={1169,1168,1169,1239,1096,876,709,610,460,427,331,338,548,357,332,340};
+                    unsigned sample=irReads-1U;
+                    adc=adcRun21[sample < 16U ? sample : 15U];
                 }
                 out[i+1]=(Task2ObstacleObservation){.valid=scenario!=8,.fault=scenario==8,
                     .value=adc,.pose=*pose};
@@ -299,6 +313,16 @@ static void checkCompleted(void)
     else
     {
         assert(irReads == 0 && task2MotionTestDetection.source == TASK2_SENSOR_ULTRASONIC);
+        if(task2MotionTestRoute.obstacle2LateralDeparture)
+        {
+            assert(!task2MotionTestRoute.report.obstacleBufferExceptionUsed);
+            if(Task2Route_ObstacleCameraVisible(&task2MotionTestRoute.config,
+                &task2MotionTestResult.obstacle1ExitPoseEstimate,1))
+                near(task2MotionTestRoute.steps[3].distanceMm,0,0);
+            else
+                assert(task2MotionTestRoute.steps[3].distanceMm>0);
+            near(task2MotionTestResult.obstacle2ParallelStoppedPose.yawRad,0,.04f);
+        }
         assert(task2MotionTestDetection.edgeMethod == TASK2_EDGE_USS_NO_ECHO ||
             task2MotionTestDetection.edgeMethod == TASK2_EDGE_USS_RANGE_JUMP);
         assert(fabsf(task2MotionTestDetection.edgePose.yawRad)*180/PI <=
@@ -1022,16 +1046,28 @@ int main(void)
     for(int side=-1;side<=1;side+=2)
     {
         task2RouteConfig=tuned;task2RouteConfig.firstArrow=task2RouteConfig.secondArrow=side;
+        resetHardware(19);Task2MotionTestRun();checkCompleted();
+        assert(task2MotionTestDetection.edgeMethod==TASK2_EDGE_USS_RANGE_JUMP);
+        printf("PASS: run22-style fluctuating 900..2300 mm background with wider physical cone, side%d width%.1f\n",
+            side,task2MotionTestDetection.observedWidthMm);
+    }
+    for(int side=-1;side<=1;side+=2)
+    {
+        task2RouteConfig=tuned;task2RouteConfig.firstArrow=task2RouteConfig.secondArrow=side;
         resetHardware(16);Task2MotionTestRun();
         assert(!task2MotionTestResult.passed && !task2MotionTestDetection.detected && irReads==0);
-        assert(task2MotionTestDetection.ultrasonicHeadingExceeded &&
+        assert(!task2MotionTestDetection.ultrasonicHeadingExceeded &&
             robot->motionController.mode==MOTIONCONTROLLER_IDLE);
+        assert(task2MotionTestStepIndex==TASK2_ROUTE_O2_IR_STRAIGHT_STEP);
+        Task2RouteReport stoppedReport={.minimumObstacleGapMm=INFINITY,.minimumSideMarginMm=INFINITY,
+            .minimumParkWallMarginMm=INFINITY,.minimumParkBackMarginMm=INFINITY,.minimumParkSideMarginMm=INFINITY};
+        assert(Task2Route_CheckPose(&task2MotionTestRoute.config,&idealPose,&stoppedReport));
         task2RouteConfig=tuned;task2RouteConfig.firstArrow=task2RouteConfig.secondArrow=side;
         resetHardware(4);Task2MotionTestRun();
         assert(!task2MotionTestResult.passed && !task2MotionTestDetection.armed[0] && irReads==0);
         assert(!task2MotionTestDetection.detected && robot->motionController.mode==MOTIONCONTROLLER_IDLE);
     }
-    puts("PASS: LL/RR stuck USS heading limit and missing acquisition stop without an inferred edge");
+    puts("PASS: LL/RR stuck USS finite sensing limit and missing acquisition stop without an inferred edge");
     task2RouteConfig=original;
     testTraverseFallback();
     task2MotionTestConfig=originalTest;
@@ -1108,6 +1144,26 @@ int main(void)
     testRecordedQuarterReturn();
     testRecordedStraightParking();
     testRun14And16Failures();
+    for(int side=-1;side<=1;side+=2)
+    {
+        task2RouteConfig=tuned;task2RouteConfig.firstArrow=-side;task2RouteConfig.secondArrow=side;
+        task2RouteConfig.parkToObstacle1Mm=1046.96704f;
+        task2RouteConfig.obstacle2IRAcquisitionSpeedCps=2000;
+        resetHardware(18);Task2MotionTestRun();checkCompleted();
+        assert(task2MotionTestDetection.edgeMethod==TASK2_EDGE_IR_TREND);
+        bool confirmationCapped=false;
+        for(unsigned j=0;j<task2MotionTestLogCount;++j)
+        {
+            const Task2MotionTestSample *sample=&task2MotionTestLog[j];
+            if(sample->stepIndex==5 && sample->irTrendCandidateValid && sample->mode==MOTIONCONTROLLER_STRAIGHT &&
+                sample->targetSpeedCps <= task2RouteConfig.obstacle2IRConfirmationSpeedCps+1)
+                confirmationCapped=true;
+        }
+        assert(confirmationCapped);
+        assert(fabsf(task2MotionTestResult.obstacle2StoppedPose.yMm)<280);
+        printf("PASS: run21 ADC interruption mirror%d: slow confirmation, stop y%.1f, completed return\n",side,
+            task2MotionTestResult.obstacle2StoppedPose.yMm);
+    }
     puts("PASS: measured asymmetric frame, one startup range, frozen configuration, invalid input, cancellation, timeout and IMU fault");
     printf("Planner pose checks: max startup %u, max return %u\n",maxStartupChecks,maxReturnChecks);
     return 0;
