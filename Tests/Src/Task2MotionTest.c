@@ -62,10 +62,10 @@ static bool ConfigureController(void)
 {
     task2MotionTestControllerConfig = motionControllerConfig;
     MotionControllerConfig *c = &task2MotionTestControllerConfig;
-    c->straightYawRateKp = c->arcYawRateKp = 270.0f;
-    c->straightYawRateKi = c->arcYawRateKi = 150.0f;
+    c->straightYawRateKp = c->arcYawRateKp = 200.0f;
+    c->straightYawRateKi = c->arcYawRateKi = 100.0f;
     c->straightYawRateKd = c->arcYawRateKd = 0.0f;
-    c->straightHeadingKpPerSec = c->arcHeadingKpPerSec = 0.0f;
+    c->straightHeadingKpPerSec = c->arcHeadingKpPerSec = 0.2f;
     c->useMatchedYawRateReferenceFilter = false;
     c->arcYawRateFilterTauSec = 0.10f;
     c->straightAccelerationMmps2 = c->straightDecelerationMmps2 = 3000.0f;
