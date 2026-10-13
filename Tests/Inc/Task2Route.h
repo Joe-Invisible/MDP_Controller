@@ -30,7 +30,7 @@ typedef struct
     float obstacle2EndSpaceMm;     /* Worst-case available space at each end. */
 
     float cruiseSpeedCps;
-    float approachSpeedCps;        /* Before O1 recognition; whole O2 straight. */
+    float approachSpeedCps;        /* Soft request before either arrow is recognised. */
     float bodyLengthMm;
     float bodyWidthMm;
     float bodyCenterAheadOfRearAxleMm;
@@ -79,7 +79,7 @@ typedef struct
 {
     float distanceMm;
     float radiusMm; /* Zero: straight; positive: left; negative: right. */
-    float speedCps; /* Hard ceiling; first approach uses a soft speed request. */
+    float speedCps; /* Hard ceiling; both approaches use soft speed requests. */
 } Task2RouteStep;
 
 typedef struct

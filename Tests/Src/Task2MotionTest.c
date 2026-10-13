@@ -116,7 +116,8 @@ static MotionControllerStatus LaunchStep(void)
     MotionControllerStatus status = step->radiusMm == 0.0f
         ? MotionController_MoveStraight(&fixture.motionController, step->distanceMm, step->speedCps)
         : MotionController_MoveArc(&fixture.motionController, step->distanceMm, step->radiusMm, step->speedCps);
-    if (status == MOTIONCONTROLLER_STATUS_OK && task2MotionTestStepIndex == 0U)
+    if (status == MOTIONCONTROLLER_STATUS_OK && (task2MotionTestStepIndex == 0U ||
+        task2MotionTestStepIndex == TASK2_ROUTE_O2_APPROACH_STEP))
         status = MotionController_RequestCruiseSpeed(&fixture.motionController,
             task2MotionTestRoute.config.approachSpeedCps);
     return status;
@@ -300,9 +301,6 @@ void Task2MotionTestRun(void)
                         task2MotionTestStepIndex == TASK2_ROUTE_O2_DEPARTURE_STEP && !acquiring);
             if (task2MotionTestDetection.fault)
                 task2MotionTestResult.status = MOTIONCONTROLLER_STATUS_INVALID_STATE;
-            if (task2MotionTestStepIndex == TASK2_ROUTE_O2_APPROACH_STEP &&
-                Task2Route_ObstacleCameraVisible(&task2MotionTestRoute.config, &estimatedPose, 1U))
-                task2MotionTestResult.arrow2Recognised = true;
             if (task2MotionTestDetection.detected && !edgeBraking)
             {
                 task2MotionTestResult.status = MotionController_Brake(&fixture.motionController);
@@ -326,17 +324,34 @@ void Task2MotionTestRun(void)
         }
         if (task2MotionTestResult.status != MOTIONCONTROLLER_STATUS_OK)
             break;
-        if (task2MotionTestStepIndex == 0U && task2MotionTestState == TASK2_TEST_RUNNING &&
-            !task2MotionTestResult.arrow1Recognised &&
-            Task2Route_Obstacle1CameraVisible(&task2MotionTestRoute.config, &estimatedPose))
+        if (task2MotionTestState == TASK2_TEST_RUNNING && (task2MotionTestStepIndex == 0U ||
+            task2MotionTestStepIndex == TASK2_ROUTE_O2_APPROACH_STEP))
         {
-            task2MotionTestResult.status = MotionController_RequestCruiseSpeed(&fixture.motionController,
-                task2MotionTestRoute.config.cruiseSpeedCps);
-            if (task2MotionTestResult.status != MOTIONCONTROLLER_STATUS_OK)
-                break;
-            task2MotionTestResult.arrow1Recognised = true;
-            task2MotionTestResult.recognitionElapsedMs = nowMs - startMs;
-            task2MotionTestResult.recognitionPoseEstimate = estimatedPose;
+            unsigned obstacle = task2MotionTestStepIndex == 0U ? 0U : 1U;
+            bool *recognised = obstacle == 0U ? &task2MotionTestResult.arrow1Recognised
+                                            : &task2MotionTestResult.arrow2Recognised;
+            if (!*recognised && Task2Route_ObstacleCameraVisible(&task2MotionTestRoute.config,
+                &estimatedPose, obstacle))
+            {
+                /* Recognition at a completed endpoint is still valid, but
+                 * there is no active primitive whose speed can be raised. */
+                if (MotionController_IsBusy(&fixture.motionController))
+                    task2MotionTestResult.status = MotionController_RequestCruiseSpeed(&fixture.motionController,
+                        task2MotionTestRoute.config.cruiseSpeedCps);
+                if (task2MotionTestResult.status != MOTIONCONTROLLER_STATUS_OK)
+                    break;
+                *recognised = true;
+                if (obstacle == 0U)
+                {
+                    task2MotionTestResult.recognitionElapsedMs = nowMs - startMs;
+                    task2MotionTestResult.recognitionPoseEstimate = estimatedPose;
+                }
+                else
+                {
+                    task2MotionTestResult.arrow2RecognitionElapsedMs = nowMs - startMs;
+                    task2MotionTestResult.arrow2RecognitionPoseEstimate = estimatedPose;
+                }
+            }
         }
         if (!MotionController_IsBusy(&fixture.motionController))
         {

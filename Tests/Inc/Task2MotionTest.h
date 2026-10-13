@@ -53,6 +53,8 @@ typedef struct
     Task2RoutePose obstacle2StoppedPose;
     uint32_t recognitionElapsedMs;
     Task2RoutePose recognitionPoseEstimate;
+    uint32_t arrow2RecognitionElapsedMs;
+    Task2RoutePose arrow2RecognitionPoseEstimate;
     bool obstacle1ExitPoseEstimateValid;
     Task2RoutePose obstacle1ExitPoseEstimate;
     Task2RoutePose finalPoseEstimate;

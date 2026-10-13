@@ -9,7 +9,9 @@ the stopped-run yaw-priority policy and tuning.
 
 The O1 departure retains its original R275 sweep. Its second arc now ends at
 19 degrees inward: -19 after LEFT, +19 after RIGHT. The O2 approach is a straight
-at that heading, at approach speed, with a 1000 mm maximum length. The complete
+at that heading, initially at approach speed, with a 1000 mm maximum length. Both
+approaches raise their soft speed request to cruise after simulated recognition.
+The complete
 assumed arrow must fit the camera range and field of view. The normal departure
 endpoint is 500 mm camera-to-arrow-centre range; the planner tries earlier
 endpoints in 25 mm range increments if turning clearance requires it.
@@ -90,8 +92,10 @@ startup reading or preflight aborts before motor initialization. Disable
 `measureObstacle1AtStartup` to use the configured O1 distance. The default startup
 geometry gives `parkToObstacle1Mm = ultrasonicRangeMm - 40`.
 
-O1 recognition raises its straight's soft speed request from approach to cruise
-speed without restarting the primitive. O2 recognition, acquired sensors,
+O1 and O2 recognition raise their straight's soft speed request from approach to
+cruise speed without restarting the primitive or changing its endpoint. Normal
+profile deceleration still stops the approach before the separate departure.
+Both recognition times/poses, acquired sensors,
 confirmed edge, observed width and stopped departure pose are recorded.
 
 Break at `Task2MotionTestFinished`, then export while suspended:

@@ -179,13 +179,20 @@ static void checkCompleted(void)
     near(task2MotionTestResult.obstacle1ExitPoseEstimate.yMm,task2MotionTestRoute.config.firstArrow*363.28f,20);
     near(task2MotionTestResult.obstacle1ExitPoseEstimate.yawRad,-task2MotionTestRoute.config.firstArrow*19*PI/180,0.04f);
     assert(task2MotionTestResult.arrow2Recognised && task2MotionTestResult.obstacle2EdgeStopped);
+    assert(Task2Route_ObstacleCameraVisible(&task2MotionTestRoute.config,
+        &task2MotionTestResult.arrow2RecognitionPoseEstimate, 1U));
+    assert(task2MotionTestResult.arrow2RecognitionElapsedMs > task2MotionTestResult.recognitionElapsedMs);
+    near(task2MotionTestRoute.steps[TASK2_ROUTE_O2_APPROACH_STEP].speedCps,
+        task2MotionTestRoute.config.cruiseSpeedCps, 0);
+    near(task2MotionTestStepResults[TASK2_ROUTE_O2_APPROACH_STEP].measuredDistanceMm,
+        task2MotionTestRoute.steps[TASK2_ROUTE_O2_APPROACH_STEP].distanceMm, 10);
     assert(task2MotionTestDetection.detected && task2MotionTestDetection.observedWidthMm>=300);
     assert(task2MotionTestLogCount > 1 && !task2MotionTestResult.logTruncated);
     assert(task2MotionTestLog[task2MotionTestLogCount-1].mode == MOTIONCONTROLLER_IDLE);
     for (unsigned i=0; i<task2MotionTestRoute.stepCount; ++i)
         if (i != TASK2_ROUTE_O2_DEPARTURE_STEP && task2MotionTestRoute.steps[i].radiusMm != 0)
             assert(task2MotionTestStepResults[i].yawPredictedReached);
-    bool accelerated = false;
+    bool accelerated = false, obstacle2Accelerated = false;
     for (unsigned i=0; i<task2MotionTestLogCount; ++i)
     {
         const Task2MotionTestSample *s=&task2MotionTestLog[i];
@@ -194,8 +201,20 @@ static void checkCompleted(void)
         if (s->stepIndex == 0 && s->timeMs > task2MotionTestResult.recognitionElapsedMs &&
             s->targetSpeedCps > task2MotionTestRoute.config.approachSpeedCps+100)
             accelerated=true;
+        if (s->stepIndex == TASK2_ROUTE_O2_APPROACH_STEP)
+        {
+            if (s->timeMs < task2MotionTestResult.arrow2RecognitionElapsedMs)
+                assert(s->targetSpeedCps <= task2MotionTestRoute.config.approachSpeedCps+0.5f);
+            else if (s->targetSpeedCps > task2MotionTestRoute.config.approachSpeedCps+100)
+                obstacle2Accelerated=true;
+        }
+        if (s->stepIndex == TASK2_ROUTE_O2_DEPARTURE_STEP)
+            assert(s->targetSpeedCps <= task2MotionTestRoute.config.obstacle2DepartureSpeedCps+0.5f);
     }
     assert(accelerated);
+    /* Short approaches can finish before exceeding the approach speed. */
+    if (task2MotionTestRoute.steps[TASK2_ROUTE_O2_APPROACH_STEP].distanceMm >= 300)
+        assert(obstacle2Accelerated);
     const Task2RouteConfig *c=&task2MotionTestRoute.config;
     float centre=c->bodyCenterAheadOfRearAxleMm+0.5f*c->frontProtrusionMm;
     float length=c->bodyLengthMm+c->frontProtrusionMm;

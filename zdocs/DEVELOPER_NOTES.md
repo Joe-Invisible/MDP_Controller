@@ -412,3 +412,8 @@ camera integration and unknown-layout production use are still deferred.
 See the existing [standalone test guide](../Tests/README_task2_motion.md) for the
 configuration and export fields. Host cone/ideal-motion checks and firmware
 builds do not establish the physical reliability of acoustic edge detection.
+
+Both O1 and O2 straight approaches now start with a soft approach-speed request
+under a cruise-speed ceiling. Simulated recognition raises that request through
+the existing API without resetting travel or changing the planned endpoint.
+O2 recognition time/pose is exported; departure keeps its separate speed.

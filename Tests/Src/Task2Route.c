@@ -23,7 +23,7 @@ Task2RouteConfig task2RouteConfig = {
     .boundaryBufferMm = 35.0f,
     .parkBackWallBufferMm = 15.0f,
 
-    /* O1 accelerates after simulated recognition. O2 keeps approach speed.
+    /* Both approaches accelerate after simulated recognition.
      * Recognition is instantaneous; camera/RPi integration is deferred. */
     .cruiseSpeedCps = 5000.0f,
     .approachSpeedCps = 2000.0f,
@@ -141,11 +141,9 @@ static void SetStep(Task2Route *route, unsigned index, float length, float radiu
     route->steps[index] = (Task2RouteStep){
         .distanceMm = length,
         .radiusMm = radius,
-        /* O1 launches with a cruise ceiling and a soft approach request;
-         * recognition raises that request without changing the primitive.
-         * O2 retains the original constant approach-speed policy. */
-        .speedCps = radius == 0.0f && index != 0U ? route->config.approachSpeedCps
-                                                : route->config.cruiseSpeedCps,
+        /* Both approaches launch with a cruise ceiling and a soft approach
+         * request; recognition raises it without changing the primitive. */
+        .speedCps = route->config.cruiseSpeedCps,
     };
 }
 
