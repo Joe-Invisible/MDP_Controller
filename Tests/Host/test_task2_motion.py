@@ -25,7 +25,7 @@ def main():
             "-fsanitize=address,undefined", "-fno-sanitize-recover=all",
             f"-I{work}", f"-I{ROOT/'Controllers/Inc'}", f"-I{ROOT/'PeripheralDrivers/Inc'}",
             f"-I{ROOT/'Tests/Inc'}", f"-I{ROOT/'Tests/Common'}", str(work/"test.c"),
-            str(ROOT/"Tests/Src/Task2MotionTest.c"), str(ROOT/"Tests/Src/Task2Route.c"),
+            str(ROOT/"Tests/Src/Task2MotionTest.c"), str(ROOT/"Tests/Src/Task2Route.c"), str(ROOT/"Tests/Src/Task2ObstacleDetection.c"),
         ] + [str(ROOT/f"Controllers/Src/{name}.c") for name in sources] + ["-lm", "-o", str(work/"test")]
         subprocess.run(command, check=True)
         env = os.environ.copy()

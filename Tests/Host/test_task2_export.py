@@ -11,12 +11,14 @@ from test_unified_motion import HAL_STUB
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = r'''
 #include "Task2MotionTest.h"
-Task2MotionTestConfig task2MotionTestConfig = {.measureObstacle1AtStartup=true,.sensorAheadOfRearAxleMm=210};
+Task2MotionTestConfig task2MotionTestConfig = {.measureObstacle1AtStartup=true};
+Task2ObstacleSensorConfig task2MotionTestSensorConfig = {.ultrasonic={210,0,0},.samplePeriodMs=60};
+Task2ObstacleDetection task2MotionTestDetection = {.detected=true,.observedWidthMm=540};
 Task2MotionTestStartupRange task2MotionTestStartupRange = {.attempted=true,.valid=true,.sensorToObstacleMm=1090,.parkToObstacle1Mm=1050};
 Task2MotionTestState task2MotionTestState = TASK2_TEST_COMPLETE;
 Task2MotionTestResult task2MotionTestResult = {.passed=true,.completedSteps=8,.elapsedMs=17535,.arrow1Recognised=true};
 Task2Route task2MotionTestRoute = {.config={.parkToObstacle1Mm=1050,.recognitionCameraRangeMm=1000},.totalTravelMm=7780};
-Task2MotionTestStepResult task2MotionTestStepResults[8] = {{.measuredDistanceMm=790,.yawPredictedReached=true}};
+Task2MotionTestStepResult task2MotionTestStepResults[TASK2_ROUTE_STEP_COUNT] = {{.measuredDistanceMm=790,.yawPredictedReached=true}};
 MotionControllerConfig task2MotionTestControllerConfig = {.straightYawRateKp=270,.arcYawRateKp=270};
 Task2MotionTestSample task2MotionTestLog[TASK2_MOTION_TEST_LOG_CAPACITY] = {{.timeMs=100,.stepIndex=0,.targetSpeedCps=2000},{.timeMs=200,.stepIndex=0,.targetSpeedCps=5000}};
 uint32_t task2MotionTestLogCount = SAMPLE_COUNT;
@@ -44,8 +46,9 @@ def main():
             assert result.returncode == 0, result.stderr + result.stdout
             log = output.read_text()
             assert log.rstrip().endswith("=== EXPORT COMPLETE ===")
-            assert "sensorAheadOfRearAxleMm = 210" in log
+            assert "aheadMm = 210" in log
             assert "sensorToObstacleMm = 1090" in log
+            assert "observedWidthMm = 540" in log and "samplePeriodMs = 60" in log
             assert "TASK2_TEST_COMPLETE" in log and "completedSteps = 8" in log
             assert "totalTravelMm = 7780" in log
             assert "Return park" in log and "yawPredictedReached = true" in log

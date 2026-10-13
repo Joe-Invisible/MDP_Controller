@@ -3,13 +3,13 @@
 
 #include "MotionController.h"
 #include "Task2Route.h"
+#include "Task2ObstacleDetection.h"
 
 #define TASK2_MOTION_TEST_LOG_CAPACITY 650U
 
 typedef struct
 {
     bool measureObstacle1AtStartup;
-    float sensorAheadOfRearAxleMm;
     uint32_t controlPeriodMs;
     uint32_t logPeriodMs;
     uint32_t startClearanceMs;
@@ -48,6 +48,9 @@ typedef struct
     float measuredTravelMm;
     float measuredYawRad;
     bool arrow1Recognised;
+    bool arrow2Recognised;
+    bool obstacle2EdgeStopped;
+    Task2RoutePose obstacle2StoppedPose;
     uint32_t recognitionElapsedMs;
     Task2RoutePose recognitionPoseEstimate;
     bool obstacle1ExitPoseEstimateValid;
@@ -85,9 +88,16 @@ typedef struct
     float rightMeasuredCps;
     float accelerationLimitMmps2;
     float decelerationLimitMmps2;
+    bool ultrasonicArmed;
+    uint32_t ultrasonicAbsentSamples;
+    float lastUltrasonicRangeMm;
+    bool obstacle2EdgeDetected;
 } Task2MotionTestSample;
 
 extern Task2MotionTestConfig task2MotionTestConfig;
+extern Task2ObstacleSensorConfig task2ObstacleSensorConfig;
+extern Task2ObstacleSensorConfig task2MotionTestSensorConfig;
+extern Task2ObstacleDetection task2MotionTestDetection;
 extern Task2MotionTestState task2MotionTestState;
 extern Task2Route task2MotionTestRoute;
 extern MotionControllerConfig task2MotionTestControllerConfig;

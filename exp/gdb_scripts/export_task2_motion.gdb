@@ -10,6 +10,8 @@ define task2-motion-export
     echo === TASK 2 STANDALONE MOTION ===\n
     p $task2_battery_v
     p task2MotionTestConfig
+    p task2MotionTestSensorConfig
+    p task2MotionTestDetection
     p task2MotionTestStartupRange
     p task2MotionTestState
     p task2MotionTestResult
@@ -20,7 +22,7 @@ define task2-motion-export
         p task2MotionTestControllerConfig.arcConfig->positivePoints[0] @ task2MotionTestControllerConfig.arcConfig->positivePointCount
         p task2MotionTestControllerConfig.arcConfig->negativePoints[0] @ task2MotionTestControllerConfig.arcConfig->negativePointCount
     end
-    echo Steps: Approach O1 -> O1 depart -> O1 bypass -> O1 centre -> Approach O2 -> O2 depart -> O2 back -> Return park\n
+    echo Steps: Approach O1 -> O1 depart -> O1 bypass exit -> Approach O2 -> sensor departure -> clearance/back -> Return park\n
     p task2MotionTestStepResults
     p task2MotionTestLogCount
     set $task2_sample_capacity = sizeof(task2MotionTestLog) / sizeof(task2MotionTestLog[0])

@@ -388,3 +388,27 @@ acceleration after simulated O1 recognition. Preflight directly checks circular
 primitives; the experimental sequence planner is not used. Future work is
 standalone primitive planning followed by an IR-based O2 bypass.
 See [the standalone test guide](../Tests/README_task2_motion.md).
+
+### O2 approach/departure experiment — 13 October 2026
+
+Freeze the inward O1 exit at 19 degrees, followed by a straight O2 approach
+(maximum 1000 mm). Recognition baseline is 500 mm camera range; depart earlier
+when the stopped turning footprint requires it. Gaps are 600–1500 mm. A centreline
+rejoin before recognition is not required. Ultrasonic acquisition followed by
+confirmed disappearance can avoid forcing a side-IR acquisition manoeuvre,
+particularly for same-direction arrows. Loss identifies the beam leaving the
+face, not the chassis clearing an edge.
+
+The active stopped test now observes fresh ultrasonic samples during approach
+and departure, brakes on a confirmed edge, and rebuilds the bypass/return from
+the stopped pose. Sensor mounts, cone assumptions, confirmation counts, IR
+thresholds and uncertainty are configurable and frozen. Optional side IR remains
+disabled until mounting and thresholds are measured. Tangent straight return is
+preferred; clearance-checked return arcs, parking alignment and front/back
+traverses cover harder layouts. Failure to acquire, confirm or fit a suffix stops
+the test. The configured O2 layout remains the geometric test reference; live
+camera integration and unknown-layout production use are still deferred.
+
+See the existing [standalone test guide](../Tests/README_task2_motion.md) for the
+configuration and export fields. Host cone/ideal-motion checks and firmware
+builds do not establish the physical reliability of acoustic edge detection.

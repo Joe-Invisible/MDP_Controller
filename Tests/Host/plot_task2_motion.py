@@ -34,7 +34,7 @@ int main(int argc, char **argv) {
     printf("\"recognition\":[");
     for(int i=0;i<2;i++)printf("%s[%.6f,%.6f,%.6f]",i?",":"",route.report.recognitionPose[i].xMm,route.report.recognitionPose[i].yMm,route.report.recognitionPose[i].yawRad);
     printf("],\"steps\":[");
-    for(int i=0;i<8;i++)printf("%s[%.6f,%.6f,%.6f]",i?",":"",route.steps[i].distanceMm,route.steps[i].radiusMm,route.steps[i].speedCps);
+    for(unsigned i=0;i<route.stepCount;i++)printf("%s[%.6f,%.6f,%.6f]",i?",":"",route.steps[i].distanceMm,route.steps[i].radiusMm,route.steps[i].speedCps);
     puts("]}"); return 0;
 }
 '''
@@ -79,8 +79,15 @@ def main():
     fig = plt.figure(figsize=(12, 6.8), facecolor="white")
     axis = fig.add_axes([0.07, 0.22, 0.70, 0.66])
     notes = fig.add_axes([0.80, 0.23, 0.19, 0.60]); notes.axis("off")
-    colours = ["#506888", "#007c91", "#ad5b06", "#1a8a60", "#746bb0", "#bd4668", "#3d67b0", "#7d5697"]
-    names = ["Approach O1", "O1 departure", "O1 bypass", "O1 recenter", "Approach O2", "O2 departure", "O2 back arc", "Return to park"]
+    colours = ["#506888", "#007c91", "#ad5b06", "#1a8a60", "#746bb0", "#bd4668", "#3d67b0", "#7d5697", "#b47a27", "#488e63", "#6281a8", "#88577e", "#98633c", "#5c6a97", "#7c853b", "#885e6e"]
+    names = ["Approach O1", "O1 departure", "O1 bypass exit", "Approach O2", "O2 departure guard", "O2 back arc"]
+    if len(c["steps"]) == 7:
+        names += ["Return to park"]
+    elif len(c["steps"]) == 10:
+        names += ["Return straight", "Park align 1", "Park align 2", "Park straight"]
+    else:
+        names = names[:4] + ["O2 front turn", "O2 front traverse", "O2 end cap", "O2 back traverse", "O2 exit turn", "Return straight", "Park align 1", "Park align 2", "Park straight"]
+    row_height = 0.78 / len(c["steps"])
     faces = [c["o1"], c["o1"] + 100 + c["gap"]]
     for i, (face, width) in enumerate(zip(faces, [100, c["width"]])):
         axis.add_patch(FancyBboxPatch((face-c["buffer"], -width/2-c["buffer"]),
@@ -106,17 +113,17 @@ def main():
         x_max = max(x_max, float(points[:,0].max()))
         axis.plot(points[:,0], points[:,1], color=colours[i], linewidth=2.3, zorder=4)
         mid = len(points)//2
-        offset = (0, 14) if i in (1, 2, 3, 5, 6) else (0, -22)
-        if i == 4: offset = (32, -30)
+        offset = (0, 14) if radius != 0 else (0, -22)
+        if i == 3: offset = (20, -30)
         axis.annotate(str(i+1), points[mid], xytext=offset, textcoords="offset points",
             color=colours[i], weight="bold", ha="center", fontsize=11,
             bbox={"boxstyle":"circle,pad=0.22", "fc":"white", "ec":colours[i], "lw":1},
-            arrowprops={"arrowstyle":"-", "color":colours[i], "lw":0.8} if i == 4 else None)
+            arrowprops={"arrowstyle":"-", "color":colours[i], "lw":0.8} if i == 3 else None)
         pose = np.array([points[-1,0], points[-1,1], angles[-1]])
         boundaries.append(pose.copy())
         radius_text = "straight" if radius == 0 else f"R {radius:+.0f} mm"
-        notes.text(0, 1-i*0.095, f"{i+1}  {names[i]}", color=colours[i], weight="bold", fontsize=10)
-        notes.text(0, 0.962-i*0.095, f"{distance:.0f} mm · {radius_text}", color="#5c6975", fontsize=9)
+        notes.text(0, 1-i*row_height, f"{i+1}  {names[i]}", color=colours[i], weight="bold", fontsize=8 if len(c["steps"])>10 else 10)
+        notes.text(0, 1-row_height*0.49-i*row_height, f"{distance:.0f} mm · {radius_text}", color="#5c6975", fontsize=7.5 if len(c["steps"])>10 else 9)
     for pose in boundaries[1:-1]:
         axis.plot(pose[0], pose[1], "o", color="#354350", markerfacecolor="white", markersize=4, zorder=6)
     for pose, style in [(boundaries[0], "--"), (boundaries[-1], "-")]:
@@ -136,7 +143,7 @@ def main():
     fig.text(0.07,0.90,f'O1 {arrows(c["first"])} · O2 {arrows(c["second"])} · O2 width {c["width"]:.0f} mm · travel {c["total"]/1000:.2f} m',fontsize=11,color="#5c6975")
     notes.text(0,0.10,f'Nominal body clearance\n{c["minimum_gap"]:.1f} mm minimum',fontsize=10,color="#273644")
     fig.text(0.07,0.11,f'Circles: stopped primitive boundaries. Green diamonds: nominal camera recognition poses.\nGrey: {c["buffer"]:.0f} mm obstacle buffer. Path tracks the rear axle; preflight checks the complete footprint.',fontsize=9,color="#5c6975")
-    fig.text(0.07,0.045,f'Configured layout: park → O1 {c["o1"]:.0f} mm; O1 back → O2 {c["gap"]:.0f} mm. No rear arena boundary.\nNominal planning geometry; physical tracking and startup ultrasonic error are not represented.',fontsize=9,color="#5c6975")
+    fig.text(0.07,0.045,f'Configured layout: park → O1 {c["o1"]:.0f} mm; O1 back → O2 {c["gap"]:.0f} mm. No rear arena boundary.\nNominal guarded departure; live edge detection stops and replans its suffix. Tracking error is not represented.',fontsize=9,color="#5c6975")
     args.output.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(args.output,dpi=180,metadata={"Date":None} if args.output.suffix==".svg" else None)
     if args.output.suffix==".svg":

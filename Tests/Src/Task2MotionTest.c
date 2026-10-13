@@ -1,5 +1,6 @@
 #include "Task2MotionTest.h"
 #include "RobotTestFixture.h"
+#include "Task2ObstacleSensors.h"
 #include "oledutils.h"
 #include "userbutton.h"
 #include <math.h>
@@ -10,13 +11,28 @@
  * No camera/RPi direction input yet: configured arrows simulate recognition. */
 Task2MotionTestConfig task2MotionTestConfig = {
     .measureObstacle1AtStartup = true,
-    .sensorAheadOfRearAxleMm = 210.0f,
     .controlPeriodMs = 10U,
     .logPeriodMs = 100U,
     .startClearanceMs = 400U,
     .timeoutMs = 60000U,
     .brakeTimeoutMs = 3000U,
 };
+/* IR positions below are editable assumptions. Enable IR only after checking
+ * mounts and thresholds. Ultrasonic +210 mm is the measured position. */
+Task2ObstacleSensorConfig task2ObstacleSensorConfig = {
+    .ultrasonicEnabled = true, .sideIREnabled = false,
+    .ultrasonic = {210.0f, 0.0f, 0.0f},
+    .leftIR = {110.0f, 100.0f, 90.0f},
+    .rightIR = {110.0f, -100.0f, -90.0f},
+    .ultrasonicBeamHalfAngleDeg = 15.0f,
+    .ultrasonicRangeToleranceMm = 80.0f,
+    .irPresentVoltageV = 0.70f, .irAbsentVoltageV = 0.55f,
+    .edgeUncertaintyMm = 20.0f,
+    .samplePeriodMs = 60U, .acquisitionTimeoutMs = 1500U,
+    .presentSamples = 3U, .absentSamples = 3U,
+};
+Task2ObstacleSensorConfig task2MotionTestSensorConfig;
+Task2ObstacleDetection task2MotionTestDetection;
 Task2MotionTestState task2MotionTestState;
 Task2Route task2MotionTestRoute;
 MotionControllerConfig task2MotionTestControllerConfig;
@@ -31,10 +47,10 @@ static RobotTestFixture fixture;
 static Task2RoutePose estimatedPose;
 static float completedTravelMm, completedYawRad, previousStepTravelMm, previousStepYawRad;
 static MotionControllerArcConfig testArcConfig;
-static MotionControllerArcFeedforwardPoint negativeFeedforwardPoints[8];
+static MotionControllerArcFeedforwardPoint negativeFeedforwardPoints[9];
 /* Preserve the finite-curvature calibration used by the previous stopped run. */
 static const MotionControllerArcFeedforwardPoint positiveFeedforwardPoints[] = {
-    {0.000054f, -5.625f}, {0.000183f, -11.25f}, {0.000436f, -16.875f},
+    {0.0000005f, -0.05208333f}, {0.000054f, -5.625f}, {0.000183f, -11.25f}, {0.000436f, -16.875f},
     {1.0f / 1500.0f, -22.5f}, {1.0f / 1000.0f, -27.7f},
     {1.0f / 500.0f, -47.5f}, {1.0f / 300.0f, -75.0f}, {1.0f / 275.0f, -81.7f},
 };
@@ -55,23 +71,17 @@ static bool ConfigureController(void)
     testArcConfig.positivePoints = positiveFeedforwardPoints;
     testArcConfig.positivePointCount = sizeof(positiveFeedforwardPoints) / sizeof(positiveFeedforwardPoints[0]);
     c->arcConfig = &testArcConfig;
-    float returnCurvature = 1.0f / task2MotionTestRoute.steps[7].radiusMm;
     uint32_t count = arcMotionConfig.negativePointCount;
-    if (count == 0U || arcMotionConfig.negativePoints == NULL)
+    if (!count || !arcMotionConfig.negativePoints ||
+        count >= sizeof(negativeFeedforwardPoints) / sizeof(negativeFeedforwardPoints[0]))
         return false;
-    const MotionControllerArcFeedforwardPoint *nearCentre = &arcMotionConfig.negativePoints[count - 1U];
-    if (returnCurvature < 0.0f && returnCurvature > nearCentre->curvaturePerMm)
-    {
-        if (count >= sizeof(negativeFeedforwardPoints) / sizeof(negativeFeedforwardPoints[0]))
-            return false;
-        for (uint32_t i = 0U; i < count; ++i)
-            negativeFeedforwardPoints[i] = arcMotionConfig.negativePoints[i];
-        float point = nextafterf(returnCurvature, 0.0f);
-        negativeFeedforwardPoints[count] = (MotionControllerArcFeedforwardPoint){
-            point, nearCentre->rawSteeringCommand * point / nearCentre->curvaturePerMm};
-        testArcConfig.negativePoints = negativeFeedforwardPoints;
-        testArcConfig.negativePointCount = count + 1U;
-    }
+    for (uint32_t i = 0U; i < count; ++i)
+        negativeFeedforwardPoints[i] = arcMotionConfig.negativePoints[i];
+    const MotionControllerArcFeedforwardPoint *near = &negativeFeedforwardPoints[count - 1U];
+    negativeFeedforwardPoints[count] = (MotionControllerArcFeedforwardPoint){
+        -0.0000005f, near->rawSteeringCommand * -0.0000005f / near->curvaturePerMm};
+    testArcConfig.negativePoints = negativeFeedforwardPoints;
+    testArcConfig.negativePointCount = count + 1U;
     return true;
 }
 
@@ -92,7 +102,8 @@ static bool MeasureStartingRange(void)
         return false;
     task2MotionTestStartupRange.sensorToObstacleMm = range;
     task2MotionTestStartupRange.parkToObstacle1Mm =
-        range + TASK2_ROUTE_START_X_MM + task2MotionTestConfig.sensorAheadOfRearAxleMm;
+        TASK2_ROUTE_START_X_MM + task2MotionTestSensorConfig.ultrasonic.aheadMm +
+        range * cosf(task2MotionTestSensorConfig.ultrasonic.yawDeg * TASK2_PI / 180.0f);
     task2MotionTestStartupRange.valid = true;
     task2RouteConfig.parkToObstacle1Mm = task2MotionTestStartupRange.parkToObstacle1Mm;
     return true;
@@ -153,6 +164,10 @@ static void LogSample(uint32_t elapsedMs)
         .rightMeasuredCps = fixture.rightWheelController.measuredSpeedCps,
         .accelerationLimitMmps2 = c->motionProfile.accelerationMmps2,
         .decelerationLimitMmps2 = c->motionProfile.decelerationMmps2,
+        .ultrasonicArmed = task2MotionTestDetection.armed[TASK2_SENSOR_ULTRASONIC],
+        .ultrasonicAbsentSamples = task2MotionTestDetection.absent[TASK2_SENSOR_ULTRASONIC],
+        .lastUltrasonicRangeMm = task2MotionTestDetection.lastUltrasonicRangeMm,
+        .obstacle2EdgeDetected = task2MotionTestDetection.detected,
     };
 }
 
@@ -161,7 +176,8 @@ __attribute__((noinline)) void Task2MotionTestFinished(void)
     OLED_Clear();
     OLED_Printf(0, 0, "Task2 %s", task2MotionTestResult.passed ? "DONE" : "INCOMPLETE");
     OLED_Printf(0, 1, "Time: %lu ms", (unsigned long)task2MotionTestResult.elapsedMs);
-    OLED_Printf(0, 2, "Steps: %lu/8", (unsigned long)task2MotionTestResult.completedSteps);
+    OLED_Printf(0, 2, "Steps: %lu/%lu", (unsigned long)task2MotionTestResult.completedSteps,
+        (unsigned long)task2MotionTestRoute.stepCount);
     OLED_Printf(0, 3, "Status: %u", (unsigned)task2MotionTestResult.status);
     OLED_Printf(0, 4, "%s", task2MotionTestResult.timedOut ? "TIMEOUT" :
         task2MotionTestResult.cancelled ? "CANCELLED" : task2MotionTestResult.logTruncated ? "LOG TRUNCATED" : "Stopped primitives");
@@ -173,6 +189,8 @@ __attribute__((noinline)) void Task2MotionTestFinished(void)
 void Task2MotionTestRun(void)
 {
     task2MotionTestState = TASK2_TEST_IDLE;
+    task2MotionTestSensorConfig = task2ObstacleSensorConfig;
+    task2MotionTestDetection = (Task2ObstacleDetection){0};
     task2MotionTestRoute = (Task2Route){0};
     task2MotionTestControllerConfig = (MotionControllerConfig){0};
     task2MotionTestStartupRange = (Task2MotionTestStartupRange){0};
@@ -182,7 +200,7 @@ void Task2MotionTestRun(void)
         task2MotionTestStepResults[i] = (Task2MotionTestStepResult){0};
     completedTravelMm = completedYawRad = previousStepTravelMm = previousStepYawRad = 0.0f;
     estimatedPose = (Task2RoutePose){TASK2_ROUTE_START_X_MM, 0.0f, 0.0f};
-    if (!isfinite(task2MotionTestConfig.sensorAheadOfRearAxleMm) ||
+    if (!Task2ObstacleDetection_ValidConfig(&task2MotionTestSensorConfig) ||
         task2MotionTestConfig.controlPeriodMs == 0U || task2MotionTestConfig.logPeriodMs == 0U ||
         task2MotionTestConfig.timeoutMs == 0U || task2MotionTestConfig.brakeTimeoutMs == 0U)
     {
@@ -197,6 +215,11 @@ void Task2MotionTestRun(void)
     if (!Task2Route_Create(&task2RouteConfig, &task2MotionTestRoute))
     {
         task2MotionTestResult.status = MOTIONCONTROLLER_STATUS_PROFILE_ERROR;
+        goto finished;
+    }
+    if (!Task2ObstacleSensors_Init(&task2MotionTestSensorConfig))
+    {
+        task2MotionTestResult.status = MOTIONCONTROLLER_STATUS_INVALID_STATE;
         goto finished;
     }
     if (!ConfigureController())
@@ -222,6 +245,8 @@ void Task2MotionTestRun(void)
     SW1_WaitForPressAndRelease();
     HAL_Delay(task2MotionTestConfig.startClearanceMs);
     uint32_t startMs = HAL_GetTick(), previousUpdateMs = startMs, lastLogMs = startMs, brakeStartMs = startMs;
+    bool acquiring = false, edgeBraking = false;
+    uint32_t acquireStartMs = startMs;
     task2MotionTestResult.status = LaunchStep();
     task2MotionTestState = TASK2_TEST_RUNNING;
     while (task2MotionTestResult.status == MOTIONCONTROLLER_STATUS_OK &&
@@ -238,6 +263,11 @@ void Task2MotionTestRun(void)
         {
             task2MotionTestResult.timedOut = nowMs - startMs >= task2MotionTestConfig.timeoutMs;
             task2MotionTestResult.cancelled = !task2MotionTestResult.timedOut;
+            if (acquiring)
+            {
+                task2MotionTestResult.status = MotionController_Stop(&fixture.motionController);
+                break;
+            }
             task2MotionTestResult.status = MotionController_Brake(&fixture.motionController);
             task2MotionTestState = TASK2_TEST_BRAKING;
             brakeStartMs = nowMs;
@@ -249,9 +279,51 @@ void Task2MotionTestRun(void)
         }
         if (task2MotionTestResult.status != MOTIONCONTROLLER_STATUS_OK)
             break;
-        task2MotionTestResult.status = MotionController_Update(&fixture.motionController,
-            (nowMs - previousUpdateMs) / 1000.0f);
-        UpdatePose();
+        if (!acquiring)
+        {
+            task2MotionTestResult.status = MotionController_Update(&fixture.motionController,
+                (nowMs - previousUpdateMs) / 1000.0f);
+            UpdatePose();
+        }
+        if (task2MotionTestState == TASK2_TEST_RUNNING &&
+            task2MotionTestStepIndex >= TASK2_ROUTE_O2_APPROACH_STEP &&
+            task2MotionTestStepIndex <= TASK2_ROUTE_O2_DEPARTURE_STEP && !edgeBraking)
+        {
+            Task2ObstacleObservation observations[TASK2_SENSOR_COUNT];
+            uint32_t fresh = Task2ObstacleSensors_Poll(&task2MotionTestSensorConfig, nowMs,
+                &estimatedPose, observations);
+            for (unsigned sensor = 0U; sensor < TASK2_SENSOR_COUNT; ++sensor)
+                if (fresh & (1U << sensor))
+                    Task2ObstacleDetection_Observe(&task2MotionTestDetection,
+                        &task2MotionTestSensorConfig, &task2MotionTestRoute.config,
+                        (Task2ObstacleSensor)sensor, &observations[sensor],
+                        task2MotionTestStepIndex == TASK2_ROUTE_O2_DEPARTURE_STEP && !acquiring);
+            if (task2MotionTestDetection.fault)
+                task2MotionTestResult.status = MOTIONCONTROLLER_STATUS_INVALID_STATE;
+            if (task2MotionTestStepIndex == TASK2_ROUTE_O2_APPROACH_STEP &&
+                Task2Route_ObstacleCameraVisible(&task2MotionTestRoute.config, &estimatedPose, 1U))
+                task2MotionTestResult.arrow2Recognised = true;
+            if (task2MotionTestDetection.detected && !edgeBraking)
+            {
+                task2MotionTestResult.status = MotionController_Brake(&fixture.motionController);
+                edgeBraking = true;
+                brakeStartMs = nowMs;
+            }
+        }
+        if (edgeBraking && nowMs - brakeStartMs >= task2MotionTestConfig.brakeTimeoutMs)
+            task2MotionTestResult.status = MOTIONCONTROLLER_STATUS_INVALID_STATE;
+        if (acquiring && task2MotionTestState == TASK2_TEST_RUNNING)
+        {
+            if (task2MotionTestDetection.armed[TASK2_SENSOR_ULTRASONIC])
+            {
+                acquiring = false;
+                task2MotionTestResult.status = LaunchStep();
+            }
+            else if (nowMs - acquireStartMs >= task2MotionTestSensorConfig.acquisitionTimeoutMs)
+                task2MotionTestResult.status = MOTIONCONTROLLER_STATUS_INVALID_STATE;
+            previousUpdateMs = nowMs;
+            continue;
+        }
         if (task2MotionTestResult.status != MOTIONCONTROLLER_STATUS_OK)
             break;
         if (task2MotionTestStepIndex == 0U && task2MotionTestState == TASK2_TEST_RUNNING &&
@@ -277,17 +349,43 @@ void Task2MotionTestRun(void)
             completedTravelMm = task2MotionTestResult.measuredTravelMm;
             completedYawRad = task2MotionTestResult.measuredYawRad;
             ++task2MotionTestResult.completedSteps;
-            if (task2MotionTestStepIndex == 3U)
+            if (task2MotionTestStepIndex == 2U)
             {
                 task2MotionTestResult.obstacle1ExitPoseEstimateValid = true;
                 task2MotionTestResult.obstacle1ExitPoseEstimate = estimatedPose;
             }
-            if (task2MotionTestResult.completedSteps == TASK2_ROUTE_STEP_COUNT)
+            if (task2MotionTestStepIndex == TASK2_ROUTE_O2_DEPARTURE_STEP)
+            {
+                if (!edgeBraking || !task2MotionTestDetection.detected)
+                {
+                    task2MotionTestResult.status = MOTIONCONTROLLER_STATUS_INVALID_STATE;
+                    break; /* Guard endpoint reached without an acquired, confirmed edge. */
+                }
+                task2MotionTestResult.obstacle2EdgeStopped = true;
+                task2MotionTestResult.obstacle2StoppedPose = estimatedPose;
+                task2MotionTestRoute.steps[4].distanceMm = fabsf(c->travelledDistanceMm);
+                if (!Task2Route_ReplanObstacle2(&task2MotionTestRoute, &estimatedPose,
+                    task2MotionTestDetection.observedWidthMm))
+                {
+                    task2MotionTestResult.status = MOTIONCONTROLLER_STATUS_PROFILE_ERROR;
+                    break;
+                }
+                edgeBraking = false;
+                Task2ObstacleSensors_Stop();
+            }
+            if (task2MotionTestResult.completedSteps == task2MotionTestRoute.stepCount)
                 task2MotionTestState = TASK2_TEST_COMPLETE;
             else
             {
                 ++task2MotionTestStepIndex;
-                task2MotionTestResult.status = LaunchStep();
+                if (task2MotionTestStepIndex == TASK2_ROUTE_O2_DEPARTURE_STEP &&
+                    !task2MotionTestDetection.armed[TASK2_SENSOR_ULTRASONIC])
+                {
+                    acquiring = true;
+                    acquireStartMs = nowMs;
+                }
+                else
+                    task2MotionTestResult.status = LaunchStep();
             }
         }
         previousUpdateMs = nowMs;
@@ -301,7 +399,9 @@ void Task2MotionTestRun(void)
     if (task2MotionTestState != TASK2_TEST_COMPLETE)
         MotionController_Stop(&fixture.motionController);
     task2MotionTestResult.passed = task2MotionTestState == TASK2_TEST_COMPLETE &&
-        task2MotionTestResult.status == MOTIONCONTROLLER_STATUS_OK && task2MotionTestResult.arrow1Recognised;
+        task2MotionTestResult.status == MOTIONCONTROLLER_STATUS_OK &&
+        task2MotionTestResult.arrow1Recognised && task2MotionTestResult.arrow2Recognised &&
+        task2MotionTestResult.obstacle2EdgeStopped;
     if (task2MotionTestLogCount == TASK2_MOTION_TEST_LOG_CAPACITY)
     {
         --task2MotionTestLogCount;
@@ -309,6 +409,7 @@ void Task2MotionTestRun(void)
     }
     LogSample(task2MotionTestResult.elapsedMs);
 finished:
+    Task2ObstacleSensors_Stop();
     if (!task2MotionTestResult.passed)
         task2MotionTestState = task2MotionTestResult.cancelled ? TASK2_TEST_CANCELLED : TASK2_TEST_FAILED;
     Task2MotionTestFinished();
