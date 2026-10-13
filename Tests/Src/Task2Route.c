@@ -618,127 +618,165 @@ static bool BuildIRQuarterTurn(const Task2RouteConfig *c, Task2RoutePose p,
     return CheckIROutbound(&bounds, p, turn, 1U);
 }
 
-/* From the measured parallel stop, arc directly around O2's rear to the
- * opposite return lane. The radius follows from the lateral displacement;
- * only four parking joins are considered, with no back-radius grid. */
+/* Calculate the return lane from obstacle clearance and the swept-body side
+ * boundary. A corner rotating around the arc centre is bounded by its radius;
+ * this gives a closed-form maximum back-turn radius, without a radius grid. */
+static bool MakeRearArc(const Task2RouteConfig *c, Task2RoutePose start, Task2RouteStep *arc)
+{
+    float side = c->secondArrow, h = side * start.yawRad, lateral = side * start.yMm;
+    float half = 0.5f * c->bodyWidthMm;
+    float front = c->bodyCenterAheadOfRearAxleMm + 0.5f * c->bodyLengthMm + c->frontProtrusionMm;
+    float limit = 0.5f * c->obstacle2WidthMm + c->obstacle2EndSpaceMm - c->boundaryBufferMm;
+    float k = limit + lateral;
+    float b = k * cosf(h) + half;
+    float d = half * half + front * front - k * k;
+    float discriminant = b * b - sinf(h) * sinf(h) * d;
+    if (k <= 0.0f || discriminant <= 0.0f || b + sqrtf(discriminant) <= 0.0f)
+        return false;
+    float maxRadius = -d / (b + sqrtf(discriminant));
+    float minLane = 0.5f * c->obstacle2WidthMm + half + c->obstacleBufferMm;
+    float maxLane = maxRadius * (1.0f + cosf(h)) - lateral;
+    float returnLane = fminf(minLane + 20.0f, maxLane - 2.0f);
+    if (returnLane < minLane + 1.0f)
+        return false;
+    float radius = (lateral + returnLane) / (1.0f + cosf(h));
+    if (!isfinite(radius) || radius < ROUTE_MIN_RADIUS_MM)
+        return false;
+    *arc = (Task2RouteStep){.distanceMm = radius * (ROUTE_PI + h),
+        .radiusMm = -side * radius, .speedCps = c->cruiseSpeedCps};
+    return true;
+}
+
+static bool RearBypassAt(const Task2RouteConfig *bounds, Task2RoutePose p,
+    float positioningDistance, Task2RouteStep out[2], unsigned *count)
+{
+    unsigned arcIndex = positioningDistance > 0.0f ? 1U : 0U;
+    Task2RoutePose arcStart = p;
+    if (arcIndex)
+    {
+        out[0] = (Task2RouteStep){.distanceMm = positioningDistance, .speedCps = bounds->cruiseSpeedCps};
+        arcStart = Advance(p, positioningDistance, 0.0f);
+    }
+    if (!MakeRearArc(bounds, arcStart, &out[arcIndex]))
+        return false;
+    bool crossed[2][2] = {{false, false}, {false, false}};
+    crossed[1][0] = p.xMm >= bounds->parkToObstacle1Mm + 150.0f + bounds->obstacleFaceGapMm;
+    Task2RoutePose crossingStart = p;
+    for (unsigned i = 0U; i <= arcIndex; ++i)
+    {
+        if (!Crossings(bounds, crossingStart, &out[i], crossed))
+            return false;
+        crossingStart = Advance(crossingStart, out[i].distanceMm, out[i].radiusMm);
+    }
+    if (!crossed[1][0] || !CheckIROutbound(bounds, p, out, arcIndex + 1U))
+        return false;
+    *count = arcIndex + 1U;
+    return true;
+}
+
+/* Plan only the rear bypass. Parking is built after its measured brake stop.
+ * Prefer a direct arc; otherwise bracket a positioning straight geometrically
+ * and refine it with at most ten clearance checks. The accepting check is reused. */
 static bool BuildParallelReturn(const Task2RouteConfig *c, Task2RoutePose p,
     float width, Task2RouteStep out[6], unsigned *count)
 {
     Task2RouteConfig bounds = ObservedBounds(c, width);
-    float side = c->secondArrow, h = side * p.yawRad;
+    float h = c->secondArrow * p.yawRad;
     if (bounds.obstacle2EndSpaceMm <= 0.0f || fabsf(h) > 15.0f * ROUTE_PI / 180.0f)
         return false;
-    float returnY = 0.5f * bounds.obstacle2WidthMm + 0.5f * c->bodyWidthMm + c->obstacleBufferMm + 20.0f;
-    float rejoinRadius = fmaxf(ROUTE_MIN_RADIUS_MM, 0.5f * returnY + 50.0f);
-    float angle = acosf(1.0f - returnY / (2.0f * rejoinRadius));
-    float centre = c->parkToObstacle1Mm + 150.0f + c->obstacleFaceGapMm;
-    /* Prefer a direct back arc. Only if that collides, try one forward
-     * positioning straight derived from rear-face/body clearance. */
-    for (unsigned positioning = 0U; positioning < 2U; ++positioning)
+    if (RearBypassAt(&bounds, p, 0.0f, out, count))
+        return true;
+    float rear = c->parkToObstacle1Mm + 200.0f + c->obstacleFaceGapMm;
+    float front = c->bodyCenterAheadOfRearAxleMm + 0.5f * c->bodyLengthMm + c->frontProtrusionMm;
+    float hi = (rear + front + 21.0f - p.xMm) / cosf(h), lo = 0.0f;
+    if (hi <= 0.0f || !RearBypassAt(&bounds, p, hi, out, count))
+        return false;
+    for (unsigned i = 0U; i < 10U; ++i)
     {
-        unsigned arcIndex = positioning;
-        Task2RoutePose arcStart = p;
-        if (positioning)
-        {
-            float front = c->bodyCenterAheadOfRearAxleMm + 0.5f * c->bodyLengthMm + c->frontProtrusionMm;
-            float clearX = centre + 50.0f + front + 21.0f;
-            out[0] = (Task2RouteStep){.distanceMm = (clearX - p.xMm) / cosf(h), .radiusMm = 0.0f, .speedCps = c->cruiseSpeedCps};
-            if (out[0].distanceMm <= 0.0f)
-                continue;
-            arcStart = Advance(p, out[0].distanceMm, 0.0f);
-        }
-        float radius = (side * arcStart.yMm + returnY) / (1.0f + cosf(h));
-        if (!isfinite(radius) || radius < ROUTE_MIN_RADIUS_MM)
-            continue;
-        out[arcIndex] = (Task2RouteStep){.distanceMm = radius * (ROUTE_PI + h), .radiusMm = -side * radius, .speedCps = c->cruiseSpeedCps};
-        unsigned outboundCount = arcIndex + 1U;
-        if (!CheckIROutbound(&bounds, p, out, outboundCount))
-            continue;
-#if !TASK2_ROUTE_EXHAUSTIVE_CHECKS
-        Task2RouteReport outboundClearance = planningWork.acceptedClearance;
-#endif
-        Task2RoutePose returnStart = Advance(arcStart, out[arcIndex].distanceMm, out[arcIndex].radiusMm);
-        for (unsigned park = 0U; park < 4U; ++park)
-        {
-            if (planningWork.exhausted)
-                return false;
-            float parkStraight = 100.0f + 100.0f * park;
-            float sx = TASK2_ROUTE_START_X_MM + parkStraight + 2.0f * rejoinRadius * sinf(angle);
-            out[outboundCount] = (Task2RouteStep){.distanceMm = returnStart.xMm - sx, .radiusMm = 0.0f, .speedCps = c->cruiseSpeedCps};
-            out[outboundCount + 1U] = (Task2RouteStep){.distanceMm = rejoinRadius * angle, .radiusMm = -side * rejoinRadius, .speedCps = c->cruiseSpeedCps};
-            out[outboundCount + 2U] = (Task2RouteStep){.distanceMm = rejoinRadius * angle, .radiusMm = side * rejoinRadius, .speedCps = c->cruiseSpeedCps};
-            out[outboundCount + 3U] = (Task2RouteStep){.distanceMm = parkStraight, .radiusMm = 0.0f, .speedCps = c->approachSpeedCps};
-            unsigned n = outboundCount + 4U;
-            if (CandidateSweepFrom(&bounds, p, out, n, outboundCount, p.xMm >= centre))
-            {
-#if !TASK2_ROUTE_EXHAUSTIVE_CHECKS
-                MergeMargins(&planningWork.acceptedClearance, &outboundClearance);
-#endif
-                *count = n;
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
-#if !TASK2_ROUTE_EXHAUSTIVE_CHECKS
-static float IRHit(float h, float beta, float cxDistance, float cy, float intercept)
-{
-    float beam = h + beta;
-    return cy + cxDistance * tanf(beam) + intercept / cosf(beam);
-}
-
-static float IRBoundaryTravel(float boundary, float gate, float endHit, float beta,
-    float dx, float cy, float intercept, float radius, float entry, float arcLength)
-{
-    if (IRHit(gate, beta, dx, cy, intercept) >= boundary)
-        return radius * (gate - entry);
-    if (endHit < boundary)
-        return arcLength + boundary - endHit;
-    float lo = gate, hi = 0.5f * ROUTE_PI;
-    for (unsigned i = 0U; i < 16U; ++i)
-    {
+        if (planningWork.exhausted)
+            return false;
         float mid = 0.5f * (lo + hi);
-        if (IRHit(mid, beta, dx, cy, intercept) < boundary)
-            lo = mid;
-        else
+        if (RearBypassAt(&bounds, p, mid, out, count))
             hi = mid;
+        else
+            lo = mid;
     }
-    return radius * (hi - entry);
+    /* Small longitudinal reserve after locating the collision-free entry. */
+    return RearBypassAt(&bounds, p, hi + 10.0f, out, count);
 }
 
-/* Fixed-cost face intersections. The derivative is
- * (dx+intercept*sin(beam))/cos(beam)^2, so dx>|intercept| proves monotonicity.
- * Unsupported mount geometry is rejected rather than sampled exhaustively. */
-static bool IRWindow(const Task2RouteConfig *c, Task2RoutePose p,
-    const Task2RouteIRDeparture *ir, float radius, float arcLength,
-    float *acquireTravel, float *acquisitionEnd, float *edgeTravel)
+static float WrapYaw(float yaw)
 {
-    float side = c->secondArrow, entry = side * p.yawRad;
-    float gate = fmaxf(entry, ir->acquisitionMinYawDeg * ROUTE_PI / 180.0f);
-    float beta = side * ir->mount.yawDeg * ROUTE_PI / 180.0f;
-    float dx = c->parkToObstacle1Mm + 100.0f + c->obstacleFaceGapMm -
-        (p.xMm - radius * sinf(entry));
-    float cy = side * p.yMm + radius * cosf(entry);
-    float n = side * ir->mount.leftMm - radius;
-    float intercept = n * cosf(beta) - ir->mount.aheadMm * sinf(beta);
-    if (gate > 0.5f * ROUTE_PI || cosf(gate + beta) <= 0.05f ||
-        cosf(0.5f * ROUTE_PI + beta) <= 0.05f || dx <= fabsf(intercept) ||
-        dx <= hypotf(ir->mount.aheadMm, n))
+    return atan2f(sinf(yaw), cosf(yaw));
+}
+
+/* Construct a measured-pose parking join ending at the exact park heading.
+ * The unequal arc angles remove the measured rear-arc yaw error. */
+static bool ParkingJoinAt(const Task2RouteConfig *c, Task2RoutePose p, float travel,
+    float parkStraight, Task2RouteStep out[4], float *finishX)
+{
+    Task2RoutePose start = Advance(p, travel, 0.0f);
+    float side = c->secondArrow, lateral = -side * start.yMm;
+    float error = side * WrapYaw(start.yawRad + side * ROUTE_PI);
+    float radius = fmaxf(ROUTE_MIN_RADIUS_MM, 0.5f * lateral + 50.0f);
+    float cosine = 0.5f * (1.0f + cosf(error) - lateral / radius);
+    if (lateral <= 0.0f || cosine <= -1.0f || cosine >= 1.0f)
         return false;
-    float inner = fmaxf(0.0f, 0.5f * c->obstacle2WidthMm - ir->edgeUncertaintyMm);
-    float endHit = IRHit(0.5f * ROUTE_PI, beta, dx, cy, intercept);
-    if (IRHit(gate, beta, dx, cy, intercept) > inner)
+    float secondAngle = acosf(cosine), firstAngle = secondAngle + error;
+    if (firstAngle <= 0.0f)
         return false;
-    *acquireTravel = IRBoundaryTravel(-inner, gate, endHit, beta, dx, cy, intercept, radius, entry, arcLength);
-    *acquisitionEnd = IRBoundaryTravel(inner, gate, endHit, beta, dx, cy, intercept, radius, entry, arcLength);
-    *edgeTravel = IRBoundaryTravel(0.5f * c->obstacle2WidthMm, gate, endHit,
-        beta, dx, cy, intercept, radius, entry, arcLength);
+    out[0] = (Task2RouteStep){.distanceMm = travel, .speedCps = c->cruiseSpeedCps};
+    out[1] = (Task2RouteStep){.distanceMm = radius * firstAngle,
+        .radiusMm = -side * radius, .speedCps = c->cruiseSpeedCps};
+    out[2] = (Task2RouteStep){.distanceMm = radius * secondAngle,
+        .radiusMm = side * radius, .speedCps = c->cruiseSpeedCps};
+    out[3] = (Task2RouteStep){.distanceMm = parkStraight, .speedCps = c->approachSpeedCps};
+    Task2RoutePose finish = Advance(start, out[1].distanceMm, out[1].radiusMm);
+    finish = Advance(finish, out[2].distanceMm, out[2].radiusMm);
+    finish = Advance(finish, parkStraight, 0.0f);
+    *finishX = finish.xMm;
     return true;
 }
 
+static bool BuildParkingReturn(const Task2RouteConfig *c, Task2RoutePose p,
+    float width, Task2RouteStep out[4])
+{
+    Task2RouteConfig bounds = ObservedBounds(c, width);
+    if (fabsf(WrapYaw(p.yawRad + c->secondArrow * ROUTE_PI)) > 15.0f * ROUTE_PI / 180.0f)
+        return false;
+    for (unsigned park = 0U; park < 4U; ++park)
+    {
+        float parkStraight = 100.0f + 100.0f * park;
+        float lo = 0.0f, hi = p.xMm - TASK2_ROUTE_START_X_MM, x;
+        if (hi <= 0.0f || !ParkingJoinAt(c, p, lo, parkStraight, out, &x) || x < TASK2_ROUTE_START_X_MM ||
+            !ParkingJoinAt(c, p, hi, parkStraight, out, &x) || x > TASK2_ROUTE_START_X_MM)
+            continue;
+        for (unsigned i = 0U; i < 14U; ++i)
+        {
+            float mid = 0.5f * (lo + hi);
+            if (!ParkingJoinAt(c, p, mid, parkStraight, out, &x))
+                return false;
+            if (x > TASK2_ROUTE_START_X_MM)
+                lo = mid;
+            else
+                hi = mid;
+        }
+        if (!ParkingJoinAt(c, p, 0.5f * (lo + hi), parkStraight, out, &x))
+            continue;
+#if TASK2_ROUTE_EXHAUSTIVE_CHECKS
+        if (Sweep(&bounds, p, out, 4U, 1.0f, true))
+            return true;
+#else
+        Task2RouteReport accepted = EmptyReport();
+        if (BoundedSweep(&bounds, p, out, 4U, true, &accepted))
+        {
+            planningWork.acceptedClearance = accepted;
+            return true;
+        }
 #endif
+    }
+    return false;
+}
 
 /* Startup screens quarter-turn room only. Both host and MCU build the return
  * from actual stopped poses; the reference edge is not a brake-stop pose. */
@@ -764,59 +802,18 @@ static bool BuildIRDeparture(const Task2RouteConfig *c, Task2RoutePose p,
     if (face <= x || cosf(ray) <= 0.05f)
         return false;
     float hit = side * (y + (face - x) * tanf(ray));
-    if (!isfinite(hit))
+    /* Keep the straight-start ray within the nominal outgoing face plus its
+     * stated uncertainty, so initial absence does not create an excessive bound. */
+    if (!isfinite(hit) || hit > 0.5f * c->obstacle2WidthMm + ir->edgeUncertaintyMm)
         return false;
     /* Nominal preview for offline geometry, never an execution distance cap. */
     step[1] = (Task2RouteStep){.distanceMm = fmaxf(0.0f, 0.5f * c->obstacle2WidthMm - hit) + ir->guardTravelMm,
         .sensorTerminated = true, .radiusMm = 0.0f, .speedCps = c->obstacle2DepartureSpeedCps};
     float edgeTravel = step[0].distanceMm + fmaxf(0.0f, 0.5f * c->obstacle2WidthMm - hit);
-#if TASK2_ROUTE_EXHAUSTIVE_CHECKS
-    bool acquired = false;
-    float acquireTravel = INFINITY;
-    float innerHalf = fmaxf(0.0f, 0.5f * c->obstacle2WidthMm - ir->edgeUncertaintyMm);
-    float acquisitionEnd = step[0].distanceMm + fmaxf(0.0f, innerHalf - hit);
-    bool acquisitionEnded = false;
-    for (float d = 0.0f; d < step[0].distanceMm; d += 1.0f)
-    {
-        Task2RoutePose pose = Advance(p, d, radius);
-        if (side * pose.yawRad * 180.0f / ROUTE_PI < ir->acquisitionMinYawDeg)
-            continue;
-        float sx = pose.xMm + ir->mount.aheadMm * cosf(pose.yawRad) - ir->mount.leftMm * sinf(pose.yawRad);
-        float sy = pose.yMm + ir->mount.aheadMm * sinf(pose.yawRad) + ir->mount.leftMm * cosf(pose.yawRad);
-        float a = pose.yawRad + ir->mount.yawDeg * ROUTE_PI / 180.0f;
-        if (face <= sx || cosf(a) <= 0.05f)
-            continue;
-        float fy = sy + (face - sx) * tanf(a);
-        if (!acquired && fabsf(fy) <= innerHalf)
-        {
-            acquired = true;
-            acquireTravel = d;
-        }
-        if (acquired && !acquisitionEnded && side * fy > innerHalf)
-        {
-            acquisitionEnd = d;
-            acquisitionEnded = true;
-        }
-        if (acquired && side * fy > 0.5f * c->obstacle2WidthMm)
-        {
-            edgeTravel = d;
-            break;
-        }
-    }
-    if (!acquired)
-        acquireTravel = step[0].distanceMm + fmaxf(0.0f, -innerHalf - hit);
-#else
-    float acquireTravel, acquisitionEnd;
-    if (!IRWindow(c, p, ir, turnRadius, step[0].distanceMm, &acquireTravel, &acquisitionEnd, &edgeTravel))
-        return false;
-#endif
-    if (acquisitionEnd - acquireTravel < ir->acquisitionTravelMm)
-        return false;
     /* Screen return room at the nominal reference edge. Preview travel is
      * not an execution limit or a prediction of the actual stopped pose. The actual
      * brake stop must pass suffix preflight before any return motion starts. */
-    Task2RoutePose predictedStop = edgeTravel < step[0].distanceMm
-        ? Advance(p, edgeTravel, radius) : Advance(front, edgeTravel - step[0].distanceMm, 0.0f);
+    Task2RoutePose predictedStop = Advance(front, fmaxf(0.0f, edgeTravel - step[0].distanceMm), 0.0f);
     if (!IRReturnHasRoom(c, predictedStop))
         return false;
 #if TASK2_ROUTE_EXHAUSTIVE_CHECKS
@@ -875,6 +872,14 @@ static bool BuildSteps(Task2Route *route, const Task2RouteIRDeparture *ir)
             Task2RoutePose departure = Advance(start, travel, 0.0f);
             if (!Task2Route_ObstacleCameraVisible(c, &departure, 1U))
                 continue;
+            if (ir)
+            {
+                Task2RouteConfig camera = *c;
+                camera.recognitionCameraRangeMm -= 25.0f;
+                camera.cameraHorizontalFovDeg -= 4.0f; /* Two-degree endpoint recognition reserve. */
+                if (!Task2Route_ObstacleCameraVisible(&camera, &departure, 1U))
+                    continue;
+            }
             SetStep(route, 3U, travel, 0.0f);
 #if TASK2_ROUTE_EXHAUSTIVE_CHECKS
             if (!Sweep(c, (Task2RoutePose){TASK2_ROUTE_START_X_MM, 0.0f, 0.0f},
@@ -1017,9 +1022,25 @@ bool Task2Route_ReplanParallelReturn(Task2Route *route, const Task2RoutePose *po
         !BuildParallelReturn(&route->config, *pose, width, tail, &count))
         return route ? FinishPlanning(route, Reject(route, "NO_PARALLEL_RETURN")) : false;
     route->obstacle2ParallelReturnPending = false;
+    route->obstacle2ParkReturnPending = true;
     route->obstacle2DirectRearArc = tail[0].radiusMm != 0.0f;
     return InstallSuffix(route, pose, width, tail, count, completedQuarterStep,
         route->obstacle2DirectRearArc ? 1U : 2U, "OK_PARALLEL_RETURN");
+}
+
+bool Task2Route_ReplanParkingReturn(Task2Route *route, const Task2RoutePose *pose,
+    float width, unsigned completedRearStep)
+{
+    planningWork.poseChecks = 0U;
+    planningWork.exhausted = false;
+    Task2RouteStep tail[4];
+    if (!route || !pose || !route->obstacle2ParkReturnPending ||
+        completedRearStep + 1U != route->stepCount || !isfinite(width) || width < 300.0f ||
+        !isfinite(pose->xMm) || !isfinite(pose->yMm) || !isfinite(pose->yawRad) ||
+        !BuildParkingReturn(&route->config, *pose, width, tail))
+        return route ? FinishPlanning(route, Reject(route, "NO_PARKING_RETURN")) : false;
+    route->obstacle2ParkReturnPending = false;
+    return InstallSuffix(route, pose, width, tail, 4U, completedRearStep, 0U, "OK_PARKING_RETURN");
 }
 
 /* Exact rectangle separation axes plus vertex-to-rectangle distances. */

@@ -124,6 +124,7 @@ typedef struct
     bool obstacle2IRDeparture;
     bool obstacle2ReturnPending;
     bool obstacle2DirectRearArc; /* False: a forward positioning straight was needed. */
+    bool obstacle2ParkReturnPending; /* Plan parking after the measured rear-arc stop. */
     bool obstacle2ParallelReturnPending; /* Plan the rest after the measured R275 stop. */
     Task2RouteReport report;
 } Task2Route;
@@ -148,6 +149,10 @@ bool Task2Route_Obstacle1CameraVisible(const Task2RouteConfig *config,
  * conservative planning bound; configured width remains the test footprint. */
 bool Task2Route_ReplanParallelReturn(Task2Route *route, const Task2RoutePose *pose,
     float observedWidthMm, unsigned completedQuarterStep);
+/* Join parking from the actual stopped rear-bypass pose. */
+bool Task2Route_ReplanParkingReturn(Task2Route *route, const Task2RoutePose *pose,
+    float observedWidthMm, unsigned completedRearStep);
+
 bool Task2Route_ReplanObstacle2(Task2Route *route, const Task2RoutePose *stoppedPose,
     float observedWidthMm, unsigned completedDepartureStep);
 

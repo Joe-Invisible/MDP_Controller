@@ -56,12 +56,14 @@ def main():
             assert "startupPlannerPoseChecks = 100" in log
             assert "parallelReturnSetupMs = 11" in log
             assert "R275 quarter to 0" in log and "direct rear arc" in log
+            assert "obstacle2ParkReturnPending" in log and "irTrendCandidateValid" in log and "edgeMethod" in log
+            assert "parkingReturnSetupMs" in log and "obstacle2RearStoppedPose" in log
             assert "obstacle2ParallelReturnPending" in log and "obstacleBufferExceptionUsed" in log
             assert "arrow2RecognitionElapsedMs = 3210" in log
             assert "TASK2_TEST_COMPLETE" in log and "completedSteps = 8" in log
             assert "totalTravelMm = 7780" in log
             assert "Return park" in log and "yawPredictedReached = true" in log
-            assert "IR arc (90 deg cap)" in log and "ADC trace:" in log
+            assert "IR arc (90 deg cap; IR disabled)" in log and "ADC trace:" in log
             if count == 2:
                 assert "targetSpeedCps = 2000" in log and "targetSpeedCps = 5000" in log
                 assert "irObserved = true" in log and "irArmed = true" in log

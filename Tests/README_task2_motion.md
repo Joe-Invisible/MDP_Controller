@@ -1,7 +1,8 @@
 # Standalone Task 2 route test
 
 `TestMain.c` runs `Task2MotionTestRun()` once. Every motion uses the existing
-`MotionController_MoveStraight()` or `MotionController_MoveArc()` and finishes
+`MotionController_MoveStraight()`, `MotionController_MoveArc()`, or the
+caller-terminated `MotionController_MoveStraightContinuous()` and finishes
 stationary before the next primitive. Fusion remains abandoned. Arc exits keep
 the stopped-run yaw-priority policy and tuning.
 
@@ -16,93 +17,60 @@ assumed arrow must fit the camera range and field of view. The normal departure
 endpoint is 500 mm camera-to-arrow-centre range; the planner tries earlier
 endpoints in 25 mm range increments if turning clearance requires it.
 
-Same-arrow departure retains ultrasonic edge detection. Opposite-arrow departure
-uses **side IR only** for its edge: LEFT observes right IR, RIGHT observes left IR.
-Its preferred configurable **R325 arc** stops on a confirmed IR disappearance or at mirrored
-**90 degrees**, whichever comes first. If the cap is reached without an edge,
-the next primitive travels straight at the stopped heading until IR confirms an
-edge. Initial absence cannot count as an edge: three present samples must first
-acquire O2, followed by three consecutive absent samples. IR is never read during
-the straight O2 approach or below the configurable **80-degree mirrored chassis
-yaw gate** (`irAcquisitionMinYawDeg`, adjustable toward 85 degrees). Near that gate,
-the arc briefly requests **500 CPS** until three present samples arm IR, then
-restores departure speed. Slowing begins early enough to decelerate before the
-gate. If IR has not acquired within **1500 ms after the gate**, it reports
-`irAcquisitionTimedOut` and stops. Ultrasonic still acquires the face before departure,
-but its later echo losses/background returns cannot end opposite-arrow departure.
+Same-arrow departure keeps its existing ultrasonic/IR behaviour. Opposite arrows
+use side IR on the straight only: LEFT selects right IR and RIGHT selects left IR.
+The preferred R325 departure arc completes to mirrored +/-90 degrees with IR
+polling disabled. The continuous straight then begins at that measured stopped
+heading, with no distance endpoint.
 
-The straight has a full-footprint-checked guard based on the reference edge plus
-sample-confirmation, braking and additional travel reserves. Reaching the guard
-without a confirmed edge fails the run. Trigger/ADC faults are distinct from
-completed ultrasonic no-echo timeouts. SW1 cancellation and run/brake timeouts
-remain active.
+Three initial ADC readings <=400 confirm that O2 has already ended. The robot
+brakes and uses the beam intersection at the straight-start pose as a conservative
+width bound; preceding presence is not required in this case. Otherwise three
+readings >=700 acquire O2, and three consecutive readings <=400 confirm eventual
+disappearance. Readings 401..699 confirm neither state. An unresolved initial
+state times out after 1500 ms; cancellation and overall/braking timeouts remain.
 
-The planner checks a fresh-sample acquisition window inside the uncertainty
-margin as well as the footprint. It tries the preferred IR radius at earlier
-approach endpoints, then a radius 25 mm tighter and R275 if needed. The selected
-radius is exported in step 5. These remain stopped circular/straight primitives.
+The edge estimate and braking event are distinct. During the straight, a three-
+sample median rejects isolated spikes. The detector retains the plateau pose
+before a sustained decline: default minimum filtered drop 200 ADC counts, three
+decreasing filtered observations and 20 mm travel. Upward excursions >50 counts
+cancel a candidate; a stable new plateau can replace an unconfirmed one. Final
+absence confirms the event, but width is calculated from the retained onset
+pose. If there is no usable trend candidate, the first absent pose remains an
+explicit threshold fallback. These are provisional signal parameters for physical
+validation; ADC is used for presence/trend, not converted to a range.
 
-Measurements carry the pose at trigger time. The candidate edge uses the
-**first** absent measurement's pose, so confirmation delay does not get added
-to the inferred obstacle width. The ultrasonic model projects the inward cone
-boundary onto the configured O2 front plane, adds a configurable uncertainty
-margin, and assumes O2 is centred on the original centreline. After detection,
-the controller brakes; the remaining route is rebuilt from the **stopped pose**,
-not the detection pose. Live departure defaults to **1000 CPS** for this first
-sensor experiment. It can be raised after checking the edge logs.
+After braking, the route has three separately planned stopped stages:
 
-For same-arrow departure, the planner first tries tangent circular joins and a tangent straight return.
-When that fails, it tries a direct return arc or a straight return with stopped
-centreline-recovery arcs. Opposite-side cases that cannot clear the front corner
-use a front traverse, R275 end cap, back traverse and exit turn, followed by the
-return and parking alignment. These are bounded geometry searches, not a fused
-route. After an IR edge stop, an opposite-arrow run adds an **R275 quarter-turn
-opposite to the departure direction**, ending parallel at heading 0. It stops;
-the remaining return is planned from that measured pose. The preferred next
-primitive is a direct arc around O2's rear to heading +/-180. Its radius is
-calculated from the measured lateral position and the opposite return lane,
-rather than searched in 25 mm increments. If a direct arc collides, one
-calculated forward positioning straight is tried before the back arc. Only
-four parking joins remain in this IR return planner.
+1. R275 quarter-turn opposite to departure, ending parallel at heading zero.
+2. Rear bypass from the measured quarter-turn stop. The radius and return lane
+   are calculated from the observed width, body dimensions and fixed arena side
+   limits. A direct arc is preferred. If its entry clips O2, a geometrically
+   bracketed positioning straight is refined with at most ten checks; there is
+   no radius grid or parking search in this stage.
+3. Parking join from the measured rear-arc stop. Up to four longitudinal parking
+   choices are considered, with a bounded scalar solve and unequal alignment-arc
+   angles to account for the measured heading error.
 
-The user-authorized obstacle-buffer exception covers the quarter-turn and rear
-bypass (including the optional positioning straight). These retain full-body
-collision checks with positive model separation, and all side/parking boundary
-buffers. The straight return and parking retain the normal 100 mm obstacle
-buffer. `obstacleBufferExceptionUsed` makes this visible in the export;
-`obstacle2DirectRearArc` distinguishes direct and positioned back arcs.
+The R275 turn, positioning straight and rear arc retain the agreed reduced
+obstacle-buffer exception. Body overlap and side-boundary violations are still
+rejected. Straight return and parking keep the normal 100 mm obstacle buffer,
+35 mm side/park-mouth margin and 15 mm park back-wall margin. The larger of nominal
+and observed width is checked, with the original arena side boundaries retained.
 
-The initial IR plan contains six guarded prefix primitives
-(`obstacle2ReturnPending=true`). At the edge, only the quarter-turn is appended
-(`obstacle2ParallelReturnPending=true`). After its stop, the return is appended.
-Storage capacity is 16 steps; `route.stepCount` is the actual length.
+The fixed O1 template is validated offline, with no online sweep. Variable O2
+primitives use bounded interval certificates and reuse accepted clearance results.
+Every planning call has a 12,288 footprint-check budget. Prefix straight distances
+are nominal geometry previews, not IR execution limits. `sensorTerminated=true`
+tells `LaunchStep()` to use continuous motion; measured lengths replace previews
+when the robot stops. Full +/-90-degree departure and a bounded initial-absence
+estimate must fit the configured approach and camera limits; some narrow, long-gap
+layouts that formerly stopped inside the arc are now rejected at setup.
 
-Firmware trusts the fixed O1 template validated offline: steps 0-2 have no
-online footprint sweep. It certifies only the variable O2 approach, departure
-and generated return using conservative interval bounds. Shorter approach
-candidates reuse a checked longer straight. Accepted candidates retain their
-clearance margins; there is no duplicate final startup or return sweep. Each
-planning call has a hard limit of 12,288 pose checks; exhaustion reports `PLANNING_BUDGET` and leaves the robot stopped.
-IR startup uses fixed-cost face intersections and a return-space screen; the
-actual return search runs only after the IR edge stop. Host tests and the route
-graph additionally use exhaustive 1 mm validation (`TASK2_ROUTE_EXHAUSTIVE_CHECKS=1`).
-Candidates must cross O2 outward and back; a clear loop in front is rejected.
-The OLED shows `Route setup`, `Sensor init`, then `Controller init` after the O1
-reading. Exports include `routeSetupMs`, `returnSetupMs`,
-`startupPlannerPoseChecks` and the final report's `plannerPoseChecks`.
-`returnSetupMs` covers quarter-turn planning; `parallelReturnSetupMs` covers the
-remaining return, with `obstacle2ParallelStoppedPose` recording its start.
-`clearanceFromStep` identifies where the reported geometry coverage begins
-(zero-based step 3 for normal MCU routes). Earliest camera previews are computed
-only offline (`recognitionPreviewValid`); the test still records actual simulated
-recognition poses during motion. The suffix checks the larger of the configured
-test width and the observed width bound, while retaining the original arena side
-limits. Defaults reserve 100 mm of whole O2 width for sensing/model delay in
-the ultrasonic initial guard. IR guard travel uses the configured departure
-speed, sample period/count, controller deceleration and
-`secondIRDepartureGuardExtraMm` (30 mm). Both require 100 mm obstacle clearance, 35 mm side/park-mouth
-clearance, and 15 mm park back-wall clearance. An infeasible suffix leaves the
-robot stopped and reports failure.
+Exports include `routeSetupMs`, `returnSetupMs` (R275), `parallelReturnSetupMs`
+(rear bypass), and `parkingReturnSetupMs`, plus the measured stops at each stage.
+Pending flags identify the stage: `obstacle2ReturnPending`,
+`obstacle2ParallelReturnPending`, and `obstacle2ParkReturnPending`.
 
 ## Configuration
 
@@ -129,30 +97,19 @@ The same ultrasonic mount is used for startup ranging and moving measurements.
 `task2MotionTestConfig` controls startup ranging, control/log periods and
 run/brake timeouts. All sensor configuration is frozen at run start and exported.
 
-Ultrasonic and **side IR are enabled by default**. Mount coordinates and beam
-angles remain configurable. `aheadMm` is the receiver-lens centre's
-forward distance from the rear-axle midpoint, parallel to the chassis centreline;
-`leftMm` is its separate lateral offset. LEFT departure observes the right IR,
-RIGHT observes the left IR. IR is read only during the moving departure, and
-approach observations cannot arm its detector. Acquisition additionally requires
-the modelled beam to intersect the configured O2 face within its width; merely
-facing its plane does not identify O2. This gate uses the test reference layout
-and cannot prove that a nearer object is absent. Opposite-arrow departures require
-IR enabled and use it exclusively for the edge. Same-arrow departures allow
-ultrasonic or the selected IR to confirm the edge. The IR path
-uses raw ADC hysteresis: **>=700 counts present, <=400 absent**. Counts 401..699
-confirm neither state and reset consecutive-sample confirmation. Three fresh
-present samples must acquire the face before three consecutive absent samples
-can report its edge. These are initial thresholds from oblique passes across O2;
-trend-based edge detection is deferred.
+Ultrasonic and side IR are enabled by default. Mount coordinates remain
+configurable. `aheadMm` is measured parallel to the chassis centreline from the
+rear-axle midpoint to the receiver-lens centre; `leftMm` is the separate lateral
+offset. Opposite-arrow IR acquisition is not restricted to the nominal O2 width.
+IR never acquires during approach or the opposite-arrow departure arc. The legacy
+80-degree yaw gate remains applicable to same-arrow observations.
 
-Every fresh selected IR read creates a log entry marked **`irFresh=true`**,
-including during the departure arc after the yaw gate and the straight. `irAdc` is valid when `irValid`
-is true; `irObserved` distinguishes no readings yet. Entries include `irArmed`,
-`irPresentSamples` and `irAbsentSamples`. Regular motion entries contain the last
-reading with `irFresh=false`. Faulted reads are logged before stopping. The
-minimum 300 mm width check applies to the uncertainty-expanded width bound,
-rather than rejecting a slightly underestimated 150 mm edge coordinate.
+Every fresh selected IR conversion is logged with `irFresh=true`. The trace
+includes raw ADC, `irFilteredAdc`, `irPeakAdc`, `irDeclineSamples`,
+`irTrendCandidateValid` and `edgeMethod`. The final detector state includes the
+onset, first-absence and straight-start poses. Edge methods distinguish threshold
+fallback, trend onset and an initial-absence width bound. Regular motion entries
+retain the latest reading with `irFresh=false`; ADC faults stop the run.
 
 The 15-degree ultrasonic half-angle, 80 mm range-association tolerance, 20 mm
 edge uncertainty and 60 ms sample period are explicit test
@@ -205,8 +162,12 @@ face intersections. It
 checks 128 layouts (both O1 positions, all arrows, four gaps and four widths),
 edge acquisition/confirmation, mounted sensor geometry, IR hysteresis, stopping,
 cancellation, absent/stuck/faulted sensors and exports in both planner modes.
-Both modes exercise all 128 layouts, the difficult synthetic return, all eight
-faster mirrored IR layouts at 7000/3000/2000 CPS, and current published tuning.
+Both modes check all 128 layouts: 122 complete and six narrow, 1500 mm-gap cases
+reject before motors initialize under the full-90-degree policy. All eight faster
+mirrored cases at 7000/3000/2000 CPS and current published tuning complete. Tests
+also replay run08 ADC (about 507 mm from onset versus the former 751 mm estimate),
+its original 751 mm return bound and mirror, noise/rebounds, initial absence, and
+an actual 300 mm obstacle while the planner still assumes 500 mm.
 The run03 recorded stop with a 647 mm width bound and its mirror execute through
 the real stopped controller fixture, verifying the measured quarter-turn stop,
 direct back arc, obstacle crossings, full-body clearance and parking.
@@ -217,8 +178,8 @@ acoustic reflections, servo lag, wheel slip or camera latency.
 
 ![Current configured stopped route](task2_motion_route.svg)
 
-For opposite arrows this shows the guarded prefix through the IR straight;
-the return is created after the live edge stop. Same-arrow plots show the full
+For opposite arrows this shows the nominal preview through the IR straight;
+the remaining stages are created after their measured stops. Same-arrow plots show the full
 nominal guarded route. An executed route can have more primitives. Regenerate
 from the actual C planner (host compiler, NumPy and Matplotlib required):
 

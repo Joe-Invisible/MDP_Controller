@@ -14,6 +14,10 @@ typedef struct
     uint16_t irPresentAdc; /* Inclusive raw 12-bit ADC thresholds. */
     uint16_t irAbsentAdc;
     float irAcquisitionMinYawDeg; /* Mirrored chassis yaw; side IR becomes eligible here. */
+    uint16_t irTrendMinDropAdc; /* Median-filtered drop from the preceding plateau. */
+    uint16_t irTrendReboundAdc; /* Small upward fluctuations do not cancel a decline. */
+    uint32_t irTrendSamples;
+    float irTrendMinTravelMm;
     float edgeUncertaintyMm;
     uint32_t samplePeriodMs;
     uint32_t acquisitionTimeoutMs;
@@ -32,6 +36,13 @@ typedef struct
     Task2RoutePose pose; /* Pose when the measurement was triggered. */
 } Task2ObstacleObservation;
 
+typedef enum
+{
+    TASK2_EDGE_THRESHOLD = 0,
+    TASK2_EDGE_IR_TREND,
+    TASK2_EDGE_IR_INITIAL_ABSENCE_BOUND,
+} Task2EdgeMethod;
+
 typedef struct
 {
     bool armed[TASK2_SENSOR_COUNT];
@@ -46,11 +57,26 @@ typedef struct
     uint16_t lastIRAdc[2]; /* Left, right; last ADC read, before geometry checks. */
     bool irObserved[2];
     bool irValid[2];
+    bool irTraverseStarted;
+    Task2RoutePose irTraverseStartPose;
+    uint16_t irHistoryAdc[3];
+    Task2RoutePose irHistoryPose[3];
+    uint32_t irHistoryCount;
+    uint16_t irFilteredAdc;
+    uint16_t irPeakAdc;
+    Task2RoutePose irPeakPose;
+    uint32_t irDeclineSamples;
+    bool irTrendCandidateValid;
+    Task2RoutePose irTrendCandidatePose;
+    Task2EdgeMethod edgeMethod;
     float observedWidthMm;
     Task2RoutePose edgePose;
 } Task2ObstacleDetection;
 
 bool Task2ObstacleDetection_ValidConfig(const Task2ObstacleSensorConfig *config);
+/* Called once at the stopped-heading start of the sensor-terminated straight. */
+void Task2ObstacleDetection_BeginIRTraverse(Task2ObstacleDetection *state,
+    const Task2RoutePose *pose);
 /* Ultrasonic may acquire on approach; IR observations require departing=true. */
 void Task2ObstacleDetection_Observe(Task2ObstacleDetection *state,
     const Task2ObstacleSensorConfig *config, const Task2RouteConfig *route,

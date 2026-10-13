@@ -47,6 +47,8 @@ typedef struct
     uint32_t routeSetupMs;
     uint32_t returnSetupMs;
     uint32_t parallelReturnSetupMs;
+    uint32_t parkingReturnSetupMs;
+    Task2RoutePose obstacle2RearStoppedPose;
     Task2RoutePose obstacle2ParallelStoppedPose;
     uint32_t startupPlannerPoseChecks;
     uint32_t completedSteps;
@@ -105,6 +107,11 @@ typedef struct
     uint16_t irAdc; /* Last selected-side ADC read; valid when irValid. */
     uint32_t irPresentSamples;
     uint32_t irAbsentSamples;
+    uint16_t irFilteredAdc;
+    uint16_t irPeakAdc;
+    uint32_t irDeclineSamples;
+    bool irTrendCandidateValid;
+    Task2EdgeMethod edgeMethod;
     bool obstacle2EdgeDetected;
 } Task2MotionTestSample;
 
