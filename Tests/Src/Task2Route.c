@@ -686,11 +686,12 @@ static bool CheckParkingStraight(const Task2RouteConfig *c, Task2RoutePose p,
 
 /* The body centre follows a circle of radius hypot(axle radius, centre offset).
  * Solve that circle through the body-centre parking goal, then recover the
- * axle's exit heading. This keeps the whole body centred for diagonal stops. */
+ * axle's exit heading. A small lateral goal offset can preserve O1 clearance
+ * after a measured rear-stop error; every candidate checks full containment. */
 static bool CheckParkingArc(const Task2RouteConfig *c, Task2RoutePose p,
-    Task2RouteStep *arc)
+    float goalY, Task2RouteStep *arc)
 {
-    float gx = TASK2_ROUTE_PARK_CENTER_X_MM - p.xMm, gy = -p.yMm;
+    float gx = TASK2_ROUTE_PARK_CENTER_X_MM - p.xMm, gy = goalY - p.yMm;
     float centre = c->bodyCenterAheadOfRearAxleMm + 0.5f * c->frontProtrusionMm;
     float den = 2.0f * (-gx * sinf(p.yawRad) + gy * cosf(p.yawRad));
     if (fabsf(den) < 0.001f || cosf(p.yawRad) >= -0.5f)
@@ -699,7 +700,7 @@ static bool CheckParkingArc(const Task2RouteConfig *c, Task2RoutePose p,
     if (!isfinite(radius) || fabsf(radius) < ROUTE_MIN_RADIUS_MM || fabsf(radius) > 1000000.0f)
         return false;
     float cx = p.xMm - radius * sinf(p.yawRad), cy = p.yMm + radius * cosf(p.yawRad);
-    float heading = atan2f(-cy, TASK2_ROUTE_PARK_CENTER_X_MM - cx) + atan2f(radius, centre);
+    float heading = atan2f(goalY - cy, TASK2_ROUTE_PARK_CENTER_X_MM - cx) + atan2f(radius, centre);
     float delta = atan2f(sinf(heading - p.yawRad), cosf(heading - p.yawRad));
     if (delta * radius <= 0.0f || fabsf(delta) >= 0.5f * ROUTE_PI)
         return false;
@@ -871,10 +872,15 @@ static bool BuildParkingReturn(const Task2RouteConfig *c, Task2RoutePose p,
         *count = 1U;
         return true;
     }
-    if (c->firstArrow == c->secondArrow && CheckParkingArc(&bounds, p, &out[0]))
+    /* Prefer the centreline, then two small offsets toward the return side.
+     * This bounded choice applies to both USS and IR routes. */
+    for (unsigned goal = 0U; goal < 3U; ++goal)
     {
-        *count = 1U;
-        return true;
+        if (CheckParkingArc(&bounds, p, -c->secondArrow * 25.0f * goal, &out[0]))
+        {
+            *count = 1U;
+            return true;
+        }
     }
     if (fabsf(WrapYaw(p.yawRad + c->secondArrow * ROUTE_PI)) > 45.0f * ROUTE_PI / 180.0f)
         return false;

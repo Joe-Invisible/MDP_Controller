@@ -818,6 +818,120 @@ static void testRecordedStraightParking(void)
     }
 }
 
+/* Fresh ADCs replayed with measurement poses reconstructed from the logged
+ * straight travel/yaw and anchored at the exact stored first-absence pose. */
+static void testRun14And16Failures(void)
+{
+    const Task2ObstacleObservation run14[]={
+        {.valid=true,.value=756,.pose={1857.09430592f,-146.25632672f,-1.57359672f}},
+        {.valid=true,.value=754,.pose={1857.09430592f,-146.25632672f,-1.57359672f}},
+        {.valid=true,.value=728,.pose={1857.09393661f,-146.38823282f,-1.57359552f}},
+        {.valid=true,.value=789,.pose={1857.06440264f,-153.51112872f,-1.57628977f}},
+        {.valid=true,.value=657,.pose={1856.94217530f,-169.53731589f,-1.58055604f}},
+        {.valid=true,.value=662,.pose={1856.76881625f,-186.35451478f,-1.58165276f}},
+        {.valid=true,.value=666,.pose={1856.58008508f,-203.03964271f,-1.58256161f}},
+        {.valid=true,.value=379,.pose={1856.37720000f,-219.79055800f,-1.58325362f}},
+        {.valid=true,.value=360,.pose={1856.17293670f,-236.40954205f,-1.58291972f}},
+        {.valid=true,.value=342,.pose={1855.96817953f,-253.16043476f,-1.58311903f}}
+    };
+    const Task2ObstacleObservation run16[]={
+        {.valid=true,.value=908,.pose={1860.44428389f,101.19243128f,1.57438755f}},
+        {.valid=true,.value=900,.pose={1860.44428389f,101.19243128f,1.57438755f}},
+        {.valid=true,.value=903,.pose={1860.44215423f,101.78600723f,1.57438076f}},
+        {.valid=true,.value=873,.pose={1860.40175710f,110.75556605f,1.57621944f}},
+        {.valid=true,.value=614,.pose={1860.28760187f,127.17754112f,1.57927573f}},
+        {.valid=true,.value=293,.pose={1860.12732000f,143.86296100f,1.58152854f}},
+        {.valid=true,.value=245,.pose={1859.95004464f,160.54821468f,1.58131266f}},
+        {.valid=true,.value=268,.pose={1859.78136493f,177.16759789f,1.58057845f}}
+    };
+    for(unsigned run=0;run<2;++run)for(int mirror=-1;mirror<=1;mirror+=2)
+    {
+        const Task2ObstacleObservation *recorded=run ? run16 : run14;
+        unsigned n=run ? sizeof(run16)/sizeof(run16[0]) : sizeof(run14)/sizeof(run14[0]);
+        int side=(run ? 1 : -1)*mirror;
+        Task2RouteConfig c=task2RouteConfig;c.firstArrow=-side;c.secondArrow=side;
+        c.parkToObstacle1Mm=run ? 1042.33643f : 1051.42603f;
+        Task2ObstacleSensorConfig sc=task2ObstacleSensorConfig;
+        Task2ObstacleDetection state={0};
+        Task2ObstacleObservation o=recorded[0];o.pose.yMm*=mirror;o.pose.yawRad*=mirror;
+        Task2ObstacleDetection_BeginIRTraverse(&state,&o.pose);
+        Task2ObstacleSensor ir=side==1 ? TASK2_SENSOR_RIGHT_IR : TASK2_SENSOR_LEFT_IR;
+        for(unsigned i=0;i<n;++i)
+        {
+            o=recorded[i];o.pose.yMm*=mirror;o.pose.yawRad*=mirror;
+            Task2ObstacleDetection_Observe(&state,&sc,&c,ir,&o,true);
+            if(!run && i==6)assert(state.irPeakAdc==754 && state.irDeclineSamples==2);
+            if(i+1<n)assert(!state.detected); /* Keep the three raw absence brake event. */
+        }
+        assert(state.detected && state.edgeMethod==TASK2_EDGE_IR_TREND);
+        near(state.edgePose.yMm,recorded[0].pose.yMm*mirror,0.2f);
+        if(mirror==1)near(state.observedWidthMm,run ? 514.770386f : 644.705f,0.2f);
+        Task2RoutePose rear={2037.50232f,mirror*-455.787964f,mirror*-3.34525776f};
+        Task2RoutePose parallel={2113.58569f,mirror*-554.659546f,mirror*.000311851501f};
+        Task2Route route={.config=c,.stepCount=run ? 8U : 7U,.obstacle2IRDeparture=true,
+            .obstacle2ParallelReturnPending=!run,.obstacle2ParkReturnPending=run};
+        Task2RoutePose start=run ? rear : parallel;
+        if(run)
+        {
+            float centre=c.bodyCenterAheadOfRearAxleMm+c.frontProtrusionMm/2;
+            float travel=(TASK2_ROUTE_PARK_CENTER_X_MM-start.xMm)*cosf(start.yawRad)-
+                start.yMm*sinf(start.yawRad)-centre;
+            Task2RouteReport rejectedReport={.minimumObstacleGapMm=INFINITY,
+                .minimumSideMarginMm=INFINITY,.minimumParkWallMarginMm=INFINITY,
+                .minimumParkBackMarginMm=INFINITY,.minimumParkSideMarginMm=INFINITY};
+            bool straightClear=true;
+            for(float d=0;d<travel;d+=1)
+            {
+                Task2RoutePose q={start.xMm+d*cosf(start.yawRad),start.yMm+d*sinf(start.yawRad),start.yawRad};
+                if(!Task2Route_CheckPose(&c,&q,&rejectedReport))straightClear=false;
+            }
+            assert(!straightClear);
+            near(rejectedReport.minimumObstacleGapMm,96.119f,0.1f);
+            assert(Task2Route_ReplanParkingReturn(&route,&start,state.observedWidthMm,7));
+            assert(!route.obstacle2StraightParkReturn && route.stepCount==9);
+            assert(route.steps[8].radiusMm!=0);
+        }
+        else
+        {
+            Task2Route rejected=route;
+            assert(!Task2Route_ReplanParallelReturn(&rejected,&start,798.202332f,6));
+            assert(Task2Route_ReplanParallelReturn(&route,&start,state.observedWidthMm,6));
+        }
+        task2MotionTestRoute=route;resetHardware(0);idealPose=start;
+        RobotTestFixture fixture;
+        assert(RobotTestFixture_InitMotionController(&fixture,&task2MotionTestControllerConfig));
+        starts=1;
+        for(unsigned i=run ? 8U : 7U;i<route.stepCount;++i)
+        {
+            const Task2RouteStep step=route.steps[i];
+            assert((step.radiusMm==0 ? MotionController_MoveStraight(&fixture.motionController,step.distanceMm,step.speedCps)
+                : MotionController_MoveArc(&fixture.motionController,step.distanceMm,step.radiusMm,step.speedCps))==0);
+            unsigned updates=0;
+            while(MotionController_IsBusy(&fixture.motionController))
+            {
+                HAL_Delay(10);assert(MotionController_Update(&fixture.motionController,.01f)==0);
+                assert(++updates<10000);
+            }
+            if(route.obstacle2ParkReturnPending && i+1==route.stepCount)
+            {
+                assert(Task2Route_ReplanParkingReturn(&route,&idealPose,state.observedWidthMm,i));
+                task2MotionTestRoute=route;
+            }
+        }
+        assert(!route.obstacle2ParkReturnPending);
+        assert(idealReport.minimumObstacleGapMm>=100 && idealReport.minimumSideMarginMm>=35);
+        assert(idealReport.minimumParkSideMarginMm>=100 && idealReport.minimumParkBackMarginMm>=75);
+        float centre=c.bodyCenterAheadOfRearAxleMm+c.frontProtrusionMm/2;
+        float cx=idealPose.xMm+centre*cosf(idealPose.yawRad),cy=idealPose.yMm+centre*sinf(idealPose.yawRad);
+        float ex=((c.bodyLengthMm+c.frontProtrusionMm)*fabsf(cosf(idealPose.yawRad))+c.bodyWidthMm*fabsf(sinf(idealPose.yawRad)))/2;
+        float ey=((c.bodyLengthMm+c.frontProtrusionMm)*fabsf(sinf(idealPose.yawRad))+c.bodyWidthMm*fabsf(cosf(idealPose.yawRad)))/2;
+        assert(cx-ex>=-425 && cx+ex<0 && fabsf(cy)+ey<=200);
+        printf("PASS: run%u mirror%d width%.1f, completed parking: obstacle %.1f, side/tip %.1f, back %.1f mm\n",
+            run ? 16U : 14U,mirror,state.observedWidthMm,idealReport.minimumObstacleGapMm,
+            idealReport.minimumParkSideMarginMm,idealReport.minimumParkBackMarginMm);
+    }
+}
+
 int main(void)
 {
     setbuf(stdout, NULL);
@@ -993,6 +1107,7 @@ int main(void)
     puts("PASS: unknown actual 300 mm O2 with nominal 500 mm planning in both mirrors; ambiguous ADC timeout");
     testRecordedQuarterReturn();
     testRecordedStraightParking();
+    testRun14And16Failures();
     puts("PASS: measured asymmetric frame, one startup range, frozen configuration, invalid input, cancellation, timeout and IMU fault");
     printf("Planner pose checks: max startup %u, max return %u\n",maxStartupChecks,maxReturnChecks);
     return 0;

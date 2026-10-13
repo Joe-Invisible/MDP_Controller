@@ -209,8 +209,10 @@ static void ObserveIRTrend(Task2ObstacleDetection *s, const Task2ObstacleSensorC
     if (d < low) low = d;
     const Task2RoutePose *oldest = &s->irHistoryPose[(s->irHistoryCount - 3U) % 3U];
     float windowTravel = hypotf(o->pose.xMm - oldest->xMm, o->pose.yMm - oldest->yMm);
+    /* Only near-peak settling may replace the reference. A lower plateau
+     * within the minimum-drop threshold can still be part of the same edge. */
     bool newPlateau = !s->irTrendCandidateValid && median > c->irAbsentAdc &&
-        s->irPeakAdc - median < c->irTrendMinDropAdc &&
+        s->irPeakAdc - median <= c->irTrendReboundAdc &&
         high - low <= c->irTrendReboundAdc && windowTravel >= c->irTrendMinTravelMm;
     if (!s->irPeakAdc || median >= s->irPeakAdc || newPlateau)
     {

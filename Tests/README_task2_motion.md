@@ -34,7 +34,9 @@ The edge estimate and braking event are distinct. During the straight, a three-
 sample median rejects isolated spikes. The detector retains the plateau pose
 before a sustained decline: default minimum filtered drop 200 ADC counts, three
 sustained lower filtered observations (equal values count) and 20 mm travel. Upward excursions >50 counts
-cancel a candidate; a stable new plateau can replace an unconfirmed one. Final
+cancel a candidate. A stable plateau can replace the reference only within the
+50-count rebound band of the peak; settling at a substantially lower level
+retains the preceding peak and decline confirmation. Final
 absence confirms the event, but width is calculated from the retained onset
 pose. If there is no usable trend candidate, the first absent pose remains an
 explicit threshold fallback. These are provisional signal parameters for physical
@@ -51,8 +53,11 @@ After braking, the route has three separately planned stopped stages:
    cannot, retain the parallel rear-arc/alignment fallback.
 3. From the measured rear-arc stop, recheck the straight with that actual heading.
    Its length places the whole body's centre closest to (-250, 0), accounting for
-   the rear axle's offset. If the straight cannot fit, use the existing four-choice
-   parking join with unequal alignment angles. A direct return can park diagonally;
+   the rear axle's offset. If the straight cannot fit, try a single forward
+   corrective arc: the body-centre goal is (-250, 0), then 25 or 50 mm toward the
+   return side. Each goal must preserve the normal obstacle buffer and full-body
+   carpark containment. The existing four-choice parking join with unequal
+   alignment angles remains the fallback. A direct return can park diagonally;
    full-body containment and wall buffers, rather than exact 180-degree yaw, decide
    acceptance. `obstacle2TangentRearArc` and `obstacle2StraightParkReturn` identify
    these choices in the export.
@@ -157,7 +162,8 @@ limit for a stuck USS, rather than evidence of disappearance.
 After the measured USS brake stop, the existing geometric return planner checks
 a complete nominal tail. It executes through the rear bypass, then replans
 parking from that measured stop, preferring a straight. A single corrective
-parking arc centres the whole body's footprint when a straight cannot fit.
+parking arc can use the same bounded body-centre goals as IR returns when a
+straight cannot fit.
 If the rear exit points outward, a buffered R275 heading correction may precede
 parking; its remainder is replanned at the measured correction stop, with at most
 two such corrections. Existing alignment/traverse fallbacks remain. The nominal
@@ -230,7 +236,14 @@ run09/run10 quarter-turn poses and their mirrors use one parking straight after
 the rear arc, with the entire simulated robot inside: minimum wall gaps in the
 controller fixture exceed 110 mm at the sides/tips and 102 mm at the back.
 Explicit checks reject the old rear-axle finish target and close approaches to
-an entrance tip even when the whole chassis is still outside the park.
+an entrance tip even when the whole chassis is still outside the park. Run14
+and its mirror replay the lower-plateau peak reset: the original LR bound falls
+from 798.2 to 644.7 mm without changing raw absence/braking confirmation, and
+completes the rear bypass and parking. Run16 retains its valid 514.8 mm IR
+estimate; the measured stop's original straight violates the O1 buffer (96.1 mm),
+while the new offset-goal arc and its mirror complete through the stopped
+controller fixture with 104.2 mm obstacle, 128.3 mm side/tip and 119.0 mm back
+clearance.
 The run03 recorded stop with a 647 mm width bound and its mirror execute through
 the real stopped controller fixture, verifying the measured quarter-turn stop,
 direct back arc, obstacle crossings, full-body clearance and parking.
