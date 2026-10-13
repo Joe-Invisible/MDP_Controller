@@ -97,6 +97,8 @@ typedef struct
     float minimumParkSideMarginMm;
     uint32_t plannerPoseChecks;
     bool planningBudgetExceeded;
+    uint32_t clearanceFromStep; /* MCU margins exclude the trusted O1 template. */
+    bool recognitionPreviewValid; /* Earliest camera preview is computed only on PC. */
     /* Earliest eligible camera pose, including the angled O2 approach. */
     Task2RoutePose recognitionPose[2];
     float recognitionProgressMm[2];

@@ -181,6 +181,14 @@ void SW1_WaitForPressAndRelease(void)
         assert(robot && task2MotionTestState == TASK2_TEST_READY);
         assert(strstr(oledRows[0],"Task2 stopped ready"));
         assert(task2MotionTestRoute.report.valid);
+#if TASK2_ROUTE_EXHAUSTIVE_CHECKS
+        assert(task2MotionTestRoute.report.clearanceFromStep==0 &&
+            task2MotionTestRoute.report.recognitionPreviewValid);
+#else
+        assert(task2MotionTestRoute.report.clearanceFromStep==TASK2_ROUTE_O2_APPROACH_STEP &&
+            !task2MotionTestRoute.report.recognitionPreviewValid);
+        assert(task2MotionTestRoute.report.minimumObstacleGapMm>=task2MotionTestRoute.config.obstacleBufferMm);
+#endif
         if(task2MotionTestRoute.report.plannerPoseChecks>maxStartupChecks)
             maxStartupChecks=task2MotionTestRoute.report.plannerPoseChecks;
         near(robot->motionController.arcYawRatePID.kp,200,0);
