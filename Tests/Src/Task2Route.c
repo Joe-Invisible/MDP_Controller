@@ -507,6 +507,10 @@ static bool BuildTail(const Task2RouteConfig *c, Task2RoutePose p,
     float width, Task2RouteStep out[9], unsigned *count)
 {
     Task2RouteConfig bounds = *c;
+    /* Leave room for the stopped controller's arc-exit pose error before
+     * rebuilding parking. This reserve applies to the nominal USS return. */
+    if (c->firstArrow == c->secondArrow)
+        bounds.boundaryBufferMm += 20.0f;
     float sideLimit = 0.5f * c->obstacle2WidthMm + c->obstacle2EndSpaceMm;
     bounds.obstacle2WidthMm = fmaxf(c->obstacle2WidthMm, width);
     bounds.obstacle2EndSpaceMm = sideLimit - 0.5f * bounds.obstacle2WidthMm;
@@ -680,6 +684,38 @@ static bool CheckParkingStraight(const Task2RouteConfig *c, Task2RoutePose p,
 #endif
 }
 
+/* The body centre follows a circle of radius hypot(axle radius, centre offset).
+ * Solve that circle through the body-centre parking goal, then recover the
+ * axle's exit heading. This keeps the whole body centred for diagonal stops. */
+static bool CheckParkingArc(const Task2RouteConfig *c, Task2RoutePose p,
+    Task2RouteStep *arc)
+{
+    float gx = TASK2_ROUTE_PARK_CENTER_X_MM - p.xMm, gy = -p.yMm;
+    float centre = c->bodyCenterAheadOfRearAxleMm + 0.5f * c->frontProtrusionMm;
+    float den = 2.0f * (-gx * sinf(p.yawRad) + gy * cosf(p.yawRad));
+    if (fabsf(den) < 0.001f || cosf(p.yawRad) >= -0.5f)
+        return false;
+    float radius = (gx * gx + gy * gy - centre * centre) / den;
+    if (!isfinite(radius) || fabsf(radius) < ROUTE_MIN_RADIUS_MM || fabsf(radius) > 1000000.0f)
+        return false;
+    float cx = p.xMm - radius * sinf(p.yawRad), cy = p.yMm + radius * cosf(p.yawRad);
+    float heading = atan2f(-cy, TASK2_ROUTE_PARK_CENTER_X_MM - cx) + atan2f(radius, centre);
+    float delta = atan2f(sinf(heading - p.yawRad), cosf(heading - p.yawRad));
+    if (delta * radius <= 0.0f || fabsf(delta) >= 0.5f * ROUTE_PI)
+        return false;
+    *arc = (Task2RouteStep){.distanceMm = delta * radius,
+        .radiusMm = radius, .speedCps = c->cruiseSpeedCps};
+#if TASK2_ROUTE_EXHAUSTIVE_CHECKS
+    return Sweep(c, p, arc, 1U, 1.0f, true);
+#else
+    Task2RouteReport accepted = EmptyReport();
+    if (!BoundedSweep(c, p, arc, 1U, true, &accepted))
+        return false;
+    planningWork.acceptedClearance = accepted;
+    return true;
+#endif
+}
+
 /* The tangent passes through the park's body-centre target. Stopping before
  * that point by the axle-to-body-centre offset parks the whole footprint. */
 static bool AimRearArcAtPark(Task2RoutePose start, Task2RouteStep *arc)
@@ -826,16 +862,53 @@ static bool ParkingJoinAt(const Task2RouteConfig *c, Task2RoutePose p, float tra
 }
 
 static bool BuildParkingReturn(const Task2RouteConfig *c, Task2RoutePose p,
-    float width, Task2RouteStep out[4], unsigned *count)
+    float width, Task2RouteStep out[4], unsigned *count, bool allowHeadingCorrection, bool *headingOnly)
 {
+    *headingOnly = false;
     Task2RouteConfig bounds = ObservedBounds(c, width);
     if (CheckParkingStraight(&bounds, p, &out[0]))
     {
         *count = 1U;
         return true;
     }
+    if (c->firstArrow == c->secondArrow && CheckParkingArc(&bounds, p, &out[0]))
+    {
+        *count = 1U;
+        return true;
+    }
     if (fabsf(WrapYaw(p.yawRad + c->secondArrow * ROUTE_PI)) > 45.0f * ROUTE_PI / 180.0f)
         return false;
+    /* Correct an outward exit heading before a long return straight can
+     * consume the remaining arena side clearance. Preflight the parking join
+     * from the corrected pose, then execute only the correction and replan
+     * from its measured stop. The preflight call disables further correction. */
+    float correction = WrapYaw(-c->secondArrow * ROUTE_PI - p.yawRad);
+    if (allowHeadingCorrection && c->firstArrow == c->secondArrow && fabsf(correction) > 0.5f * ROUTE_PI / 180.0f)
+    {
+        Task2RouteStep heading = {.distanceMm = ROUTE_MIN_RADIUS_MM * fabsf(correction),
+            .radiusMm = copysignf(ROUTE_MIN_RADIUS_MM, correction), .speedCps = c->approachSpeedCps};
+        Task2RoutePose corrected = Advance(p, heading.distanceMm, heading.radiusMm);
+        bool headingClear;
+#if TASK2_ROUTE_EXHAUSTIVE_CHECKS
+        headingClear = Sweep(&bounds, p, &heading, 1U, 1.0f, false);
+#else
+        Task2RouteReport headingReport = EmptyReport();
+        headingClear = BoundedSweep(&bounds, p, &heading, 1U, false, &headingReport);
+#endif
+        Task2RouteStep parking[4];
+        bool unusedHeadingOnly;
+        unsigned parkingCount = 0U;
+        if (headingClear && BuildParkingReturn(c, corrected, width, parking, &parkingCount, false, &unusedHeadingOnly) && parkingCount <= 4U)
+        {
+            out[0] = heading;
+            *count = 1U;
+            *headingOnly = true; /* Replan the remainder at its measured stop. */
+#if !TASK2_ROUTE_EXHAUSTIVE_CHECKS
+            MergeMargins(&planningWork.acceptedClearance, &headingReport);
+#endif
+            return true;
+        }
+    }
     for (unsigned park = 0U; park < 4U; ++park)
     {
         float parkStraight = 100.0f + 100.0f * park;
@@ -1098,8 +1171,20 @@ bool Task2Route_ReplanObstacle2(Task2Route *route, const Task2RoutePose *pose, f
         count = 1U;
         route->obstacle2ParallelReturnPending = true;
     }
-    else if (!BuildTail(&route->config, *pose, width, tail, &count))
-        return FinishPlanning(route, Reject(route, "NO_OBSERVED_EDGE_RETURN"));
+    else
+    {
+        if (!BuildTail(&route->config, *pose, width, tail, &count))
+            return FinishPlanning(route, Reject(route, "NO_OBSERVED_EDGE_RETURN"));
+        /* The complete nominal tail is certified above. Execute through the
+         * rear bypass only, then rebuild parking from that measured stop,
+         * just as for IR routes. Do not carry arc exit error into the park. */
+        if (route->config.firstArrow == route->config.secondArrow)
+        {
+            route->obstacle2TangentRearArc = count == 3U && tail[2].radiusMm == 0.0f;
+            count = count == 9U ? 5U : 2U;
+            route->obstacle2ParkReturnPending = true;
+        }
+    }
     route->obstacle2ReturnPending = false;
     return InstallSuffix(route, pose, width, tail, count, completedDepartureStep,
         route->obstacle2IRDeparture, route->obstacle2IRDeparture ? "OK_IR_QUARTER" : "OK_OBSERVED_EDGE");
@@ -1133,15 +1218,19 @@ bool Task2Route_ReplanParkingReturn(Task2Route *route, const Task2RoutePose *pos
     planningWork.exhausted = false;
     Task2RouteStep tail[4];
     unsigned count = 0U;
+    bool headingOnly = false;
     if (!route || !pose || !route->obstacle2ParkReturnPending ||
         completedRearStep + 1U != route->stepCount || !isfinite(width) || width < 300.0f ||
         !isfinite(pose->xMm) || !isfinite(pose->yMm) || !isfinite(pose->yawRad) ||
-        !BuildParkingReturn(&route->config, *pose, width, tail, &count))
+        !BuildParkingReturn(&route->config, *pose, width, tail, &count, route->parkingHeadingCorrections < 2U, &headingOnly))
         return route ? FinishPlanning(route, Reject(route, "NO_PARKING_RETURN")) : false;
-    route->obstacle2ParkReturnPending = false;
-    route->obstacle2StraightParkReturn = count == 1U;
+    route->obstacle2ParkReturnPending = headingOnly;
+    if (headingOnly)
+        ++route->parkingHeadingCorrections;
+    route->obstacle2StraightParkReturn = count == 1U && tail[0].radiusMm == 0.0f;
     return InstallSuffix(route, pose, width, tail, count, completedRearStep, 0U,
-        count == 1U ? "OK_STRAIGHT_PARK_RETURN" : "OK_PARKING_RETURN");
+        headingOnly ? "OK_PARK_HEADING_CORRECTION" : route->obstacle2StraightParkReturn
+            ? "OK_STRAIGHT_PARK_RETURN" : "OK_PARKING_RETURN");
 }
 
 /* Exact rectangle separation axes plus vertex-to-rectangle distances. */

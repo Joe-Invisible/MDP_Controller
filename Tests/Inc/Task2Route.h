@@ -128,6 +128,7 @@ typedef struct
     bool obstacle2TangentRearArc; /* Rear arc aims along a straight into the park. */
     bool obstacle2StraightParkReturn; /* Actual measured stop allowed one parking straight. */
     bool obstacle2DirectRearArc; /* False: a forward positioning straight was needed. */
+    uint32_t parkingHeadingCorrections; /* At most two measured-stop corrections. */
     bool obstacle2ParkReturnPending; /* Plan parking after the measured rear-arc stop. */
     bool obstacle2ParallelReturnPending; /* Plan the rest after the measured R275 stop. */
     Task2RouteReport report;

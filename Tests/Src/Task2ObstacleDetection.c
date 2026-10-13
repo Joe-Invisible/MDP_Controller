@@ -16,6 +16,16 @@ bool Task2ObstacleDetection_ValidConfig(const Task2ObstacleSensorConfig *c)
         c->irTrendMinDropAdc > 4095U || c->irTrendReboundAdc >= c->irTrendMinDropAdc ||
         !isfinite(c->irTrendMinTravelMm) || c->irTrendMinTravelMm <= 0.0f)
         return false;
+    if (!c->ultrasonicApproachMedianSamples ||
+        c->ultrasonicApproachMedianSamples > TASK2_USS_HISTORY_CAPACITY ||
+        !(c->ultrasonicApproachMedianSamples & 1U) ||
+        !c->ultrasonicDepartureMedianSamples ||
+        c->ultrasonicDepartureMedianSamples > TASK2_USS_HISTORY_CAPACITY ||
+        !(c->ultrasonicDepartureMedianSamples & 1U) ||
+        !isfinite(c->ultrasonicJumpMm) || c->ultrasonicJumpMm <= c->ultrasonicRangeToleranceMm ||
+        !isfinite(c->ultrasonicMaxDepartureYawDeg) ||
+        c->ultrasonicMaxDepartureYawDeg <= 0.0f || c->ultrasonicMaxDepartureYawDeg >= 90.0f)
+        return false;
     const Task2SensorMount *mounts[] = {&c->ultrasonic, &c->leftIR, &c->rightIR};
     for (unsigned i = 0U; i < TASK2_SENSOR_COUNT; ++i)
         if (!isfinite(mounts[i]->aheadMm) || !isfinite(mounts[i]->leftMm) ||
@@ -31,6 +41,136 @@ static Task2RoutePose SensorPose(Task2RoutePose p, const Task2SensorMount *m)
     p.yMm += m->aheadMm * s + m->leftMm * c;
     p.yawRad += m->yawDeg * PI / 180.0f;
     return p;
+}
+
+void Task2ObstacleDetection_BeginUSSDeparture(Task2ObstacleDetection *s,
+    const Task2ObstacleSensorConfig *c)
+{
+    if (!s || !c)
+        return;
+    s->ultrasonicDepartureStarted = true;
+    s->ultrasonicHistoryCount = c->ultrasonicDepartureMedianSamples;
+    for (unsigned i = 0U; i < c->ultrasonicDepartureMedianSamples; ++i)
+        s->ultrasonicHistoryResidualMm[i] = s->ultrasonicBaselineResidualMm;
+    s->ultrasonicJumpSamples = s->ultrasonicNoEchoSamples = 0U;
+    s->ultrasonicJumpCandidateValid = false;
+    s->absent[TASK2_SENSOR_ULTRASONIC] = 0U;
+}
+
+static bool EstimateUSSEdge(Task2ObstacleDetection *s, const Task2ObstacleSensorConfig *c,
+    const Task2RouteConfig *r, Task2RoutePose pose, Task2EdgeMethod method)
+{
+    Task2RoutePose p = SensorPose(pose, &c->ultrasonic);
+    float face = r->parkToObstacle1Mm + 100.0f + r->obstacleFaceGapMm;
+    float ray = p.yawRad - r->secondArrow * c->ultrasonicBeamHalfAngleDeg * PI / 180.0f;
+    if (cosf(ray) <= 0.05f || face <= p.xMm)
+        return false;
+    float edge = r->secondArrow * (p.yMm + (face - p.xMm) * tanf(ray));
+    if (!isfinite(edge) || edge <= 0.0f)
+        return false;
+    s->observedWidthMm = fmaxf(300.0f, 2.0f * (edge + c->edgeUncertaintyMm));
+    s->edgePose = pose;
+    s->edgeMethod = method;
+    s->source = TASK2_SENSOR_ULTRASONIC;
+    s->detected = true;
+    return true;
+}
+
+static void ObserveUSS(Task2ObstacleDetection *s, const Task2ObstacleSensorConfig *c,
+    const Task2RouteConfig *r, const Task2ObstacleObservation *o, bool departing)
+{
+    if (o->valid)
+    {
+        s->lastUltrasonicRangeMm = o->value;
+        if (o->value < 20.0f || o->value > 4000.0f)
+        {
+            s->fault = true;
+            return;
+        }
+    }
+    Task2RoutePose p = SensorPose(o->pose, &c->ultrasonic);
+    bool active = departing && s->ultrasonicDepartureStarted;
+    if (active && fabsf(p.yawRad) * 180.0f / PI > c->ultrasonicMaxDepartureYawDeg)
+    {
+        s->ultrasonicHeadingExceeded = s->fault = true;
+        return; /* Oblique readings must not masquerade as an O2 edge. */
+    }
+    if (!o->valid)
+    {
+        s->present[0] = s->ultrasonicJumpSamples = 0U;
+        s->ultrasonicJumpCandidateValid = false;
+        if (!active || !s->armed[0])
+        {
+            s->ultrasonicHistoryCount = 0U;
+            s->ultrasonicNoEchoSamples = 0U;
+            return;
+        }
+        if (s->ultrasonicNoEchoSamples++ == 0U)
+            s->ultrasonicNoEchoPose = s->firstAbsentPose[0] = o->pose;
+        s->absent[0] = s->ultrasonicNoEchoSamples;
+        if (s->ultrasonicNoEchoSamples >= c->absentSamples)
+            EstimateUSSEdge(s, c, r, s->ultrasonicNoEchoPose, TASK2_EDGE_USS_NO_ECHO);
+        return; /* No echo is not a fabricated long-range measurement. */
+    }
+    s->ultrasonicNoEchoSamples = s->absent[0] = 0U;
+    float face = r->parkToObstacle1Mm + 100.0f + r->obstacleFaceGapMm;
+    float dx = face - p.xMm, half = c->ultrasonicBeamHalfAngleDeg * PI / 180.0f;
+    float near = fmaxf(0.0f, fabsf(p.yawRad) - half), far = fabsf(p.yawRad) + half;
+    if (dx <= 0.0f || far >= PI * 0.5f)
+        return;
+    float expected = dx / cosf(near), upper = dx / cosf(far);
+    /* Median of range residuals: every sample uses its own trigger pose. This
+     * avoids mixing older, longer approach ranges with the current pose. */
+    float residual = o->value - expected;
+    unsigned n = active ? c->ultrasonicDepartureMedianSamples : c->ultrasonicApproachMedianSamples;
+    s->ultrasonicHistoryResidualMm[s->ultrasonicHistoryCount % n] = residual;
+    ++s->ultrasonicHistoryCount;
+    if (s->ultrasonicHistoryCount < n)
+        return;
+    float sorted[TASK2_USS_HISTORY_CAPACITY];
+    for (unsigned i = 0U; i < n; ++i)
+    {
+        unsigned j = i;
+        float value = s->ultrasonicHistoryResidualMm[i];
+        while (j && sorted[j - 1U] > value)
+        {
+            sorted[j] = sorted[j - 1U];
+            --j;
+        }
+        sorted[j] = value;
+    }
+    float filtered = sorted[n / 2U];
+    s->ultrasonicFilteredResidualMm = filtered;
+    bool present = filtered >= -c->ultrasonicRangeToleranceMm &&
+        filtered <= upper - expected + c->ultrasonicRangeToleranceMm;
+    if (active && s->armed[0])
+    {
+        bool rawJump = residual >= s->ultrasonicBaselineResidualMm + c->ultrasonicJumpMm;
+        if (rawJump && !s->ultrasonicJumpCandidateValid)
+        {
+            s->ultrasonicJumpPose = s->firstAbsentPose[0] = o->pose;
+            s->ultrasonicJumpCandidateValid = true;
+        }
+        else if (!rawJump)
+            s->ultrasonicJumpCandidateValid = false;
+        if (rawJump && filtered >= s->ultrasonicBaselineResidualMm + c->ultrasonicJumpMm)
+        {
+            s->absent[0] = ++s->ultrasonicJumpSamples;
+            if (s->ultrasonicJumpSamples >= c->absentSamples)
+                EstimateUSSEdge(s, c, r, s->ultrasonicJumpPose, TASK2_EDGE_USS_RANGE_JUMP);
+            return;
+        }
+        s->ultrasonicJumpSamples = 0U;
+    }
+    if (present)
+    {
+        if (s->present[0] < c->presentSamples)
+            ++s->present[0];
+        s->armed[0] |= s->present[0] >= c->presentSamples;
+        s->ultrasonicBaselineResidualMm = filtered;
+    }
+    else
+        s->present[0] = 0U;
 }
 
 void Task2ObstacleDetection_BeginIRTraverse(Task2ObstacleDetection *s,
@@ -166,6 +306,9 @@ void Task2ObstacleDetection_Observe(Task2ObstacleDetection *s,
 {
     if (!s || !c || !r || !o || sensor >= TASK2_SENSOR_COUNT || s->detected || s->fault)
         return;
+    /* LL/RR use the forward USS. Oblique opposite-arrow departure uses IR. */
+    if (sensor != TASK2_SENSOR_ULTRASONIC && r->firstArrow == r->secondArrow)
+        return;
     /* Side returns during the straight approach cannot identify O2. */
     if (sensor != TASK2_SENSOR_ULTRASONIC &&
         (!departing || !c->sideIREnabled || (r->firstArrow != r->secondArrow && !s->irTraverseStarted) || r->secondArrow * o->pose.yawRad * 180.0f / PI < c->irAcquisitionMinYawDeg ||
@@ -178,97 +321,50 @@ void Task2ObstacleDetection_Observe(Task2ObstacleDetection *s,
         s->irValid[i] = o->valid && !o->fault && isfinite(o->value) && o->value >= 0.0f && o->value <= 4095.0f;
         s->lastIRAdc[i] = s->irValid[i] ? (uint16_t)o->value : 0U;
     }
+    else
+    {
+        s->ultrasonicObserved = true;
+        s->ultrasonicValid = o->valid && !o->fault && isfinite(o->value) &&
+            o->value >= 20.0f && o->value <= 4000.0f;
+        if (s->ultrasonicValid)
+            s->lastUltrasonicRangeMm = o->value;
+    }
     if (o->fault || !isfinite(o->pose.xMm) || !isfinite(o->pose.yMm) ||
         !isfinite(o->pose.yawRad) || (o->valid && !isfinite(o->value)))
     {
         s->fault = true;
         return;
     }
-    const Task2SensorMount *m = sensor == TASK2_SENSOR_ULTRASONIC ? &c->ultrasonic :
-        sensor == TASK2_SENSOR_LEFT_IR ? &c->leftIR : &c->rightIR;
-    Task2RoutePose p = SensorPose(o->pose, m);
-    float face = r->parkToObstacle1Mm + 100.0f + r->obstacleFaceGapMm;
-    if (sensor != TASK2_SENSOR_ULTRASONIC && r->firstArrow != r->secondArrow)
+    if (sensor == TASK2_SENSOR_ULTRASONIC && r->firstArrow == r->secondArrow)
     {
-        ObserveIRTraverse(s, c, r, sensor, o, m);
+        ObserveUSS(s, c, r, o, departing);
         return;
     }
-    bool present = false, absent = false;
-    if (sensor == TASK2_SENSOR_ULTRASONIC)
+    if (sensor != TASK2_SENSOR_ULTRASONIC)
     {
-        float half = c->ultrasonicBeamHalfAngleDeg * PI / 180.0f;
-        float angle = fabsf(p.yawRad), dx = face - p.xMm;
-        float near = fmaxf(0.0f, angle - half), far = angle + half;
-        float minRange = dx / cosf(near);
-        float maxRange = far < PI * 0.5f ? dx / cosf(far) : INFINITY;
-        present = o->valid && dx > 0.0f && near < PI * 0.5f && o->value >= 20.0f && o->value <= 4000.0f &&
-            o->value >= minRange - c->ultrasonicRangeToleranceMm &&
-            o->value <= maxRange + c->ultrasonicRangeToleranceMm;
-        absent = !present;
-        if (present)
-            s->lastUltrasonicRangeMm = o->value;
+        const Task2SensorMount *mount = sensor == TASK2_SENSOR_LEFT_IR ? &c->leftIR : &c->rightIR;
+        ObserveIRTraverse(s, c, r, sensor, o, mount);
+        return;
     }
-    else
-    {
-        /* An ADC error cannot be used as an absent-face measurement. */
-        if (!o->valid || o->value < 0.0f || o->value > 4095.0f)
-        {
-            s->fault = true;
-            return;
-        }
-        if (cosf(p.yawRad) <= 0.05f || face <= p.xMm)
-        {
-            s->present[sensor] = s->absent[sensor] = 0U;
-            return;
-        }
-        float faceY = p.yMm + (face - p.xMm) * tanf(p.yawRad);
-        bool onFace = isfinite(faceY) && fabsf(faceY) <= r->obstacle2WidthMm * 0.5f;
-        if (!s->armed[sensor] && !onFace)
-        {
-            s->present[sensor] = s->absent[sensor] = 0U;
-            return; /* A forward-facing beam can still hit a side obstacle. */
-        }
-        present = onFace && o->value >= c->irPresentAdc;
-        absent = o->value <= c->irAbsentAdc;
-    }
+    /* Opposite arrows retain USS acquisition on approach, but it cannot
+     * terminate their oblique departure. */
+    Task2RoutePose p = SensorPose(o->pose, &c->ultrasonic);
+    float face = r->parkToObstacle1Mm + 100.0f + r->obstacleFaceGapMm;
+    float half = c->ultrasonicBeamHalfAngleDeg * PI / 180.0f;
+    float dx = face - p.xMm;
+    float near = fmaxf(0.0f, fabsf(p.yawRad) - half), far = fabsf(p.yawRad) + half;
+    float minRange = dx / cosf(near);
+    float maxRange = far < PI * 0.5f ? dx / cosf(far) : INFINITY;
+    bool present = o->valid && dx > 0.0f && near < PI * 0.5f && o->value >= 20.0f && o->value <= 4000.0f &&
+        o->value >= minRange - c->ultrasonicRangeToleranceMm &&
+        o->value <= maxRange + c->ultrasonicRangeToleranceMm;
     if (present)
     {
-        s->absent[sensor] = 0U;
-        if (s->present[sensor] < c->presentSamples)
-            ++s->present[sensor];
-        s->armed[sensor] |= s->present[sensor] >= c->presentSamples;
-        return;
+        s->lastUltrasonicRangeMm = o->value;
+        if (s->present[0] < c->presentSamples)
+            ++s->present[0];
+        s->armed[0] |= s->present[0] >= c->presentSamples;
     }
-    s->present[sensor] = 0U;
-    if (sensor == TASK2_SENSOR_ULTRASONIC && r->firstArrow != r->secondArrow)
-    {
-        s->absent[sensor] = 0U;
-        return; /* Opposite-arrow departure terminates on side IR only. */
-    }
-    if (!absent || !departing || !s->armed[sensor])
-    {
-        s->absent[sensor] = 0U;
-        return;
-    }
-    if (s->absent[sensor]++ == 0U)
-        s->firstAbsentPose[sensor] = o->pose;
-    if (s->absent[sensor] < c->absentSamples)
-        return;
-    p = SensorPose(s->firstAbsentPose[sensor], m);
-    /* The inward edge of the cone is the last ray able to see the face.
-     * A pencil-ray model is obtained by setting half-angle to zero. */
-    float ray = p.yawRad - r->secondArrow * (sensor == TASK2_SENSOR_ULTRASONIC
-        ? c->ultrasonicBeamHalfAngleDeg * PI / 180.0f : 0.0f);
-    if (cosf(ray) <= 0.05f || face <= p.xMm)
-        return;
-    float edge = r->secondArrow * (p.yMm + (face - p.xMm) * tanf(ray));
-    float width = 2.0f * (edge + c->edgeUncertaintyMm);
-    /* Apply the minimum width to the conservative bound, allowing the stated
-     * pose/edge uncertainty at the minimum 300 mm obstacle width. */
-    if (!isfinite(edge) || edge <= 0.0f || !isfinite(width) || width < 300.0f)
-        return;
-    s->observedWidthMm = width;
-    s->edgePose = s->firstAbsentPose[sensor];
-    s->source = sensor;
-    s->detected = true;
+    else
+        s->present[0] = 0U;
 }

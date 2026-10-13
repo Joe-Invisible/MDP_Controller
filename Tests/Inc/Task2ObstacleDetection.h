@@ -1,6 +1,7 @@
 #ifndef TASK2_OBSTACLE_DETECTION_H
 #define TASK2_OBSTACLE_DETECTION_H
 #include "Task2Route.h"
+#define TASK2_USS_HISTORY_CAPACITY 15U
 
 typedef struct
 {
@@ -11,6 +12,10 @@ typedef struct
     Task2SensorMount rightIR;
     float ultrasonicBeamHalfAngleDeg; /* Explicit cone model, not calibrated accuracy. */
     float ultrasonicRangeToleranceMm;
+    uint32_t ultrasonicApproachMedianSamples;
+    uint32_t ultrasonicDepartureMedianSamples;
+    float ultrasonicJumpMm; /* Upward change after compensating for chassis motion. */
+    float ultrasonicMaxDepartureYawDeg; /* Relative to the O2 face normal. */
     uint16_t irPresentAdc; /* Inclusive raw 12-bit ADC thresholds. */
     uint16_t irAbsentAdc;
     float irAcquisitionMinYawDeg; /* Mirrored chassis yaw; side IR becomes eligible here. */
@@ -41,6 +46,8 @@ typedef enum
     TASK2_EDGE_THRESHOLD = 0,
     TASK2_EDGE_IR_TREND,
     TASK2_EDGE_IR_INITIAL_ABSENCE_BOUND,
+    TASK2_EDGE_USS_RANGE_JUMP,
+    TASK2_EDGE_USS_NO_ECHO,
 } Task2EdgeMethod;
 
 typedef struct
@@ -54,6 +61,19 @@ typedef struct
     bool irAcquisitionTimedOut;
     Task2ObstacleSensor source;
     float lastUltrasonicRangeMm;
+    bool ultrasonicObserved;
+    bool ultrasonicValid;
+    bool ultrasonicDepartureStarted;
+    bool ultrasonicHeadingExceeded;
+    uint32_t ultrasonicHistoryCount;
+    float ultrasonicHistoryResidualMm[TASK2_USS_HISTORY_CAPACITY];
+    float ultrasonicFilteredResidualMm;
+    float ultrasonicBaselineResidualMm;
+    uint32_t ultrasonicJumpSamples;
+    uint32_t ultrasonicNoEchoSamples;
+    bool ultrasonicJumpCandidateValid;
+    Task2RoutePose ultrasonicJumpPose;
+    Task2RoutePose ultrasonicNoEchoPose;
     uint16_t lastIRAdc[2]; /* Left, right; last ADC read, before geometry checks. */
     bool irObserved[2];
     bool irValid[2];
@@ -74,10 +94,13 @@ typedef struct
 } Task2ObstacleDetection;
 
 bool Task2ObstacleDetection_ValidConfig(const Task2ObstacleSensorConfig *config);
+/* Keep acquired O2 evidence; seed a shorter departure window from its baseline. */
+void Task2ObstacleDetection_BeginUSSDeparture(Task2ObstacleDetection *state,
+    const Task2ObstacleSensorConfig *config);
 /* Called once at the stopped-heading start of the sensor-terminated straight. */
 void Task2ObstacleDetection_BeginIRTraverse(Task2ObstacleDetection *state,
     const Task2RoutePose *pose);
-/* Ultrasonic may acquire on approach; IR observations require departing=true. */
+/* USS: approach acquisition, LL/RR departure loss. IR: LR/RL straight only. */
 void Task2ObstacleDetection_Observe(Task2ObstacleDetection *state,
     const Task2ObstacleSensorConfig *config, const Task2RouteConfig *route,
     Task2ObstacleSensor sensor, const Task2ObstacleObservation *observation,

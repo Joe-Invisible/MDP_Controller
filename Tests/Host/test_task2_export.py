@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SOURCE = r'''
 #include "Task2MotionTest.h"
 Task2MotionTestConfig task2MotionTestConfig = {.measureObstacle1AtStartup=true};
-Task2ObstacleSensorConfig task2MotionTestSensorConfig = {.ultrasonic={210,0,0},.leftIR={155,37.5,90},.rightIR={135,-33.5,-90},.irPresentAdc=700,.irAbsentAdc=400,.irAcquisitionMinYawDeg=80,.samplePeriodMs=60};
+Task2ObstacleSensorConfig task2MotionTestSensorConfig = {.ultrasonic={210,0,0},.leftIR={155,37.5,90},.rightIR={135,-33.5,-90},.irPresentAdc=700,.irAbsentAdc=400,.irAcquisitionMinYawDeg=80,.samplePeriodMs=60,.ultrasonicApproachMedianSamples=11,.ultrasonicDepartureMedianSamples=5,.ultrasonicJumpMm=250};
 Task2ObstacleDetection task2MotionTestDetection = {.detected=true,.observedWidthMm=540};
 Task2MotionTestStartupRange task2MotionTestStartupRange = {.attempted=true,.valid=true,.sensorToObstacleMm=1090,.parkToObstacle1Mm=1050};
 Task2MotionTestState task2MotionTestState = TASK2_TEST_COMPLETE;
@@ -20,7 +20,7 @@ Task2MotionTestResult task2MotionTestResult = {.passed=true,.completedSteps=8,.e
 Task2Route task2MotionTestRoute = {.config={.parkToObstacle1Mm=1050,.recognitionCameraRangeMm=1000,.parkSideWallBufferMm=100,.parkBackWallBufferMm=75},.totalTravelMm=7780,.obstacle2IRDeparture=true};
 Task2MotionTestStepResult task2MotionTestStepResults[TASK2_ROUTE_STEP_COUNT] = {{.measuredDistanceMm=790,.yawPredictedReached=true}};
 MotionControllerConfig task2MotionTestControllerConfig = {.straightYawRateKp=270,.arcYawRateKp=270};
-Task2MotionTestSample task2MotionTestLog[TASK2_MOTION_TEST_LOG_CAPACITY] = {{.timeMs=100,.stepIndex=0,.targetSpeedCps=2000},{.timeMs=200,.stepIndex=4,.targetSpeedCps=5000,.irObserved=true,.irFresh=true,.irValid=true,.irArmed=true,.irAdc=395,.irAbsentSamples=2}};
+Task2MotionTestSample task2MotionTestLog[TASK2_MOTION_TEST_LOG_CAPACITY] = {{.timeMs=100,.stepIndex=0,.targetSpeedCps=2000},{.timeMs=200,.stepIndex=4,.targetSpeedCps=5000,.irObserved=true,.irFresh=true,.irValid=true,.irArmed=true,.irAdc=395,.irAbsentSamples=2,.ultrasonicFresh=true,.ultrasonicValid=true,.lastUltrasonicRangeMm=2400,.ultrasonicJumpSamples=3}};
 uint32_t task2MotionTestLogCount = SAMPLE_COUNT;
 int main(void) { return 0; }
 '''
@@ -47,6 +47,9 @@ def main():
             log = output.read_text()
             assert log.rstrip().endswith("=== EXPORT COMPLETE ===")
             assert "aheadMm = 210" in log
+            assert "ultrasonicApproachMedianSamples = 11" in log and "ultrasonicDepartureMedianSamples = 5" in log
+            assert "ultrasonicJumpMm = 250" in log and "ultrasonicNoEchoSamples" in log
+            assert "parkingHeadingCorrections" in log and "USS trace:" in log
             assert "irPresentAdc = 700" in log and "irAbsentAdc = 400" in log
             assert "irAcquisitionMinYawDeg = 80" in log and "irAcquisitionTimedOut = false" in log
             assert "leftMm = 37.5" in log and "leftMm = -33.5" in log
@@ -70,6 +73,8 @@ def main():
                 assert "targetSpeedCps = 2000" in log and "targetSpeedCps = 5000" in log
                 assert "irObserved = true" in log and "irArmed = true" in log
                 assert "irFresh = true" in log and "irValid = true" in log
+                assert "ultrasonicFresh = true" in log and "ultrasonicValid = true" in log
+                assert "lastUltrasonicRangeMm = 2400" in log and "ultrasonicJumpSamples = 3" in log
                 assert "irAdc = 395" in log and "irAbsentSamples = 2" in log
             else:
                 assert "No samples, or invalid count" in log

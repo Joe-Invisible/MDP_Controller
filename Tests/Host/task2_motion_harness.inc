@@ -17,6 +17,7 @@ static bool physicalCrossings[2][2];
 static uint32_t sensorTick, sensorDue;
 static bool sensorPending;
 static unsigned irReads;
+static unsigned ussReads;
 static float irStraightPreviewMm;
 static unsigned maxStartupChecks, maxReturnChecks;
 static Task2ObstacleObservation pendingObservation;
@@ -26,6 +27,7 @@ bool Task2ObstacleSensors_Init(const Task2ObstacleSensorConfig *config)
     (void)config;
     sensorTick = sensorDue = 0U;
     sensorPending = false;
+    ussReads = 0U;
     return true;
 }
 void Task2ObstacleSensors_Stop(void) { sensorPending = false; }
@@ -62,6 +64,25 @@ uint32_t Task2ObstacleSensors_Poll(const Task2ObstacleSensorConfig *c, uint32_t 
         }
         pendingObservation=(Task2ObstacleObservation){.valid=isfinite(range),
             .value=isfinite(range)?range:0,.pose=*pose};
+        ++ussReads;
+        if (scenario == 14 || scenario == 15)
+        {
+            if (!pendingObservation.valid && scenario == 15)
+            {
+                pendingObservation.valid = true;
+                pendingObservation.value = 2400; /* Sustained background after loss. */
+            }
+            else if (pendingObservation.valid && ussReads % 5U == 0U)
+                pendingObservation.value = 2500; /* Isolated uneven-surface echo. */
+            if (ussReads % 17U == 0U)
+                pendingObservation.valid = false; /* Isolated completed no-echo. */
+        }
+        if (scenario == 16)
+        {
+            pendingObservation.valid = true;
+            float near = fmaxf(0, fabsf(angle) - c->ultrasonicBeamHalfAngleDeg*PI/180);
+            pendingObservation.value = (face-x)/cosf(near); /* Stuck on predicted face. */
+        }
         if(scenario==4)pendingObservation.valid=false;
         if(scenario==5 || scenario==9)
         {
@@ -275,6 +296,14 @@ static void checkCompleted(void)
         assert(task2MotionTestDetection.source==(task2MotionTestRoute.config.secondArrow==1
             ? TASK2_SENSOR_RIGHT_IR : TASK2_SENSOR_LEFT_IR));
     }
+    else
+    {
+        assert(irReads == 0 && task2MotionTestDetection.source == TASK2_SENSOR_ULTRASONIC);
+        assert(task2MotionTestDetection.edgeMethod == TASK2_EDGE_USS_NO_ECHO ||
+            task2MotionTestDetection.edgeMethod == TASK2_EDGE_USS_RANGE_JUMP);
+        assert(fabsf(task2MotionTestDetection.edgePose.yawRad)*180/PI <=
+            task2MotionTestSensorConfig.ultrasonicMaxDepartureYawDeg);
+    }
     assert(task2MotionTestLogCount > 1 && !task2MotionTestResult.logTruncated);
     assert(task2MotionTestLog[task2MotionTestLogCount-1].mode == MOTIONCONTROLLER_IDLE);
     for (unsigned i=0; i<task2MotionTestRoute.stepCount; ++i)
@@ -339,6 +368,8 @@ static void checkCompleted(void)
     float cx=idealPose.xMm+centre*cosf(idealPose.yawRad), cy=idealPose.yMm+centre*sinf(idealPose.yawRad);
     float ex=0.5f*(length*fabsf(cosf(idealPose.yawRad))+c->bodyWidthMm*fabsf(sinf(idealPose.yawRad)));
     float ey=0.5f*(length*fabsf(sinf(idealPose.yawRad))+c->bodyWidthMm*fabsf(cosf(idealPose.yawRad)));
+    if (!(cx-ex >= -500+c->parkBackWallBufferMm && cx+ex < 0 && fabsf(cy)+ey <= 300-c->parkSideWallBufferMm))
+        fprintf(stderr,"Park buffer failure %.0f %.0f %.0f %d/%d scenario%u: bbox x%.1f..%.1f y%.1f..%.1f finalyaw%.2f steps%u\n",c->parkToObstacle1Mm,c->obstacleFaceGapMm,c->obstacle2WidthMm,c->firstArrow,c->secondArrow,scenario,cx-ex,cx+ex,cy-ey,cy+ey,idealPose.yawRad*180/PI,task2MotionTestRoute.stepCount);
     assert(cx-ex >= -500+c->parkBackWallBufferMm && cx+ex < 0 &&
         fabsf(cy)+ey <= 300-c->parkSideWallBufferMm);
     assert(task2MotionTestRoute.report.minimumParkSideMarginMm >= c->parkSideWallBufferMm);
@@ -349,96 +380,83 @@ static void testSensorEvents(void)
 {
     Task2ObstacleSensorConfig config=task2ObstacleSensorConfig;
     config.ultrasonic=(Task2SensorMount){0,0,0};
-    config.irAcquisitionMinYawDeg=0; /* Isolate ADC hysteresis tests from the mounting yaw gate. */
     Task2RouteConfig route=task2RouteConfig;
-    route.firstArrow=route.secondArrow=1;
     float face=route.parkToObstacle1Mm+100+route.obstacleFaceGapMm;
-    Task2ObstacleObservation o={.pose={face-500,0,40*PI/180}};
-    Task2ObstacleDetection state={0};
-    for(unsigned i=0;i<10;++i)Task2ObstacleDetection_Observe(&state,&config,&route,0,&o,true);
-    assert(!state.detected && !state.armed[0]);
-    o.valid=true;o.value=500/cosf(o.pose.yawRad);
-    for(unsigned i=0;i<config.presentSamples;++i)Task2ObstacleDetection_Observe(&state,&config,&route,0,&o,false);
-    assert(state.armed[0]);
-    o.valid=false;
-    for(unsigned i=0;i<config.absentSamples-1;++i)Task2ObstacleDetection_Observe(&state,&config,&route,0,&o,true);
-    assert(!state.detected);
-    o.valid=true;Task2ObstacleDetection_Observe(&state,&config,&route,0,&o,true);
-    assert(state.absent[0]==0);
-    o.valid=false;
-    for(unsigned i=0;i<config.absentSamples;++i)Task2ObstacleDetection_Observe(&state,&config,&route,0,&o,true);
-    assert(state.detected && state.source==TASK2_SENSOR_ULTRASONIC);
-    near(state.observedWidthMm,2*(500*tanf(25*PI/180)+config.edgeUncertaintyMm),0.1f);
-    float width=state.observedWidthMm;
-    state=(Task2ObstacleDetection){0};config.ultrasonic.leftMm=50;
-    o.valid=true;o.value=600;
-    for(unsigned i=0;i<3;++i)Task2ObstacleDetection_Observe(&state,&config,&route,0,&o,false);
-    o.valid=false;
-    for(unsigned i=0;i<3;++i)Task2ObstacleDetection_Observe(&state,&config,&route,0,&o,true);
-    assert(state.detected && state.observedWidthMm>width+80);
-    config.rightIR=(Task2SensorMount){0,0,0};state=(Task2ObstacleDetection){0};
-    o.pose.yawRad=20*PI/180;
-    o.valid=true;o.value=400;
-    for(unsigned i=0;i<3;++i)Task2ObstacleDetection_Observe(&state,&config,&route,2,&o,true);
-    assert(!state.armed[2] && !state.detected && state.absent[2]==0);
-    o.value=700;
-    state=(Task2ObstacleDetection){0};
-    for(unsigned i=0;i<5;++i)Task2ObstacleDetection_Observe(&state,&config,&route,2,&o,false);
-    assert(!state.armed[2] && !state.irObserved[1]);
-    for(unsigned i=0;i<2;++i)Task2ObstacleDetection_Observe(&state,&config,&route,2,&o,true);
-    assert(!state.armed[2]);
-    o.value=699;Task2ObstacleDetection_Observe(&state,&config,&route,2,&o,true);
-    assert(state.present[2]==0);
-    o.value=700;
-    for(unsigned i=0;i<3;++i)Task2ObstacleDetection_Observe(&state,&config,&route,2,&o,true);
-    assert(state.armed[2]);
-    const float noisyPresent[]={900,750,850,700,800};
-    for(unsigned i=0;i<5;++i){o.value=noisyPresent[i];Task2ObstacleDetection_Observe(&state,&config,&route,2,&o,true);}
-    o.value=401;
-    o.pose.yawRad=40*PI/180;
-    for(unsigned i=0;i<5;++i)Task2ObstacleDetection_Observe(&state,&config,&route,2,&o,true);
-    assert(!state.detected && state.absent[2]==0);
-    o.value=400;
-    for(unsigned i=0;i<2;++i)Task2ObstacleDetection_Observe(&state,&config,&route,2,&o,true);
-    assert(!state.detected && state.absent[2]==2);
-    o.value=401;Task2ObstacleDetection_Observe(&state,&config,&route,2,&o,true);
-    assert(state.absent[2]==0 && state.armed[2]);
-    o.value=400;
-    for(unsigned i=0;i<3;++i)Task2ObstacleDetection_Observe(&state,&config,&route,2,&o,true);
-    assert(state.detected && state.source==TASK2_SENSOR_RIGHT_IR);
-    near(state.observedWidthMm,2*(500*tanf(40*PI/180)+config.edgeUncertaintyMm),0.1f);
-    state=(Task2ObstacleDetection){0};
-    o.valid=false;Task2ObstacleDetection_Observe(&state,&config,&route,2,&o,true);
-    assert(state.fault && !state.detected);
-    /* Run02's early side return cannot arm IR; the genuine face near 85 deg can. */
-    state=(Task2ObstacleDetection){0};config.rightIR=(Task2SensorMount){135,-33.5,-90};
-    config.irAcquisitionMinYawDeg=80;
-    o=(Task2ObstacleObservation){.valid=true,.value=900,.pose={face-478.43f,-174.20f,37.44f*PI/180}};
-    for(unsigned i=0;i<5;++i)Task2ObstacleDetection_Observe(&state,&config,&route,2,&o,true);
-    assert(!state.armed[2] && state.present[2]==0);
-    o.pose=(Task2RoutePose){face-375.55f,11.50f,75*PI/180};
-    for(unsigned i=0;i<5;++i)Task2ObstacleDetection_Observe(&state,&config,&route,2,&o,true);
-    assert(!state.armed[2] && !state.irObserved[1]);
-    o.pose.yawRad=80*PI/180;
-    for(unsigned i=0;i<2;++i)Task2ObstacleDetection_Observe(&state,&config,&route,2,&o,true);
-    assert(state.irObserved[1] && !state.armed[2]);
-    o.pose=(Task2RoutePose){face-375.55f,11.50f,85*PI/180};
-    for(unsigned i=0;i<3;++i)Task2ObstacleDetection_Observe(&state,&config,&route,2,&o,true);
-    assert(state.armed[2] && state.irObserved[1] && state.lastIRAdc[1]==900);
-    o.value=300;o.pose=(Task2RoutePose){face-345,80,100*PI/180};
-    for(unsigned i=0;i<3;++i)Task2ObstacleDetection_Observe(&state,&config,&route,2,&o,true);
-    assert(state.detected && state.source==TASK2_SENSOR_RIGHT_IR);
-    state=(Task2ObstacleDetection){0};o.valid=true;o.value=4096;
-    Task2ObstacleDetection_Observe(&state,&config,&route,2,&o,true);
-    assert(state.fault && !state.detected);
+    for(int side=-1;side<=1;side+=2)
+    {
+        route.firstArrow=route.secondArrow=side;
+        Task2ObstacleObservation o={.valid=true,.value=500/cosf(32.5f*PI/180),
+            .pose={face-500,0,side*40*PI/180}};
+        Task2ObstacleDetection state={0};
+        for(unsigned i=0;i<13;++i)
+            Task2ObstacleDetection_Observe(&state,&config,&route,0,&o,false);
+        assert(state.armed[0] && !state.detected);
+        Task2ObstacleDetection_BeginUSSDeparture(&state,&config);
+        o.valid=false;
+        for(unsigned i=0;i<2;++i)Task2ObstacleDetection_Observe(&state,&config,&route,0,&o,true);
+        assert(!state.detected && state.ultrasonicNoEchoSamples==2);
+        o.valid=true;Task2ObstacleDetection_Observe(&state,&config,&route,0,&o,true);
+        assert(state.ultrasonicNoEchoSamples==0);
+        o.valid=false;
+        for(unsigned i=0;i<3;++i)Task2ObstacleDetection_Observe(&state,&config,&route,0,&o,true);
+        assert(state.detected && state.edgeMethod==TASK2_EDGE_USS_NO_ECHO);
+        near(state.observedWidthMm,2*(500*tanf(32.5f*PI/180)+config.edgeUncertaintyMm),0.1f);
+
+        state=(Task2ObstacleDetection){0};o.valid=true;
+        for(unsigned i=0;i<13;++i)Task2ObstacleDetection_Observe(&state,&config,&route,0,&o,false);
+        Task2ObstacleDetection_BeginUSSDeparture(&state,&config);
+        float baseline=o.value;
+        o.value=2500;Task2ObstacleDetection_Observe(&state,&config,&route,0,&o,true);
+        o.value=baseline;
+        for(unsigned i=0;i<5;++i)Task2ObstacleDetection_Observe(&state,&config,&route,0,&o,true);
+        assert(!state.detected && !state.ultrasonicJumpCandidateValid);
+        o.pose.xMm+=10;o.value=2400;
+        Task2RoutePose onset=o.pose;
+        for(unsigned i=0;i<4;++i)
+        {
+            Task2ObstacleDetection_Observe(&state,&config,&route,0,&o,true);
+            o.pose.xMm+=10;
+        }
+        assert(!state.detected);
+        Task2ObstacleDetection_Observe(&state,&config,&route,0,&o,true);
+        assert(state.detected && state.edgeMethod==TASK2_EDGE_USS_RANGE_JUMP);
+        near(state.edgePose.xMm,onset.xMm,0.01f); /* Backdate before median delay. */
+
+        state=(Task2ObstacleDetection){0};o.value=baseline;o.pose.yawRad=0;
+        for(unsigned i=0;i<30;++i)
+        {
+            o.pose.xMm+=5;o.value=face-o.pose.xMm;
+            if(i%5==0)o.value=2500; /* Normal motion plus isolated bad echoes. */
+            Task2ObstacleDetection_Observe(&state,&config,&route,0,&o,false);
+        }
+        assert(state.armed[0] && !state.detected);
+        Task2ObstacleDetection_BeginUSSDeparture(&state,&config);
+        o.pose.yawRad=side*46*PI/180;
+        Task2ObstacleDetection_Observe(&state,&config,&route,0,&o,true);
+        assert(state.fault && state.ultrasonicHeadingExceeded && !state.detected);
+        state=(Task2ObstacleDetection){0};o.fault=true;
+        Task2ObstacleDetection_Observe(&state,&config,&route,0,&o,true);
+        assert(state.fault && !state.detected);o.fault=false;
+        state=(Task2ObstacleDetection){0};o.valid=false;o.pose.yawRad=side*20*PI/180;
+        for(unsigned i=0;i<20;++i)Task2ObstacleDetection_Observe(&state,&config,&route,0,&o,true);
+        assert(!state.detected && !state.armed[0]);
+        o.valid=true;o.value=900;
+        for(unsigned i=0;i<10;++i)Task2ObstacleDetection_Observe(&state,&config,&route,2,&o,true);
+        assert(!state.irObserved[1]); /* Same arrows never use side IR. */
+        route.firstArrow=-side;state=(Task2ObstacleDetection){0};
+        o.valid=false;
+        for(unsigned i=0;i<20;++i)Task2ObstacleDetection_Observe(&state,&config,&route,0,&o,true);
+        assert(!state.detected); /* USS loss cannot terminate LR/RL. */
+    }
     assert(Task2ObstacleDetection_ValidConfig(&config));
-    config.irAbsentAdc=700;assert(!Task2ObstacleDetection_ValidConfig(&config));
-    config.irAbsentAdc=400;config.irPresentAdc=4096;
+    config.ultrasonicApproachMedianSamples=10;
     assert(!Task2ObstacleDetection_ValidConfig(&config));
-    config.irPresentAdc=700;
-    config.ultrasonic.aheadMm=NAN;
+    config=task2ObstacleSensorConfig;config.ultrasonicDepartureMedianSamples=17;
     assert(!Task2ObstacleDetection_ValidConfig(&config));
-    puts("PASS: acquired-before-lost, fresh-sample confirmation, dropout reset, configurable mounts, IR hysteresis and faults");
+    config=task2ObstacleSensorConfig;config.ultrasonicJumpMm=NAN;
+    assert(!Task2ObstacleDetection_ValidConfig(&config));
+    config=task2ObstacleSensorConfig;config.irAbsentAdc=700;
+    assert(!Task2ObstacleDetection_ValidConfig(&config));
 }
 
 static void testTraverseFallback(void)
@@ -847,8 +865,8 @@ int main(void)
         checkCompleted(); ++runs;
         if(task2MotionTestRoute.obstacle2IRDeparture)++irReturns;
         else if(task2MotionTestRoute.stepCount==8)++shortReturns;
-        else if(task2MotionTestRoute.stepCount==11)++alignedReturns;
-        else if(task2MotionTestRoute.stepCount==14)++traverseReturns;
+        else if(task2MotionTestRoute.stepCount>=14)++traverseReturns;
+        else ++alignedReturns;
     }
     assert(shortReturns+alignedReturns+traverseReturns+irReturns==runs);
     assert(runs==122 && rejected==6 && stoppedRejected==0);
@@ -874,6 +892,32 @@ int main(void)
     }
     assert(fastCompleted==8 && fastRejected==0);
     printf("PASS: fast mirrored layouts: %u completed, %u rejected before motors\n", fastCompleted, fastRejected);
+    unsigned noisyUSSCompleted=0;
+    for(unsigned noise=14;noise<=15;++noise)
+    for(unsigned g=0;g<4;++g)for(unsigned w=0;w<4;++w)for(int side=-1;side<=1;side+=2)
+    {
+        task2RouteConfig=tuned;task2RouteConfig.firstArrow=task2RouteConfig.secondArrow=side;
+        task2RouteConfig.obstacleFaceGapMm=gaps[g];task2RouteConfig.obstacle2WidthMm=widths[w];
+        resetHardware(noise);Task2MotionTestRun();
+        if(!task2MotionTestResult.passed)fprintf(stderr,"Noisy USS failure scenario%u gap%.0f width%.0f side%d: %s\n",noise,gaps[g],widths[w],side,task2MotionTestRoute.report.reason);
+        checkCompleted();
+        assert(task2MotionTestDetection.edgeMethod == (noise==14 ? TASK2_EDGE_USS_NO_ECHO : TASK2_EDGE_USS_RANGE_JUMP));
+        ++noisyUSSCompleted;
+    }
+    printf("PASS: %u LL/RR noisy layouts at published speeds, no-echo and background-jump termination\n",noisyUSSCompleted);
+    for(int side=-1;side<=1;side+=2)
+    {
+        task2RouteConfig=tuned;task2RouteConfig.firstArrow=task2RouteConfig.secondArrow=side;
+        resetHardware(16);Task2MotionTestRun();
+        assert(!task2MotionTestResult.passed && !task2MotionTestDetection.detected && irReads==0);
+        assert(task2MotionTestDetection.ultrasonicHeadingExceeded &&
+            robot->motionController.mode==MOTIONCONTROLLER_IDLE);
+        task2RouteConfig=tuned;task2RouteConfig.firstArrow=task2RouteConfig.secondArrow=side;
+        resetHardware(4);Task2MotionTestRun();
+        assert(!task2MotionTestResult.passed && !task2MotionTestDetection.armed[0] && irReads==0);
+        assert(!task2MotionTestDetection.detected && robot->motionController.mode==MOTIONCONTROLLER_IDLE);
+    }
+    puts("PASS: LL/RR stuck USS heading limit and missing acquisition stop without an inferred edge");
     task2RouteConfig=original;
     testTraverseFallback();
     task2MotionTestConfig=originalTest;

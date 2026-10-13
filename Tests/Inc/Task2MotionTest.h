@@ -100,6 +100,12 @@ typedef struct
     bool ultrasonicArmed;
     uint32_t ultrasonicAbsentSamples;
     float lastUltrasonicRangeMm;
+    bool ultrasonicFresh;
+    bool ultrasonicValid;
+    float ultrasonicFilteredResidualMm;
+    float ultrasonicBaselineResidualMm;
+    uint32_t ultrasonicJumpSamples;
+    uint32_t ultrasonicNoEchoSamples;
     bool irObserved;
     bool irFresh; /* This log entry records a newly completed selected IR read. */
     bool irValid;

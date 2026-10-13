@@ -26,8 +26,10 @@ Task2ObstacleSensorConfig task2ObstacleSensorConfig = {
     .ultrasonic = {210.0f, 0.0f, 0.0f},
     .leftIR = {155.0f, 37.5f, 90.0f},
     .rightIR = {135.0f, -33.5f, -90.0f},
-    .ultrasonicBeamHalfAngleDeg = 15.0f,
+    .ultrasonicBeamHalfAngleDeg = 7.5f, /* Provisional 15-degree full cone. */
     .ultrasonicRangeToleranceMm = 80.0f,
+    .ultrasonicApproachMedianSamples = 11U, .ultrasonicDepartureMedianSamples = 5U,
+    .ultrasonicJumpMm = 250.0f, .ultrasonicMaxDepartureYawDeg = 45.0f,
     .irPresentAdc = 700U, .irAbsentAdc = 400U,
     .irAcquisitionMinYawDeg = 80.0f,
     .irTrendMinDropAdc = 200U, .irTrendReboundAdc = 50U,
@@ -124,6 +126,13 @@ static MotionControllerStatus LaunchStep(void)
         distance = step->radiusMm * (task2MotionTestRoute.config.secondArrow * TASK2_PI * 0.5f -
             estimatedPose.yawRad);
     MotionControllerStatus status;
+    if (!task2MotionTestRoute.obstacle2IRDeparture &&
+        task2MotionTestStepIndex == TASK2_ROUTE_O2_DEPARTURE_STEP)
+    {
+        /* Discard any approach trigger still pending before switching windows. */
+        Task2ObstacleSensors_Stop();
+        Task2ObstacleDetection_BeginUSSDeparture(&task2MotionTestDetection, &task2MotionTestSensorConfig);
+    }
     if (step->sensorTerminated)
     {
         Task2ObstacleDetection_BeginIRTraverse(&task2MotionTestDetection, &estimatedPose);
@@ -182,7 +191,7 @@ static MotionControllerStatus LimitIRAcquisitionSpeed(void)
     return MotionController_RequestCruiseSpeed(controller, speed);
 }
 
-static void LogSample(uint32_t elapsedMs, bool freshIR)
+static void LogSample(uint32_t elapsedMs, bool freshIR, bool freshUSS)
 {
     if (task2MotionTestLogCount >= TASK2_MOTION_TEST_LOG_CAPACITY)
     {
@@ -212,6 +221,12 @@ static void LogSample(uint32_t elapsedMs, bool freshIR)
         .ultrasonicArmed = task2MotionTestDetection.armed[TASK2_SENSOR_ULTRASONIC],
         .ultrasonicAbsentSamples = task2MotionTestDetection.absent[TASK2_SENSOR_ULTRASONIC],
         .lastUltrasonicRangeMm = task2MotionTestDetection.lastUltrasonicRangeMm,
+        .ultrasonicFresh = freshUSS,
+        .ultrasonicValid = task2MotionTestDetection.ultrasonicValid,
+        .ultrasonicFilteredResidualMm = task2MotionTestDetection.ultrasonicFilteredResidualMm,
+        .ultrasonicBaselineResidualMm = task2MotionTestDetection.ultrasonicBaselineResidualMm,
+        .ultrasonicJumpSamples = task2MotionTestDetection.ultrasonicJumpSamples,
+        .ultrasonicNoEchoSamples = task2MotionTestDetection.ultrasonicNoEchoSamples,
         .irObserved = task2MotionTestDetection.irObserved[ir - TASK2_SENSOR_LEFT_IR],
         .irFresh = freshIR,
         .irValid = task2MotionTestDetection.irValid[ir - TASK2_SENSOR_LEFT_IR],
@@ -397,10 +412,8 @@ void Task2MotionTestRun(void)
             Task2ObstacleObservation observations[TASK2_SENSOR_COUNT];
             bool departing = task2MotionTestStepIndex >= TASK2_ROUTE_O2_DEPARTURE_STEP && !acquiring;
             Task2ObstacleSensorConfig pollingConfig = task2MotionTestSensorConfig;
-            pollingConfig.sideIREnabled &= task2MotionTestRoute.obstacle2IRDeparture
-                ? task2MotionTestStepIndex == TASK2_ROUTE_O2_IR_STRAIGHT_STEP && departing
-                : departing && task2MotionTestRoute.config.secondArrow * estimatedPose.yawRad *
-                    180.0f / TASK2_PI >= pollingConfig.irAcquisitionMinYawDeg;
+            pollingConfig.sideIREnabled &= task2MotionTestRoute.obstacle2IRDeparture &&
+                task2MotionTestStepIndex == TASK2_ROUTE_O2_IR_STRAIGHT_STEP && departing;
             uint32_t fresh = Task2ObstacleSensors_Poll(&pollingConfig, nowMs,
                 &estimatedPose, observations);
             Task2ObstacleSensor ir = task2MotionTestRoute.config.secondArrow == TASK2_ARROW_LEFT
@@ -417,9 +430,9 @@ void Task2MotionTestRun(void)
                         &task2MotionTestSensorConfig, &task2MotionTestRoute.config,
                         (Task2ObstacleSensor)sensor, &observations[sensor],
                         departing);
-            if (freshIR)
+            if (freshIR || (!task2MotionTestRoute.obstacle2IRDeparture && (fresh & 1U)))
             {
-                LogSample(nowMs - startMs, true);
+                LogSample(nowMs - startMs, freshIR, (fresh & 1U) != 0U);
                 lastLogMs = nowMs;
             }
             if (task2MotionTestDetection.fault)
@@ -547,11 +560,12 @@ void Task2MotionTestRun(void)
             if (task2MotionTestRoute.obstacle2ParkReturnPending &&
                 task2MotionTestResult.completedSteps == task2MotionTestRoute.stepCount)
             {
-                task2MotionTestResult.obstacle2RearStoppedPose = estimatedPose;
+                if (task2MotionTestRoute.parkingHeadingCorrections == 0U)
+                    task2MotionTestResult.obstacle2RearStoppedPose = estimatedPose;
                 uint32_t parkingStart = HAL_GetTick();
                 bool parkingPlanned = Task2Route_ReplanParkingReturn(&task2MotionTestRoute,
                     &estimatedPose, task2MotionTestDetection.observedWidthMm, task2MotionTestStepIndex);
-                task2MotionTestResult.parkingReturnSetupMs = HAL_GetTick() - parkingStart;
+                task2MotionTestResult.parkingReturnSetupMs += HAL_GetTick() - parkingStart;
                 if (!parkingPlanned)
                 {
                     task2MotionTestResult.status = MOTIONCONTROLLER_STATUS_PROFILE_ERROR;
@@ -576,7 +590,7 @@ void Task2MotionTestRun(void)
         previousUpdateMs = nowMs;
         if (nowMs - lastLogMs >= task2MotionTestConfig.logPeriodMs)
         {
-            LogSample(nowMs - startMs, false);
+            LogSample(nowMs - startMs, false, false);
             lastLogMs = nowMs;
         }
     }
@@ -592,7 +606,7 @@ void Task2MotionTestRun(void)
         --task2MotionTestLogCount;
         task2MotionTestResult.logTruncated = true;
     }
-    LogSample(task2MotionTestResult.elapsedMs, false);
+    LogSample(task2MotionTestResult.elapsedMs, false, false);
 finished:
     Task2ObstacleSensors_Stop();
     if (!task2MotionTestResult.passed)
