@@ -12,10 +12,12 @@ static bool rangeOk = true, mutateAtReady;
 static char oledRows[8][64];
 static Task2RoutePose idealPose;
 static Task2RouteReport idealReport;
+static bool physicalCrossings[2][2];
 
 static uint32_t sensorTick, sensorDue;
 static bool sensorPending;
 static unsigned irReads;
+static unsigned maxStartupChecks, maxReturnChecks;
 static Task2ObstacleObservation pendingObservation;
 
 bool Task2ObstacleSensors_Init(const Task2ObstacleSensorConfig *config)
@@ -128,12 +130,30 @@ uint32_t HAL_GetTick(void)
         l->measuredSpeedCps = l->targetSpeedCps;
         r->measuredSpeedCps = r->targetSpeedCps;
         float ds = 0.0005f * (l->targetSpeedCps + r->targetSpeedCps) * mmPerCount();
+        float previousX = idealPose.xMm;
         float curvature = robot->motionController.targetCurvaturePerMm;
         float middle = idealPose.yawRad + 0.5f * ds * curvature;
         idealPose.xMm += ds * cosf(middle);
         idealPose.yMm += ds * sinf(middle);
         idealPose.yawRad += ds * curvature;
         gyroDps = curvature * 0.5f * (l->targetSpeedCps + r->targetSpeedCps) * mmPerCount() * 180 / PI;
+        if (ds > 0)
+        {
+            for (unsigned obstacle = 0; obstacle < 2; ++obstacle)
+            {
+                float centre = task2MotionTestRoute.config.parkToObstacle1Mm + 50 +
+                    (obstacle ? 100 + task2MotionTestRoute.config.obstacleFaceGapMm : 0);
+                if ((previousX < centre && idealPose.xMm >= centre) ||
+                    (previousX > centre && idealPose.xMm <= centre))
+                {
+                    unsigned returning = cosf(idealPose.yawRad) < 0;
+                    int side = returning ? -task2MotionTestRoute.config.secondArrow : obstacle
+                        ? task2MotionTestRoute.config.secondArrow : task2MotionTestRoute.config.firstArrow;
+                    assert(side * idealPose.yMm > 0);
+                    physicalCrossings[obstacle][returning] = true;
+                }
+            }
+        }
         if (ds > 0)
             (void)Task2Route_CheckPose(&task2MotionTestRoute.config, &idealPose, &idealReport);
         if (scenario == 3 && tick - runStartTick > 2000)
@@ -161,8 +181,10 @@ void SW1_WaitForPressAndRelease(void)
         assert(robot && task2MotionTestState == TASK2_TEST_READY);
         assert(strstr(oledRows[0],"Task2 stopped ready"));
         assert(task2MotionTestRoute.report.valid);
-        near(robot->motionController.arcYawRatePID.kp,270,0);
-        near(robot->motionController.arcYawRatePID.ki,150,0);
+        if(task2MotionTestRoute.report.plannerPoseChecks>maxStartupChecks)
+            maxStartupChecks=task2MotionTestRoute.report.plannerPoseChecks;
+        near(robot->motionController.arcYawRatePID.kp,200,0);
+        near(robot->motionController.arcYawRatePID.ki,100,0);
         assert(!robot->motionController.config->useMatchedYawRateReferenceFilter);
         ++starts;
         runStartTick = tick;
@@ -179,6 +201,7 @@ static void resetHardware(unsigned nextScenario)
     tick = runStartTick = starts = rangeReads = rangeWaits = 0;
     leftFraction = rightFraction = 0;
     irReads = 0U;
+    memset(physicalCrossings, 0, sizeof(physicalCrossings));
     rangeOk = true; mutateAtReady = false;
     idealPose = (Task2RoutePose){TASK2_ROUTE_START_X_MM,0,0};
     idealReport = (Task2RouteReport){.minimumObstacleGapMm=INFINITY,
@@ -188,8 +211,16 @@ static void resetHardware(unsigned nextScenario)
 
 static void checkCompleted(void)
 {
+    if(task2MotionTestRoute.report.plannerPoseChecks>maxReturnChecks)
+        maxReturnChecks=task2MotionTestRoute.report.plannerPoseChecks;
     assert(starts == 1 && task2MotionTestState == TASK2_TEST_COMPLETE);
     assert(task2MotionTestResult.passed && task2MotionTestResult.completedSteps == task2MotionTestRoute.stepCount);
+    for (unsigned obstacle=0; obstacle<2; ++obstacle)
+        assert(physicalCrossings[obstacle][0] && physicalCrossings[obstacle][1]);
+#if !TASK2_ROUTE_EXHAUSTIVE_CHECKS
+    assert(!task2MotionTestRoute.report.planningBudgetExceeded);
+    assert(task2MotionTestRoute.report.plannerPoseChecks <= TASK2_ROUTE_RUNTIME_POSE_CHECK_LIMIT);
+#endif
     assert(task2MotionTestResult.arrow1Recognised && task2MotionTestResult.obstacle1ExitPoseEstimateValid);
     assert(Task2Route_Obstacle1CameraVisible(&task2MotionTestRoute.config,
         &task2MotionTestResult.recognitionPoseEstimate));
@@ -285,7 +316,7 @@ static void testSensorEvents(void)
     config.ultrasonic=(Task2SensorMount){0,0,0};
     config.irAcquisitionMinYawDeg=0; /* Isolate ADC hysteresis tests from the mounting yaw gate. */
     Task2RouteConfig route=task2RouteConfig;
-    route.secondArrow=1;
+    route.firstArrow=route.secondArrow=1;
     float face=route.parkToObstacle1Mm+100+route.obstacleFaceGapMm;
     Task2ObstacleObservation o={.pose={face-500,0,40*PI/180}};
     Task2ObstacleDetection state={0};
@@ -381,9 +412,22 @@ static void testTraverseFallback(void)
     Task2RouteConfig config=task2RouteConfig;
     config.parkToObstacle1Mm=600;config.obstacleFaceGapMm=600;
     config.obstacle2WidthMm=500;config.firstArrow=-1;config.secondArrow=1;
-    assert(Task2Route_Create(&config,&route));
+    /* Isolate return planning from a synthetic stop; this pose is supplied,
+     * rather than reached by the production IR startup prefix. */
+    route=(Task2Route){.config=config,.stepCount=5};
     Task2RoutePose stopped={1050,-300,80*PI/180};
-    assert(Task2Route_ReplanObstacle2(&route,&stopped,500,TASK2_ROUTE_O2_DEPARTURE_STEP));
+    bool replanned=Task2Route_ReplanObstacle2(&route,&stopped,500,TASK2_ROUTE_O2_DEPARTURE_STEP);
+#if !TASK2_ROUTE_EXHAUSTIVE_CHECKS
+    if (!replanned)
+    {
+        assert(route.report.planningBudgetExceeded && !route.report.valid);
+        assert(route.report.plannerPoseChecks==TASK2_ROUTE_RUNTIME_POSE_CHECK_LIMIT);
+        assert(!strcmp(route.report.reason,"PLANNING_BUDGET"));
+        puts("PASS: difficult synthetic return rejects at the MCU work limit");
+        return;
+    }
+#endif
+    assert(replanned);
     assert(route.stepCount==14);
     task2MotionTestRoute=route;
     resetHardware(0);
@@ -418,12 +462,17 @@ static void testTraverseFallback(void)
 
 int main(void)
 {
+    setbuf(stdout, NULL);
     testSensorEvents();
+    const Task2RouteConfig tuned=task2RouteConfig;
+    task2RouteConfig.cruiseSpeedCps=5000;
+    task2RouteConfig.approachSpeedCps=2000;
+    task2RouteConfig.obstacle2DepartureSpeedCps=1000;
     const Task2RouteConfig original=task2RouteConfig;
     const Task2MotionTestConfig originalTest=task2MotionTestConfig;
     task2MotionTestConfig.measureObstacle1AtStartup=false;
     const float positions[]={600,1050}, gaps[]={600,750,1050,1500}, widths[]={300,350,400,500};
-    unsigned runs=0, shortReturns=0, alignedReturns=0, traverseReturns=0, irReturns=0;
+    unsigned runs=0, rejected=0, stoppedRejected=0, shortReturns=0, alignedReturns=0, traverseReturns=0, irReturns=0;
     for(unsigned p=0;p<2;++p)for(unsigned g=0;g<4;++g)for(unsigned w=0;w<4;++w)
     for(int left=-1;left<=1;left+=2)for(int right=-1;right<=1;right+=2)
     {
@@ -432,17 +481,35 @@ int main(void)
         task2RouteConfig.obstacle2WidthMm=widths[w]; task2RouteConfig.firstArrow=left; task2RouteConfig.secondArrow=right;
         task2RouteConfig.recognitionCameraRangeMm=1000;
         resetHardware(0); Task2MotionTestRun();
-        if(!task2MotionTestResult.passed)fprintf(stderr,"Failed %u: %u %s, width %.1f, stop %.1f %.1f %.1f\n",runs,task2MotionTestResult.status,task2MotionTestRoute.report.reason,task2MotionTestDetection.observedWidthMm,task2MotionTestResult.obstacle2StoppedPose.xMm,task2MotionTestResult.obstacle2StoppedPose.yMm,task2MotionTestResult.obstacle2StoppedPose.yawRad*180/PI);
-        if(!task2MotionTestResult.passed)fprintf(stderr,"IR state: armed %d %d absent %u %u first %.2f %.2f %.3f / %.2f %.2f %.3f, ADC %u %u, step%u final %.1f %.1f %.3f\n",task2MotionTestDetection.armed[1],task2MotionTestDetection.armed[2],task2MotionTestDetection.absent[1],task2MotionTestDetection.absent[2],task2MotionTestDetection.firstAbsentPose[1].xMm,task2MotionTestDetection.firstAbsentPose[1].yMm,task2MotionTestDetection.firstAbsentPose[1].yawRad,task2MotionTestDetection.firstAbsentPose[2].xMm,task2MotionTestDetection.firstAbsentPose[2].yMm,task2MotionTestDetection.firstAbsentPose[2].yawRad,task2MotionTestDetection.lastIRAdc[0],task2MotionTestDetection.lastIRAdc[1],task2MotionTestStepIndex,idealPose.xMm,idealPose.yMm,idealPose.yawRad);
+        if (!task2MotionTestResult.passed && starts == 0 && robot == NULL &&
+            task2MotionTestResult.status == MOTIONCONTROLLER_STATUS_PROFILE_ERROR &&
+            !strcmp(task2MotionTestRoute.report.reason, "NO_O2_APPROACH_OR_RETURN"))
+        {
+            assert(!(p == 1 && g == 2 && w == 3)); /* Current layout is required. */
+            ++rejected;
+            continue; /* A front-only loop must never be accepted as an O2 bypass. */
+        }
+        if (!task2MotionTestResult.passed && g == 3 && starts == 1 &&
+            task2MotionTestResult.obstacle2EdgeStopped &&
+            !strcmp(task2MotionTestRoute.report.reason, "NO_OBSERVED_EDGE_RETURN"))
+        {
+            assert(robot->motionController.mode==MOTIONCONTROLLER_IDLE);
+            assert(idealReport.minimumObstacleGapMm>0 && idealReport.minimumSideMarginMm>0);
+            ++stoppedRejected;
+            continue; /* Reference-edge screen cannot guarantee an actual brake-stop return. */
+        }
+        if(!task2MotionTestResult.passed)fprintf(stderr,"Failed layout %.0f %.0f %.0f %d %d: %s, checks %u, max %u/%u\n",positions[p],gaps[g],widths[w],left,right,task2MotionTestRoute.report.reason,task2MotionTestRoute.report.plannerPoseChecks,maxStartupChecks,maxReturnChecks);
         checkCompleted(); ++runs;
         if(task2MotionTestRoute.obstacle2IRDeparture)++irReturns;
         else if(task2MotionTestRoute.stepCount==8)++shortReturns;
         else if(task2MotionTestRoute.stepCount==11)++alignedReturns;
         else if(task2MotionTestRoute.stepCount==14)++traverseReturns;
     }
-    assert(shortReturns+alignedReturns+traverseReturns+irReturns==runs && irReturns==64);
+    assert(shortReturns+alignedReturns+traverseReturns+irReturns==runs);
+    assert(runs==112 && rejected==12 && stoppedRejected==4);
     printf("Return variants: %u direct, %u aligned, %u traverses, %u IR-directed\n",shortReturns,alignedReturns,traverseReturns,irReturns);
-    puts("PASS: 128 sensor-driven stopped routes, arrows, 600-1500mm gaps, widths, acquisition, observed-edge replanning and footprints");
+    printf("PASS: 128 layouts: %u completed, %u rejected before motors, %u rejected while stopped at edge\n", runs, rejected, stoppedRejected);
+    unsigned fastCompleted=0, fastRejected=0;
     for(unsigned g=0;g<2;++g)for(unsigned w=0;w<2;++w)for(int side=-1;side<=1;side+=2)
     {
         task2RouteConfig=original;task2RouteConfig.obstacleFaceGapMm=g ? 1050 : 600;
@@ -451,10 +518,17 @@ int main(void)
         task2RouteConfig.cruiseSpeedCps=7000;task2RouteConfig.approachSpeedCps=3000;
         task2RouteConfig.obstacle2DepartureSpeedCps=2000;
         resetHardware(0);Task2MotionTestRun();
+        if (!task2MotionTestResult.passed && g == 1 && starts == 0 && robot == NULL &&
+            !strcmp(task2MotionTestRoute.report.reason, "NO_O2_APPROACH_OR_RETURN"))
+        {
+            ++fastRejected;
+            continue; /* Reject a high-speed guard that cannot fit the side corridor. */
+        }
         if(!task2MotionTestResult.passed)fprintf(stderr,"Fast IR failure %.0f %.0f %d: %s\n",task2RouteConfig.obstacleFaceGapMm,task2RouteConfig.obstacle2WidthMm,side,task2MotionTestRoute.report.reason);
-        checkCompleted();
+        checkCompleted(); ++fastCompleted;
     }
-    puts("PASS: mirrored IR departures at 7000/3000/2000 CPS including run02 layout");
+    assert(fastCompleted==8 && fastRejected==0);
+    printf("PASS: fast mirrored layouts: %u completed, %u rejected before motors\n", fastCompleted, fastRejected);
     task2RouteConfig=original;
     testTraverseFallback();
     task2MotionTestConfig=originalTest;
@@ -486,11 +560,14 @@ int main(void)
         task2RouteConfig=original;resetHardware(s);Task2MotionTestRun();
         assert(!task2MotionTestResult.passed && starts==1 && !task2MotionTestResult.obstacle2EdgeStopped);
         assert(robot->motionController.mode==MOTIONCONTROLLER_IDLE);
-        assert(s==7 ? !task2MotionTestDetection.armed[TASK2_SENSOR_LEFT_IR] : task2MotionTestDetection.fault);
+        assert(s==7 ? !task2MotionTestDetection.armed[original.secondArrow==1 ? TASK2_SENSOR_RIGHT_IR : TASK2_SENSOR_LEFT_IR] : task2MotionTestDetection.fault);
         if(s==7)assert(task2MotionTestDetection.irAcquisitionTimedOut);
     }
     task2RouteConfig=original;resetHardware(9);Task2MotionTestRun();checkCompleted();
     puts("PASS: IR never acquired, IR ADC fault, and ultrasonic background cannot terminate opposite-arrow departure");
+    task2RouteConfig=tuned;resetHardware(0);Task2MotionTestRun();checkCompleted();
+    puts("PASS: current published tuning and arrow configuration");
     puts("PASS: measured asymmetric frame, one startup range, frozen configuration, invalid input, cancellation, timeout and IMU fault");
+    printf("Planner pose checks: max startup %u, max return %u\n",maxStartupChecks,maxReturnChecks);
     return 0;
 }

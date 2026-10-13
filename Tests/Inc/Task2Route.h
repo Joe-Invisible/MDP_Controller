@@ -9,6 +9,12 @@
 #define TASK2_ROUTE_O2_DEPARTURE_STEP 4U
 #define TASK2_ROUTE_O2_IR_STRAIGHT_STEP 5U
 #define TASK2_ROUTE_START_X_MM (-250.0f)
+#ifndef TASK2_ROUTE_RUNTIME_POSE_CHECK_LIMIT
+#define TASK2_ROUTE_RUNTIME_POSE_CHECK_LIMIT 12288U
+#endif
+#ifndef TASK2_ROUTE_EXHAUSTIVE_CHECKS
+#define TASK2_ROUTE_EXHAUSTIVE_CHECKS 0 /* PC tools opt into exhaustive 1 mm validation. */
+#endif
 
 typedef enum
 {
@@ -89,6 +95,8 @@ typedef struct
     float minimumParkWallMarginMm;
     float minimumParkBackMarginMm;
     float minimumParkSideMarginMm;
+    uint32_t plannerPoseChecks;
+    bool planningBudgetExceeded;
     /* Earliest eligible camera pose, including the angled O2 approach. */
     Task2RoutePose recognitionPose[2];
     float recognitionProgressMm[2];
@@ -118,7 +126,7 @@ typedef struct
 extern Task2RouteConfig task2RouteConfig;
 extern const char *const task2RouteStepNames[TASK2_ROUTE_STEP_COUNT];
 
-/* Pure 1 mm swept-footprint preflight of stopped circular/straight primitives. */
+/* MCU: bounded continuous-clearance certificates. PC: optional 1 mm sweeps. */
 bool Task2Route_Create(const Task2RouteConfig *config, Task2Route *route);
 /* Opposite-arrow prefix: guard is checked now; suffix is built at the IR stop. */
 bool Task2Route_CreateIR(const Task2RouteConfig *config,

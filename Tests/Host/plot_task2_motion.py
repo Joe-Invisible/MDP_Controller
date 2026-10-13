@@ -62,7 +62,7 @@ def planned_route(args):
         work = Path(directory)
         (work / "probe.c").write_text(PROBE)
         command = shlex.split(os.environ.get("CC", "gcc")) + [
-            "-std=c11", "-Wall", "-Wextra", "-Werror", "-O2", f"-I{ROOT / 'Tests/Inc'}",
+            "-DTASK2_ROUTE_EXHAUSTIVE_CHECKS=1", "-std=c11", "-Wall", "-Wextra", "-Werror", "-O2", f"-I{ROOT / 'Tests/Inc'}",
             str(work / "probe.c"), str(ROOT / "Tests/Src/Task2Route.c"), "-lm", "-o", str(work / "probe")]
         subprocess.run(command, check=True)
         directions = {None: 0, "left": 1, "right": -1}

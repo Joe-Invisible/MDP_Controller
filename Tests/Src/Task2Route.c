@@ -8,6 +8,37 @@
 #define ROUTE_SAMPLE_SPACING_MM 1.0f
 #define ROUTE_MAX_TRAVEL_MM 30000.0f
 
+/* This standalone planner is called serially at startup and at an edge stop. */
+static struct { uint32_t poseChecks; bool exhausted; } planningWork;
+
+static bool PlanningPose(const Task2RouteConfig *c, const Task2RoutePose *p, Task2RouteReport *report)
+{
+#if !TASK2_ROUTE_EXHAUSTIVE_CHECKS
+    if (planningWork.poseChecks >= TASK2_ROUTE_RUNTIME_POSE_CHECK_LIMIT)
+    {
+        planningWork.exhausted = true;
+        return false;
+    }
+#endif
+    ++planningWork.poseChecks;
+    return Task2Route_CheckPose(c, p, report);
+}
+
+static bool FinishPlanning(Task2Route *route, bool accepted)
+{
+    if (!route)
+        return false;
+    route->report.plannerPoseChecks = planningWork.poseChecks;
+    route->report.planningBudgetExceeded = planningWork.exhausted;
+    if (planningWork.exhausted)
+    {
+        route->report.valid = false;
+        route->report.reason = "PLANNING_BUDGET";
+        return false;
+    }
+    return accepted;
+}
+
 /* Important experiment parameters. Positive y is LEFT of initial +x.
  * These are nominal simulator inputs, not measurements or uncertainty bounds.
  * Change the two arrows and width first; geometry knobs are below them. */
@@ -189,11 +220,100 @@ static bool Parked(const Task2RouteConfig *c, const Task2RoutePose *p)
     return cx - ex > -500.0f && cx + ex < 0.0f && fabsf(cy) + ey < 300.0f;
 }
 
+#if !TASK2_ROUTE_EXHAUSTIVE_CHECKS
+static void MergeMargins(Task2RouteReport *out, const Task2RouteReport *point, float displacement)
+{
+    if (!out)
+        return;
+    out->minimumObstacleGapMm = fminf(out->minimumObstacleGapMm, point->minimumObstacleGapMm - displacement);
+    out->minimumSideMarginMm = fminf(out->minimumSideMarginMm, point->minimumSideMarginMm - displacement);
+    out->minimumParkSideMarginMm = fminf(out->minimumParkSideMarginMm, point->minimumParkSideMarginMm - displacement);
+    out->minimumParkBackMarginMm = fminf(out->minimumParkBackMarginMm, point->minimumParkBackMarginMm - displacement);
+    out->minimumParkWallMarginMm = fminf(out->minimumParkSideMarginMm, out->minimumParkBackMarginMm);
+}
+
+/* Along an arc every body point moves at most ds*(1+cornerRadius/|R|).
+ * Expand the midpoint rectangle by that displacement in both local axes:
+ * it contains every footprint in the interval. Checking this superset certifies
+ * the whole interval, including park-mouth crossings. Ambiguous intervals
+ * subdivide; uncertainty or budget exhaustion rejects the candidate. */
+static bool CheckPrimitive(const Task2RouteConfig *c, Task2RoutePose start,
+    const Task2RouteStep *step, float orbitRadius, Task2RouteReport *out)
+{
+    struct { float lo, hi; unsigned depth; } pending[17];
+    unsigned count = 1U;
+    pending[0].lo = 0.0f; pending[0].hi = step->distanceMm; pending[0].depth = 0U;
+    float cosine = cosf(start.yawRad), sine = sinf(start.yawRad);
+    float cx = start.xMm - step->radiusMm * sine;
+    float cy = start.yMm + step->radiusMm * cosine;
+    while (count)
+    {
+        --count;
+        float lo = pending[count].lo, hi = pending[count].hi;
+        unsigned depth = pending[count].depth;
+        float mid = 0.5f * (lo + hi);
+        Task2RoutePose p = start;
+        float displacement = 0.5f * (hi - lo);
+        if (step->radiusMm == 0.0f)
+        {
+            p.xMm += mid * cosine; p.yMm += mid * sine;
+        }
+        else
+        {
+            p.yawRad += mid / step->radiusMm;
+            p.xMm = cx + step->radiusMm * sinf(p.yawRad);
+            p.yMm = cy - step->radiusMm * cosf(p.yawRad);
+            float angle = fminf(ROUTE_PI, displacement / fabsf(step->radiusMm));
+            displacement = 2.0f * orbitRadius * sinf(0.5f * angle);
+        }
+        Task2RouteReport point = EmptyReport();
+        if (!PlanningPose(c, &p, &point))
+            return false;
+        Task2RouteConfig expanded = *c;
+        expanded.bodyLengthMm += 2.0f * (displacement + 0.001f);
+        expanded.bodyWidthMm += 2.0f * (displacement + 0.001f);
+        Task2RouteReport bound = EmptyReport();
+        if (PlanningPose(&expanded, &p, &bound))
+        {
+            MergeMargins(out, &bound, 0.0f);
+            continue;
+        }
+        if (depth >= 16U || hi - lo <= 0.05f || count + 2U > 17U)
+            return false;
+        pending[count].lo = mid; pending[count].hi = hi; pending[count++].depth = depth + 1U;
+        pending[count].lo = lo; pending[count].hi = mid; pending[count++].depth = depth + 1U;
+    }
+    return true;
+}
+
+static bool BoundedSweep(const Task2RouteConfig *c, Task2RoutePose start,
+    const Task2RouteStep *steps, unsigned count, bool requirePark, Task2RouteReport *out)
+{
+    float front = c->bodyCenterAheadOfRearAxleMm + 0.5f * c->bodyLengthMm + c->frontProtrusionMm;
+    float rear = c->bodyCenterAheadOfRearAxleMm - 0.5f * c->bodyLengthMm;
+    float far = fmaxf(fabsf(front), fabsf(rear));
+    for (unsigned i = 0U; i < count; ++i)
+    {
+        if (!isfinite(steps[i].distanceMm) || steps[i].distanceMm <= 0.0f || !isfinite(steps[i].radiusMm))
+            return false;
+        float orbit = hypotf(far, fabsf(steps[i].radiusMm) + 0.5f * c->bodyWidthMm);
+        if (!CheckPrimitive(c, start, &steps[i], orbit, out))
+            return false;
+        start = Advance(start, steps[i].distanceMm, steps[i].radiusMm);
+    }
+    return !requirePark || Parked(c, &start);
+}
+#endif
+
 static bool Sweep(const Task2RouteConfig *c, Task2RoutePose start,
     const Task2RouteStep *steps, unsigned count, float spacing, bool requirePark)
 {
+#if !TASK2_ROUTE_EXHAUSTIVE_CHECKS
+    (void)spacing;
+    return BoundedSweep(c, start, steps, count, requirePark, NULL);
+#else
     Task2RouteReport report = EmptyReport();
-    if (!Task2Route_CheckPose(c, &start, &report))
+    if (!PlanningPose(c, &start, &report))
         return false;
     for (unsigned i = 0U; i < count; ++i)
     {
@@ -203,14 +323,106 @@ static bool Sweep(const Task2RouteConfig *c, Task2RoutePose start,
         for (float d = spacing; d < steps[i].distanceMm; d += spacing)
         {
             Task2RoutePose p = Advance(start, d, steps[i].radiusMm);
-            if (!Task2Route_CheckPose(c, &p, &report))
+            if (!PlanningPose(c, &p, &report))
                 return false;
         }
         start = Advance(start, steps[i].distanceMm, steps[i].radiusMm);
-        if (!Task2Route_CheckPose(c, &start, &report))
+        if (!PlanningPose(c, &start, &report))
             return false;
     }
     return !requirePark || Parked(c, &start);
+#endif
+}
+
+static bool RecordCrossing(const Task2RouteConfig *c, Task2RoutePose pose,
+    unsigned obstacle, bool crossed[2][2])
+{
+    if (fabsf(cosf(pose.yawRad)) < 0.00001f)
+        return true; /* Tangency does not cross the obstacle centre plane. */
+    unsigned returning = cosf(pose.yawRad) < 0.0f;
+    int side = returning ? -c->secondArrow : obstacle == 0U ? c->firstArrow : c->secondArrow;
+    if (side * pose.yMm <= 0.0f)
+        return false;
+    crossed[obstacle][returning] = true;
+    return true;
+}
+
+static bool Crossings(const Task2RouteConfig *c, Task2RoutePose start,
+    const Task2RouteStep *step, bool crossed[2][2])
+{
+    for (unsigned obstacle = 0U; obstacle < 2U; ++obstacle)
+    {
+        float centre = c->parkToObstacle1Mm + 50.0f +
+            (obstacle ? 100.0f + c->obstacleFaceGapMm : 0.0f);
+        if (step->radiusMm == 0.0f)
+        {
+            float cosine = cosf(start.yawRad);
+            if (fabsf(cosine) < 0.00001f)
+                continue;
+            float d = (centre - start.xMm) / cosine;
+            if (d > 0.0f && d <= step->distanceMm && !RecordCrossing(c, Advance(start, d, 0.0f), obstacle, crossed))
+                return false;
+        }
+        else
+        {
+            float end = start.yawRad + step->distanceMm / step->radiusMm;
+            if (fabsf(end - start.yawRad) > 2.0f * ROUTE_PI)
+                return false;
+            float cx = start.xMm - step->radiusMm * sinf(start.yawRad);
+            float sine = (centre - cx) / step->radiusMm;
+            if (fabsf(sine) > 1.0f)
+                continue;
+            float angle = asinf(sine), roots[] = {angle, ROUTE_PI - angle};
+            for (unsigned root = 0U; root < 2U; ++root)
+            {
+                int first = (int)floorf((fminf(start.yawRad, end) - roots[root]) / (2.0f * ROUTE_PI));
+                for (int k = first; k <= first + 2; ++k)
+                {
+                    float d = (roots[root] + k * 2.0f * ROUTE_PI - start.yawRad) * step->radiusMm;
+                    if (d > 0.0f && d <= step->distanceMm &&
+                        !RecordCrossing(c, Advance(start, d, step->radiusMm), obstacle, crossed))
+                        return false;
+                }
+            }
+        }
+    }
+    return true;
+}
+
+static bool CandidateSweep(const Task2RouteConfig *c, Task2RoutePose start,
+    const Task2RouteStep *steps, unsigned count)
+{
+    bool crossed[2][2] = {{false, false}, {false, false}};
+    Task2RoutePose pose = start;
+    for (unsigned i = 0U; i < count; ++i)
+    {
+        if (!Crossings(c, pose, &steps[i], crossed))
+            return false;
+        pose = Advance(pose, steps[i].distanceMm, steps[i].radiusMm);
+    }
+    if (!crossed[1][0] || !crossed[1][1])
+        return false; /* A clear loop entirely in front of O2 is not a bypass. */
+#if !TASK2_ROUTE_EXHAUSTIVE_CHECKS
+    /* Reject obvious candidate collisions before interval subdivision. These
+     * samples are only a quick rejection; acceptance still needs certification. */
+    pose = start;
+    for (unsigned i = 0U; i < count; ++i)
+    {
+        for (unsigned j = 1U; j <= 4U; ++j)
+        {
+            Task2RoutePose sample = Advance(pose, steps[i].distanceMm * j / 4.0f, steps[i].radiusMm);
+            Task2RouteReport point = EmptyReport();
+            if (!PlanningPose(c, &sample, &point))
+                return false;
+        }
+        pose = Advance(pose, steps[i].distanceMm, steps[i].radiusMm);
+    }
+#endif
+#if TASK2_ROUTE_EXHAUSTIVE_CHECKS
+    if (!Sweep(c, start, steps, count, 5.0f, true))
+        return false;
+#endif
+    return Sweep(c, start, steps, count, ROUTE_SAMPLE_SPACING_MM, true);
 }
 
 /* Front/back traverses with R275 end caps provide a bounded fallback for
@@ -225,6 +437,8 @@ static bool BuildTraverseTail(const Task2RouteConfig *c, const Task2RouteConfig 
     for (unsigned offset = 0U; offset < 4U; ++offset)
     for (unsigned park = 0U; park < 4U; ++park)
     {
+        if (planningWork.exhausted)
+            return false;
         float rd = c->secondDepartureRadiusMm + 25.0f * d;
         out[0] = (Task2RouteStep){rd * (0.5f * ROUTE_PI - h), side * rd, c->obstacle2DepartureSpeedCps};
         Task2RoutePose front = Advance(p, out[0].distanceMm, out[0].radiusMm);
@@ -246,7 +460,7 @@ static bool BuildTraverseTail(const Task2RouteConfig *c, const Task2RouteConfig 
         out[6] = (Task2RouteStep){rejoinRadius * angle, -side * rejoinRadius, c->cruiseSpeedCps};
         out[7] = (Task2RouteStep){rejoinRadius * angle, side * rejoinRadius, c->cruiseSpeedCps};
         out[8] = (Task2RouteStep){parkStraight, 0.0f, c->approachSpeedCps};
-        if (Sweep(bounds, p, out, 9U, 5.0f, true) && Sweep(bounds, p, out, 9U, 1.0f, true))
+        if (CandidateSweep(bounds, p, out, 9U))
         {
             *count = 9U;
             return true;
@@ -273,6 +487,8 @@ static bool BuildTail(const Task2RouteConfig *c, Task2RoutePose p,
     for (unsigned dr = 0U; dr < 4U; ++dr)
     for (unsigned br = 0U; br < 4U; ++br)
     {
+        if (planningWork.exhausted)
+            return false;
         float rd = c->secondDepartureRadiusMm + 50.0f * dr;
         float rb = 0.5f * width + c->secondBackExtraRadiusMm + 25.0f * br;
         float cx = p.xMm - rd * sinf(h), cy = y + rd * cosf(h);
@@ -331,8 +547,7 @@ static bool BuildTail(const Task2RouteConfig *c, Task2RoutePose p,
                 out[5] = (Task2RouteStep){parkStraight, 0.0f, c->approachSpeedCps};
                 n = 6U;
             }
-            if (Sweep(&bounds, p, out, n, 5.0f, true) &&
-                Sweep(&bounds, p, out, n, ROUTE_SAMPLE_SPACING_MM, true))
+            if (CandidateSweep(&bounds, p, out, n))
             {
                 *count = n;
                 return true;
@@ -363,12 +578,17 @@ static bool BuildIREdgeReturn(const Task2RouteConfig *c, Task2RoutePose p,
     for (unsigned offset = 0U; offset < 3U; ++offset)
     for (unsigned park = 0U; park < 4U; ++park)
     {
+        if (planningWork.exhausted)
+            return false;
         float rb = ROUTE_MIN_RADIUS_MM + 25.0f * r;
         float returnY = 0.5f * bounds.obstacle2WidthMm + 0.5f * c->bodyWidthMm +
             c->obstacleBufferMm + 20.0f + 10.0f * offset;
         float exitRadius = ROUTE_MIN_RADIUS_MM;
         out[0] = (Task2RouteStep){rb * (h + 0.5f * ROUTE_PI), -side * rb, c->cruiseSpeedCps};
         Task2RoutePose back = Advance(p, out[0].distanceMm, out[0].radiusMm);
+        float face = c->parkToObstacle1Mm + 100.0f + c->obstacleFaceGapMm;
+        if (back.xMm < face + 100.0f + c->obstacleBufferMm + 0.5f * c->bodyWidthMm)
+            continue; /* The back traverse must clear the rear face of O2. */
         out[1] = (Task2RouteStep){side * back.yMm + returnY - exitRadius, 0.0f, c->cruiseSpeedCps};
         out[2] = (Task2RouteStep){0.5f * ROUTE_PI * exitRadius, -side * exitRadius, c->cruiseSpeedCps};
         Task2RoutePose returnStart = Advance(Advance(back, out[1].distanceMm, 0.0f),
@@ -381,8 +601,7 @@ static bool BuildIREdgeReturn(const Task2RouteConfig *c, Task2RoutePose p,
         out[4] = (Task2RouteStep){rejoinRadius * angle, -side * rejoinRadius, c->cruiseSpeedCps};
         out[5] = (Task2RouteStep){rejoinRadius * angle, side * rejoinRadius, c->cruiseSpeedCps};
         out[6] = (Task2RouteStep){parkStraight, 0.0f, c->approachSpeedCps};
-        if (Sweep(&bounds, p, out, 7U, 5.0f, true) &&
-            Sweep(&bounds, p, out, 7U, ROUTE_SAMPLE_SPACING_MM, true))
+        if (CandidateSweep(&bounds, p, out, 7U))
         {
             *count = 7U;
             return true;
@@ -390,6 +609,78 @@ static bool BuildIREdgeReturn(const Task2RouteConfig *c, Task2RoutePose p,
     }
     return false;
 }
+
+#if !TASK2_ROUTE_EXHAUSTIVE_CHECKS
+static float IRHit(float h, float beta, float cxDistance, float cy, float intercept)
+{
+    float beam = h + beta;
+    return cy + cxDistance * tanf(beam) + intercept / cosf(beam);
+}
+
+static float IRBoundaryTravel(float boundary, float gate, float endHit, float beta,
+    float dx, float cy, float intercept, float radius, float entry, float arcLength)
+{
+    if (IRHit(gate, beta, dx, cy, intercept) >= boundary)
+        return radius * (gate - entry);
+    if (endHit < boundary)
+        return arcLength + boundary - endHit;
+    float lo = gate, hi = 0.5f * ROUTE_PI;
+    for (unsigned i = 0U; i < 16U; ++i)
+    {
+        float mid = 0.5f * (lo + hi);
+        if (IRHit(mid, beta, dx, cy, intercept) < boundary)
+            lo = mid;
+        else
+            hi = mid;
+    }
+    return radius * (hi - entry);
+}
+
+/* Fixed-cost face intersections. The derivative is
+ * (dx+intercept*sin(beam))/cos(beam)^2, so dx>|intercept| proves monotonicity.
+ * Unsupported mount geometry is rejected rather than sampled exhaustively. */
+static bool IRWindow(const Task2RouteConfig *c, Task2RoutePose p,
+    const Task2RouteIRDeparture *ir, float radius, float arcLength,
+    float *acquireTravel, float *acquisitionEnd, float *edgeTravel)
+{
+    float side = c->secondArrow, entry = side * p.yawRad;
+    float gate = fmaxf(entry, ir->acquisitionMinYawDeg * ROUTE_PI / 180.0f);
+    float beta = side * ir->mount.yawDeg * ROUTE_PI / 180.0f;
+    float dx = c->parkToObstacle1Mm + 100.0f + c->obstacleFaceGapMm -
+        (p.xMm - radius * sinf(entry));
+    float cy = side * p.yMm + radius * cosf(entry);
+    float n = side * ir->mount.leftMm - radius;
+    float intercept = n * cosf(beta) - ir->mount.aheadMm * sinf(beta);
+    if (gate > 0.5f * ROUTE_PI || cosf(gate + beta) <= 0.05f ||
+        cosf(0.5f * ROUTE_PI + beta) <= 0.05f || dx <= fabsf(intercept) ||
+        dx <= hypotf(ir->mount.aheadMm, n))
+        return false;
+    float inner = fmaxf(0.0f, 0.5f * c->obstacle2WidthMm - ir->edgeUncertaintyMm);
+    float endHit = IRHit(0.5f * ROUTE_PI, beta, dx, cy, intercept);
+    if (IRHit(gate, beta, dx, cy, intercept) > inner)
+        return false;
+    *acquireTravel = IRBoundaryTravel(-inner, gate, endHit, beta, dx, cy, intercept, radius, entry, arcLength);
+    *acquisitionEnd = IRBoundaryTravel(inner, gate, endHit, beta, dx, cy, intercept, radius, entry, arcLength);
+    *edgeTravel = IRBoundaryTravel(0.5f * c->obstacle2WidthMm, gate, endHit,
+        beta, dx, cy, intercept, radius, entry, arcLength);
+    return true;
+}
+
+/* Only an algebraic feasibility screen at startup. The actual return is built
+ * after IR supplies the stopped pose; the PC retains exhaustive lookahead. */
+static bool IRReturnHasRoom(const Task2RouteConfig *c, Task2RoutePose p)
+{
+    float h = c->secondArrow * p.yawRad;
+    float face = c->parkToObstacle1Mm + 100.0f + c->obstacleFaceGapMm;
+    float half = 0.5f * c->bodyWidthMm;
+    float required = (face + 100.0f + c->obstacleBufferMm + half - p.xMm) / (1.0f + sinf(h));
+    float radius = 25.0f * ceilf(fmaxf(ROUTE_MIN_RADIUS_MM, required) / 25.0f);
+    float front = c->bodyCenterAheadOfRearAxleMm + 0.5f * c->bodyLengthMm + c->frontProtrusionMm;
+    float outer = c->secondArrow * p.yMm - radius * cosf(h) + hypotf(radius + half, front);
+    return radius <= ROUTE_MIN_RADIUS_MM + 15.0f * 25.0f && outer <=
+        0.5f * c->obstacle2WidthMm + c->obstacle2EndSpaceMm - c->boundaryBufferMm;
+}
+#endif
 
 static bool BuildIRDeparture(const Task2RouteConfig *c, Task2RoutePose p,
     const Task2RouteIRDeparture *ir, float turnRadius, Task2RouteStep *step)
@@ -410,6 +701,7 @@ static bool BuildIRDeparture(const Task2RouteConfig *c, Task2RoutePose p,
     step[1] = (Task2RouteStep){fmaxf(0.0f, 0.5f * c->obstacle2WidthMm - hit) + ir->guardTravelMm,
         0.0f, c->obstacle2DepartureSpeedCps};
     float edgeTravel = step[0].distanceMm + fmaxf(0.0f, 0.5f * c->obstacle2WidthMm - hit);
+#if TASK2_ROUTE_EXHAUSTIVE_CHECKS
     bool acquired = false;
     float acquireTravel = INFINITY;
     float innerHalf = fmaxf(0.0f, 0.5f * c->obstacle2WidthMm - ir->edgeUncertaintyMm);
@@ -444,15 +736,27 @@ static bool BuildIRDeparture(const Task2RouteConfig *c, Task2RoutePose p,
     }
     if (!acquired)
         acquireTravel = step[0].distanceMm + fmaxf(0.0f, -innerHalf - hit);
+#else
+    float acquireTravel, acquisitionEnd;
+    if (!IRWindow(c, p, ir, turnRadius, step[0].distanceMm, &acquireTravel, &acquisitionEnd, &edgeTravel))
+        return false;
+#endif
     if (acquisitionEnd - acquireTravel < ir->acquisitionTravelMm)
         return false;
+    /* Screen return room at the reference edge. Guard travel is a safe
+     * departure limit, not a prediction of the actual stopped pose. The actual
+     * brake stop must pass suffix preflight before any return motion starts. */
+    Task2RoutePose predictedStop = edgeTravel < step[0].distanceMm
+        ? Advance(p, edgeTravel, radius) : Advance(front, edgeTravel - step[0].distanceMm, 0.0f);
+    if (!Sweep(c, p, step, 2U, 1.0f, false))
+        return false;
+#if TASK2_ROUTE_EXHAUSTIVE_CHECKS
     Task2RouteStep tail[9];
     unsigned count;
-    float stopTravel = edgeTravel + ir->guardTravelMm;
-    Task2RoutePose predictedStop = stopTravel < step[0].distanceMm
-        ? Advance(p, stopTravel, radius) : Advance(front, stopTravel - step[0].distanceMm, 0.0f);
-    return Sweep(c, p, step, 2U, 1.0f, false) &&
-        BuildIREdgeReturn(c, predictedStop, c->obstacle2WidthMm + 2.0f * ir->edgeUncertaintyMm, tail, &count);
+    return BuildIREdgeReturn(c, predictedStop, c->obstacle2WidthMm + 2.0f * ir->edgeUncertaintyMm, tail, &count);
+#else
+    return IRReturnHasRoom(c, predictedStop);
+#endif
 }
 
 static bool BuildSteps(Task2Route *route, const Task2RouteIRDeparture *ir)
@@ -485,6 +789,8 @@ static bool BuildSteps(Task2Route *route, const Task2RouteIRDeparture *ir)
         for (float range = c->secondArcCameraRangeMm;
              range <= c->recognitionCameraRangeMm; range += 25.0f)
         {
+            if (planningWork.exhausted)
+                return Reject(route, "PLANNING_BUDGET");
             if (fabsf(lateral) >= range)
                 continue;
             float travel = forward - sqrtf(range * range - lateral * lateral);
@@ -521,6 +827,8 @@ static bool BuildSteps(Task2Route *route, const Task2RouteIRDeparture *ir)
 bool Task2Route_ReplanObstacle2(Task2Route *route, const Task2RoutePose *pose, float width,
     unsigned completedDepartureStep)
 {
+    planningWork.poseChecks = 0U;
+    planningWork.exhausted = false;
     Task2RouteStep tail[9];
     unsigned count = 0U;
     if (!route || !pose || !isfinite(width) || width < 300.0f ||
@@ -530,7 +838,7 @@ bool Task2Route_ReplanObstacle2(Task2Route *route, const Task2RoutePose *pose, f
         !(route->obstacle2IRDeparture
             ? BuildIREdgeReturn(&route->config, *pose, width, tail, &count)
             : BuildTail(&route->config, *pose, width, tail, &count)))
-        return route ? Reject(route, "NO_OBSERVED_EDGE_RETURN") : false;
+        return route ? FinishPlanning(route, Reject(route, "NO_OBSERVED_EDGE_RETURN")) : false;
     for (unsigned i = 0U; i < count; ++i)
         route->steps[completedDepartureStep + 1U + i] = tail[i];
     route->stepCount = completedDepartureStep + 1U + count;
@@ -547,19 +855,25 @@ bool Task2Route_ReplanObstacle2(Task2Route *route, const Task2RoutePose *pose, f
     float sideLimit = 0.5f * bounds.obstacle2WidthMm + bounds.obstacle2EndSpaceMm;
     bounds.obstacle2WidthMm = fmaxf(bounds.obstacle2WidthMm, width);
     bounds.obstacle2EndSpaceMm = sideLimit - 0.5f * bounds.obstacle2WidthMm;
+#if !TASK2_ROUTE_EXHAUSTIVE_CHECKS
+    if (!BoundedSweep(&bounds, *pose, tail, count, true, &route->report))
+        return FinishPlanning(route, Reject(route, "RETURN_CLEARANCE"));
+#endif
     for (unsigned i = 0U; i < count; ++i)
     {
+#if TASK2_ROUTE_EXHAUSTIVE_CHECKS
         for (float d = 0.0f; d < tail[i].distanceMm; d += 1.0f)
         {
             Task2RoutePose sample = Advance(finish, d, tail[i].radiusMm);
-            (void)Task2Route_CheckPose(&bounds, &sample, &route->report);
+            (void)PlanningPose(&bounds, &sample, &route->report);
         }
+#endif
         finish = Advance(finish, tail[i].distanceMm, tail[i].radiusMm);
     }
     route->report.finishPose = finish;
     route->report.valid = true;
     route->report.reason = "OK_OBSERVED_EDGE";
-    return true;
+    return FinishPlanning(route, true);
 }
 
 /* Exact rectangle separation axes plus vertex-to-rectangle distances. */
@@ -651,6 +965,7 @@ bool Task2Route_CheckObstacle1Pose(const Task2RouteConfig *config,
     return CheckFootprint(config, pose, arenaHalfWidthMm, false, report);
 }
 
+#if TASK2_ROUTE_EXHAUSTIVE_CHECKS
 static bool ValidatePath(Task2Route *route)
 {
     Task2RouteReport *report = &route->report;
@@ -673,7 +988,7 @@ static bool ValidatePath(Task2Route *route)
             float ds = fminf(ROUTE_SAMPLE_SPACING_MM, primitive->distanceMm - distance);
             float previousX = pose.xMm;
             pose = Advance(stepStart, distance + ds, primitive->radiusMm);
-            if (!Task2Route_CheckPose(&route->config, &pose, report))
+            if (!PlanningPose(&route->config, &pose, report))
                 return Reject(route, "CLEARANCE_OR_BOUNDARY");
             for (unsigned obstacle = 0U; obstacle < 2U; ++obstacle)
             {
@@ -730,11 +1045,63 @@ static bool ValidatePath(Task2Route *route)
     report->reason = "OK";
     return true;
 }
+#else
+static bool ValidatePath(Task2Route *route)
+{
+    Task2RouteReport report = EmptyReport();
+    Task2RoutePose pose = {TASK2_ROUTE_START_X_MM, 0.0f, 0.0f};
+    bool crossed[2][2] = {{false, false}, {false, false}};
+    if (!BoundedSweep(&route->config, pose, route->steps, route->stepCount,
+        !route->obstacle2ReturnPending, &report))
+        return Reject(route, "CLEARANCE_OR_BOUNDARY");
+    float progress = 0.0f;
+    for (unsigned i = 0U; i < route->stepCount; ++i)
+    {
+        const Task2RouteStep *step = &route->steps[i];
+        if (!Crossings(&route->config, pose, step, crossed))
+            return Reject(route, "WRONG_BYPASS_SIDE");
+        if (i == 0U || i == TASK2_ROUTE_O2_APPROACH_STEP)
+        {
+            unsigned obstacle = i == 0U ? 0U : 1U;
+            Task2RoutePose end = Advance(pose, step->distanceMm, step->radiusMm);
+            if (!Task2Route_ObstacleCameraVisible(&route->config, &end, obstacle))
+                return Reject(route, "NO_CAMERA_HANDOFF");
+            float lo = 0.0f, hi = step->distanceMm;
+            if (Task2Route_ObstacleCameraVisible(&route->config, &pose, obstacle))
+                hi = 0.0f;
+            else
+                for (unsigned j = 0U; j < 16U; ++j)
+                {
+                    float mid = 0.5f * (lo + hi);
+                    Task2RoutePose candidate = Advance(pose, mid, step->radiusMm);
+                    if (Task2Route_ObstacleCameraVisible(&route->config, &candidate, obstacle))
+                        hi = mid;
+                    else
+                        lo = mid;
+                }
+            report.recognitionPose[obstacle] = Advance(pose, hi, step->radiusMm);
+            report.recognitionProgressMm[obstacle] = progress + hi;
+        }
+        pose = Advance(pose, step->distanceMm, step->radiusMm);
+        progress += step->distanceMm;
+    }
+    if (!crossed[0][0] || (!route->obstacle2ReturnPending &&
+        (!crossed[0][1] || !crossed[1][0] || !crossed[1][1])))
+        return Reject(route, "INCOMPLETE_BYPASS");
+    report.finishPose = pose;
+    report.valid = true;
+    report.reason = route->obstacle2ReturnPending ? "OK_IR_PREFIX" : "OK";
+    route->report = report;
+    return true;
+}
+#endif
 
 static bool Create(const Task2RouteConfig *config, const Task2RouteIRDeparture *ir, Task2Route *route)
 {
     if (route == NULL)
         return false;
+    planningWork.poseChecks = 0U;
+    planningWork.exhausted = false;
     *route = (Task2Route){0};
     if (config != NULL)
         route->config = *config;
@@ -749,7 +1116,7 @@ static bool Create(const Task2RouteConfig *config, const Task2RouteIRDeparture *
         !isfinite(ir->edgeUncertaintyMm) || ir->edgeUncertaintyMm < 0.0f))
         return Reject(route, "INVALID_IR_DEPARTURE");
     if (!BuildSteps(route, ir))
-        return false;
+        return FinishPlanning(route, false);
     for (unsigned i = 0U; i < route->stepCount; ++i)
     {
         route->totalTravelMm += route->steps[i].distanceMm;
@@ -758,7 +1125,7 @@ static bool Create(const Task2RouteConfig *config, const Task2RouteIRDeparture *
     }
     if (route->totalTravelMm > ROUTE_MAX_TRAVEL_MM)
         return Reject(route, "TRAVEL_LIMIT");
-    return ValidatePath(route);
+    return FinishPlanning(route, ValidatePath(route));
 }
 
 bool Task2Route_Create(const Task2RouteConfig *config, Task2Route *route)

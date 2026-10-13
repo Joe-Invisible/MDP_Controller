@@ -63,8 +63,17 @@ prefix primitives (`obstacle2ReturnPending=true`); the actual stopped pose and
 width determine its suffix. Storage capacity is 16 steps; `route.stepCount` is
 the actual length.
 
-Both the initial guard route and the replanned suffix have full rotated-body
-preflight at 1 mm spacing. The suffix checks the larger of the configured test
+Firmware checks the full rotated body using conservative interval bounds rather
+than exhaustive 1 mm sweeps. Each planning call has a hard limit of 12,288 pose
+checks; exhaustion reports `PLANNING_BUDGET` and leaves the robot stopped.
+IR startup uses fixed-cost face intersections and a return-space screen; the
+actual return search runs only after the IR edge stop. Host tests and the route
+graph additionally use exhaustive 1 mm validation (`TASK2_ROUTE_EXHAUSTIVE_CHECKS=1`).
+Candidates must cross O2 outward and back; a clear loop in front is rejected.
+The OLED shows `Route setup`, `Sensor init`, then `Controller init` after the O1
+reading. Exports include `routeSetupMs`, `returnSetupMs`,
+`startupPlannerPoseChecks` and the final report's `plannerPoseChecks`.
+ The suffix checks the larger of the configured test
 width and the observed width bound, while retaining the original arena side
 limits. Defaults reserve 100 mm of whole O2 width for sensing/model delay in
 the ultrasonic initial guard. IR guard travel uses the configured departure
@@ -173,8 +182,15 @@ The host fixture models wheel/gyro tracking, an ideal ultrasonic cone and IR
 face intersections. It
 checks 128 layouts (both O1 positions, all arrows, four gaps and four widths),
 edge acquisition/confirmation, mounted sensor geometry, IR hysteresis, stopping,
-cancellation, absent/stuck/faulted sensors and exports. Eight faster mirrored
-IR layouts exercise 7000/3000/2000 CPS. It does not model real
+cancellation, absent/stuck/faulted sensors and exports in both planner modes.
+Both modes complete 112 layouts, reject 12 before motors start, and reject four
+infeasible actual brake-stop returns while stationary at the IR edge. The
+reference-edge startup screen cannot guarantee the later stopped pose has a
+return; suffix preflight remains mandatory. The difficult synthetic return is
+validated exhaustively on PC; the MCU stops at its work limit rather than
+continuing an expensive search. All eight faster mirrored IR layouts at
+7000/3000/2000 CPS complete, including the current published configuration.
+It does not model real
 acoustic reflections, servo lag, wheel slip or camera latency.
 
 ## Route graph

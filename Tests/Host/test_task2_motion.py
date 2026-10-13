@@ -27,10 +27,12 @@ def main():
             f"-I{ROOT/'Tests/Inc'}", f"-I{ROOT/'Tests/Common'}", str(work/"test.c"),
             str(ROOT/"Tests/Src/Task2MotionTest.c"), str(ROOT/"Tests/Src/Task2Route.c"), str(ROOT/"Tests/Src/Task2ObstacleDetection.c"),
         ] + [str(ROOT/f"Controllers/Src/{name}.c") for name in sources] + ["-lm", "-o", str(work/"test")]
-        subprocess.run(command, check=True)
         env = os.environ.copy()
         env["ASAN_OPTIONS"] = env.get("ASAN_OPTIONS", "") + ":detect_leaks=0"
-        subprocess.run([str(work/"test")], env=env, check=True)
+        for exhaustive in (0, 1):
+            print(f"Planner mode: {'PC exhaustive' if exhaustive else 'MCU bounded'}", flush=True)
+            subprocess.run(command + [f"-DTASK2_ROUTE_EXHAUSTIVE_CHECKS={exhaustive}"], check=True)
+            subprocess.run([str(work/"test")], env=env, check=True, timeout=60)
 
 if __name__ == "__main__":
     main()

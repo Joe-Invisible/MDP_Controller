@@ -44,6 +44,9 @@ typedef struct
     bool logTruncated;
     MotionControllerStatus status;
     uint32_t elapsedMs;
+    uint32_t routeSetupMs;
+    uint32_t returnSetupMs;
+    uint32_t startupPlannerPoseChecks;
     uint32_t completedSteps;
     float measuredTravelMm;
     float measuredYawRad;

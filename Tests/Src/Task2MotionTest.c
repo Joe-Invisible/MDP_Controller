@@ -272,6 +272,10 @@ void Task2MotionTestRun(void)
         task2MotionTestResult.status = MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
         goto finished;
     }
+    OLED_Clear();
+    OLED_Printf(0, 0, "Route setup");
+    OLED_Refresh_Gram();
+    uint32_t routeSetupStart = HAL_GetTick();
     bool oppositeArrows = task2RouteConfig.firstArrow != task2RouteConfig.secondArrow;
     bool planned;
     if (oppositeArrows)
@@ -303,16 +307,25 @@ void Task2MotionTestRun(void)
     }
     else
         planned = Task2Route_Create(&task2RouteConfig, &task2MotionTestRoute);
+    task2MotionTestResult.routeSetupMs = HAL_GetTick() - routeSetupStart;
+    task2MotionTestResult.startupPlannerPoseChecks = task2MotionTestRoute.report.plannerPoseChecks;
     if (!planned)
     {
         task2MotionTestResult.status = MOTIONCONTROLLER_STATUS_PROFILE_ERROR;
         goto finished;
     }
+    OLED_Clear();
+    OLED_Printf(0, 0, "Sensor init");
+    OLED_Refresh_Gram();
     if (!Task2ObstacleSensors_Init(&task2MotionTestSensorConfig))
     {
         task2MotionTestResult.status = MOTIONCONTROLLER_STATUS_INVALID_STATE;
         goto finished;
     }
+    OLED_Clear();
+    OLED_Printf(0, 0, "Controller init");
+    OLED_Printf(0, 2, "Keep stationary");
+    OLED_Refresh_Gram();
     if (!RobotTestFixture_InitMotionController(&fixture, &task2MotionTestControllerConfig))
         goto finished;
     fixture.leftWheelController.pid.kp = fixture.rightWheelController.pid.kp = 0.03f;
@@ -500,8 +513,11 @@ void Task2MotionTestRun(void)
                     task2MotionTestRoute.steps[task2MotionTestStepIndex].distanceMm = fabsf(c->travelledDistanceMm);
                     if (task2MotionTestStepIndex == TASK2_ROUTE_O2_IR_STRAIGHT_STEP)
                         task2MotionTestRoute.steps[4].distanceMm = task2MotionTestStepResults[4].measuredDistanceMm;
-                    if (!Task2Route_ReplanObstacle2(&task2MotionTestRoute, &estimatedPose,
-                        task2MotionTestDetection.observedWidthMm, task2MotionTestStepIndex))
+                    uint32_t returnSetupStart = HAL_GetTick();
+                    bool returnPlanned = Task2Route_ReplanObstacle2(&task2MotionTestRoute, &estimatedPose,
+                        task2MotionTestDetection.observedWidthMm, task2MotionTestStepIndex);
+                    task2MotionTestResult.returnSetupMs = HAL_GetTick() - returnSetupStart;
+                    if (!returnPlanned)
                     {
                         task2MotionTestResult.status = MOTIONCONTROLLER_STATUS_PROFILE_ERROR;
                         break;

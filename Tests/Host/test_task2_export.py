@@ -16,7 +16,7 @@ Task2ObstacleSensorConfig task2MotionTestSensorConfig = {.ultrasonic={210,0,0},.
 Task2ObstacleDetection task2MotionTestDetection = {.detected=true,.observedWidthMm=540};
 Task2MotionTestStartupRange task2MotionTestStartupRange = {.attempted=true,.valid=true,.sensorToObstacleMm=1090,.parkToObstacle1Mm=1050};
 Task2MotionTestState task2MotionTestState = TASK2_TEST_COMPLETE;
-Task2MotionTestResult task2MotionTestResult = {.passed=true,.completedSteps=8,.elapsedMs=17535,.arrow1Recognised=true,.arrow2Recognised=true,.arrow2RecognitionElapsedMs=3210};
+Task2MotionTestResult task2MotionTestResult = {.passed=true,.completedSteps=8,.elapsedMs=17535,.routeSetupMs=13,.returnSetupMs=7,.startupPlannerPoseChecks=100,.arrow1Recognised=true,.arrow2Recognised=true,.arrow2RecognitionElapsedMs=3210};
 Task2Route task2MotionTestRoute = {.config={.parkToObstacle1Mm=1050,.recognitionCameraRangeMm=1000},.totalTravelMm=7780,.obstacle2IRDeparture=true};
 Task2MotionTestStepResult task2MotionTestStepResults[TASK2_ROUTE_STEP_COUNT] = {{.measuredDistanceMm=790,.yawPredictedReached=true}};
 MotionControllerConfig task2MotionTestControllerConfig = {.straightYawRateKp=270,.arcYawRateKp=270};
@@ -52,6 +52,8 @@ def main():
             assert "leftMm = 37.5" in log and "leftMm = -33.5" in log
             assert "sensorToObstacleMm = 1090" in log
             assert "observedWidthMm = 540" in log and "samplePeriodMs = 60" in log
+            assert "routeSetupMs = 13" in log and "returnSetupMs = 7" in log
+            assert "startupPlannerPoseChecks = 100" in log
             assert "arrow2RecognitionElapsedMs = 3210" in log
             assert "TASK2_TEST_COMPLETE" in log and "completedSteps = 8" in log
             assert "totalTravelMm = 7780" in log
