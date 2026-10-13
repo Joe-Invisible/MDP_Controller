@@ -18,11 +18,11 @@ Task2MotionTestConfig task2MotionTestConfig = {
     .brakeTimeoutMs = 3000U,
 };
 /* IR lateral offsets: 189 mm outer front-wheel width, left/right insets 57/61 mm.
- * Forward offsets and beam yaws remain assumptions; check before enabling IR.
+ * Forward offsets and beam yaws remain configurable assumptions.
  * ADC thresholds are initial values from oblique O2 passes.
  * Ultrasonic +210 mm is the measured position. */
 Task2ObstacleSensorConfig task2ObstacleSensorConfig = {
-    .ultrasonicEnabled = true, .sideIREnabled = false,
+    .ultrasonicEnabled = true, .sideIREnabled = true,
     .ultrasonic = {210.0f, 0.0f, 0.0f},
     .leftIR = {110.0f, 37.5f, 90.0f},
     .rightIR = {110.0f, -33.5f, -90.0f},

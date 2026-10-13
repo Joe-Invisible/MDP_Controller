@@ -402,8 +402,10 @@ face, not the chassis clearing an edge.
 The active stopped test now observes fresh ultrasonic samples during approach
 and departure, brakes on a confirmed edge, and rebuilds the bypass/return from
 the stopped pose. Sensor mounts, cone assumptions, confirmation counts, IR
-thresholds and uncertainty are configurable and frozen. Optional side IR remains
-disabled until mounting and thresholds are measured. Tangent straight return is
+thresholds and uncertainty are configurable and frozen. Side IR is now enabled
+with raw ADC thresholds 700/400 and measured lateral offsets +37.5/-33.5 mm;
+forward offsets and beam angles remain provisional. Either ultrasonic or the
+selected IR can confirm the edge. Tangent straight return is
 preferred; clearance-checked return arcs, parking alignment and front/back
 traverses cover harder layouts. Failure to acquire, confirm or fit a suffix stops
 the test. The configured O2 layout remains the geometric test reference; live

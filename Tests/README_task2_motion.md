@@ -73,10 +73,13 @@ The same ultrasonic mount is used for startup ranging and moving measurements.
 `task2MotionTestConfig` controls startup ranging, control/log periods and
 run/brake timeouts. All sensor configuration is frozen at run start and exported.
 
-Ultrasonic is enabled by default. **Side IR is disabled by default** because its
-forward offsets and beam angles still need verification. After configuring them,
-enable `sideIREnabled`: LEFT departure observes the right IR, RIGHT observes the
-left IR. Only a beam facing the O2 front plane can acquire the face. The IR path
+Ultrasonic and **side IR are enabled by default**. IR forward offsets and beam
+angles remain configurable assumptions. `aheadMm` is the receiver-lens centre's
+forward distance from the rear-axle midpoint, parallel to the chassis centreline;
+`leftMm` is its separate lateral offset. LEFT departure observes the right IR,
+RIGHT observes the left IR. Only a beam facing the O2 front plane can acquire
+the face. Either ultrasonic or the selected IR can confirm an edge; enabling IR
+does not make it the exclusive edge source. The IR path
 uses raw ADC hysteresis: **>=700 counts present, <=400 absent**. Counts 401..699
 confirm neither state and reset consecutive-sample confirmation. Three fresh
 present samples must acquire the face before three consecutive absent samples
