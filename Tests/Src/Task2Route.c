@@ -51,7 +51,7 @@ static bool FinishPlanning(Task2Route *route, bool accepted)
  * Change the two arrows and width first; geometry knobs are below them. */
 Task2RouteConfig task2RouteConfig = {
     /* Arena and selected arrows. No boundary is imposed behind obstacle 2. */
-    .firstArrow = TASK2_ARROW_RIGHT,
+    .firstArrow = TASK2_ARROW_LEFT,
     .secondArrow = TASK2_ARROW_LEFT,
     .obstacle2WidthMm = 500.0f,
     .parkToObstacle1Mm = 1050.0f,
@@ -85,8 +85,12 @@ Task2RouteConfig task2RouteConfig = {
     .obstacle1ExitYawDeg = 19.0f,
     .obstacle2ApproachMaxMm = 1000.0f,
     .obstacle2DepartureSpeedCps = 2000.0f,
+<<<<<<< Updated upstream
     .obstacle2IRAcquisitionSpeedCps = 500.0f,
     .obstacle2IRConfirmationSpeedCps = 750.0f,
+=======
+    .obstacle2IRAcquisitionSpeedCps = 2000.0f,
+>>>>>>> Stashed changes
     .obstacle2DepartureWidthReserveMm = 100.0f,
     .secondDepartureRadiusMm = 275.0f,
     .secondIRDepartureRadiusMm = 325.0f,
