@@ -221,13 +221,24 @@ Task2AppStatus Task2App_Update(Task2App *a, Task2Commands *t, uint32_t now) {
     if (!UpdatePose(a)) return Fail(a, "ODOMETRY");
     RememberPose(a, now);
     if (a->phase >= TASK2_APP_RANGE2 && a->phase <= TASK2_APP_ROUTE) {
-        Task2RouteConfig bounds = a->geometry;
+        Task2RouteConfig bounds = a->route.returnWidthMm > 0.0f
+            ? Task2Route_ReturnBounds(&a->route) : a->geometry;
         if (a->phase == TASK2_APP_ROUTE && a->route.obstacle2IRDeparture &&
             a->step >= TASK2_ROUTE_O2_DEPARTURE_STEP && t->stage != TASK2_STAGE_HOME)
             bounds.obstacleBufferMm = 1.0f; /* Existing certified IR bypass exception. */
         Task2RouteReport report = {.minimumObstacleGapMm = INFINITY, .minimumSideMarginMm = INFINITY,
             .minimumParkSideMarginMm = INFINITY, .minimumParkBackMarginMm = INFINITY};
-        if (!Task2Route_CheckPose(&bounds, &a->pose, &report)) return Fail(a, "T2_CLEARANCE");
+        if (!Task2Route_CheckPose(&bounds, &a->pose, &report)) {
+            if (report.minimumParkSideMarginMm < bounds.parkSideWallBufferMm ||
+                report.minimumParkBackMarginMm < bounds.parkBackWallBufferMm)
+                return Fail(a, "T2_HARD_PARK_CLEARANCE");
+            /* A measured allowance shortfall may invoke recovery, but an actual
+             * obstacle/arena-wall intersection is never an approved fallback. */
+            if (a->phase != TASK2_APP_ROUTE || a->step < TASK2_ROUTE_O2_DEPARTURE_STEP ||
+                report.minimumObstacleGapMm < 1.0f || report.minimumSideMarginMm < 1.0f)
+                return Fail(a, "T2_CLEARANCE");
+            a->route.report.runtimeReducedClearanceUsed = true;
+        }
     }
     bool busy = a->io->busy(a->io->context);
     const char *fault = NULL;
@@ -346,6 +357,12 @@ Task2AppStatus Task2App_Update(Task2App *a, Task2Commands *t, uint32_t now) {
                 a->edgeBraking = false;
             } else if (a->step == TASK2_ROUTE_O2_IR_STRAIGHT_STEP) return Fail(a, "T2_NO_EDGE");
         }
+        if (a->route.returnFallbackActive && a->route.fallbackHomeStep > 0U &&
+            a->step + 1U == a->route.fallbackHomeStep) {
+            Task2Commands_SetStage(t, TASK2_STAGE_HOME);
+            if (!Task2Route_ReplanParkingReturn(&a->route, &a->pose,
+                a->estimates.obstacle2Width.mm, a->step)) return Fail(a, a->route.report.reason);
+        }
         if (a->step + 1U == a->route.stepCount) {
             float width = a->estimates.obstacle2Width.mm;
             if (a->route.obstacle2ParallelReturnPending) {
@@ -354,11 +371,17 @@ Task2AppStatus Task2App_Update(Task2App *a, Task2Commands *t, uint32_t now) {
                 Task2Commands_SetStage(t, TASK2_STAGE_HOME);
                 if (!Task2Route_ReplanParkingReturn(&a->route, &a->pose, width, a->step)) return Fail(a, a->route.report.reason);
             } else {
-                if (!Task2Route_IsParked(&a->geometry, &a->pose)) return Fail(a, "T2_NOT_PARKED");
-                float measuredWidth = a->detection.edgeMethod == TASK2_EDGE_IR_INITIAL_ABSENCE_BOUND ? NAN : a->detection.observedWidthMm;
-                Task2Commands_Summary(t, a->estimates.obstacle1Face.mm,
-                    a->estimates.obstacle1Face.mm + 100.0f + a->estimates.faceGap.mm, measuredWidth, a->pathMm);
-                Enter(a, TASK2_APP_FINISHED, now); return TASK2_APP_DONE;
+                if (!Task2Route_IsParked(&a->geometry, &a->pose)) {
+                    Task2Commands_SetStage(t, TASK2_STAGE_HOME);
+                    a->route.obstacle2ParkReturnPending = true;
+                    if (!Task2Route_ReplanParkingReturn(&a->route, &a->pose,
+                        a->estimates.obstacle2Width.mm, a->step)) return Fail(a, a->route.report.reason);
+                } else {
+                    float measuredWidth = a->detection.edgeMethod == TASK2_EDGE_IR_INITIAL_ABSENCE_BOUND ? NAN : a->detection.observedWidthMm;
+                    Task2Commands_Summary(t, a->estimates.obstacle1Face.mm,
+                        a->estimates.obstacle1Face.mm + 100.0f + a->estimates.faceGap.mm, measuredWidth, a->pathMm);
+                    Enter(a, TASK2_APP_FINISHED, now); return TASK2_APP_DONE;
+                }
             }
         }
         ++a->step;

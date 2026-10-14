@@ -101,6 +101,8 @@ const char *const task2RouteStepNames[TASK2_ROUTE_STEP_COUNT] = {
     "O2 sensor departure", "O2 clearance arc", "O2 back", "Return park",
     "Park align 1", "Park align 2", "Park straight", "Reserve",
     "Reserve", "Reserve", "Reserve", "Reserve", "Reserve", "Reserve",
+    "Recovery", "Recovery", "Recovery", "Recovery", "Recovery", "Recovery", "Recovery",
+    "Recovery", "Recovery", "Recovery", "Recovery", "Recovery", "Recovery", "Recovery",
 };
 
 static bool Reject(Task2Route *route, const char *reason)
@@ -262,7 +264,7 @@ static bool CheckPrimitive(const Task2RouteConfig *c, Task2RoutePose start,
 {
     struct { float lo, hi; unsigned depth; } pending[17];
     unsigned count = 1U;
-    pending[0].lo = 0.0f; pending[0].hi = step->distanceMm; pending[0].depth = 0U;
+    pending[0].lo = fminf(0.0f, step->distanceMm); pending[0].hi = fmaxf(0.0f, step->distanceMm); pending[0].depth = 0U;
     float cosine = cosf(start.yawRad), sine = sinf(start.yawRad);
     float cx = start.xMm - step->radiusMm * sine;
     float cy = start.yMm + step->radiusMm * cosine;
@@ -319,7 +321,7 @@ static bool BoundedSweep(const Task2RouteConfig *c, Task2RoutePose start,
     float far = fmaxf(fabsf(front), fabsf(rear));
     for (unsigned i = 0U; i < count; ++i)
     {
-        if (!isfinite(steps[i].distanceMm) || steps[i].distanceMm < 0.0f || !isfinite(steps[i].radiusMm))
+        if (!isfinite(steps[i].distanceMm) || !isfinite(steps[i].radiusMm))
             return false;
         if (steps[i].distanceMm == 0.0f)
         {
@@ -345,12 +347,12 @@ static bool Sweep(const Task2RouteConfig *c, Task2RoutePose start,
         return false;
     for (unsigned i = 0U; i < count; ++i)
     {
-        if (!isfinite(steps[i].distanceMm) || steps[i].distanceMm < 0.0f ||
+        if (!isfinite(steps[i].distanceMm) ||
             !isfinite(steps[i].radiusMm) || (steps[i].distanceMm == 0.0f && steps[i].radiusMm != 0.0f))
             return false;
-        for (float d = spacing; d < steps[i].distanceMm; d += spacing)
+        for (float d = spacing; d < fabsf(steps[i].distanceMm); d += spacing)
         {
-            Task2RoutePose p = Advance(start, d, steps[i].radiusMm);
+            Task2RoutePose p = Advance(start, copysignf(d, steps[i].distanceMm), steps[i].radiusMm);
             if (!PlanningPose(c, &p, &report))
                 return false;
         }
@@ -524,7 +526,7 @@ static bool BuildTail(const Task2RouteConfig *c, Task2RoutePose p,
     if (c->firstArrow == c->secondArrow)
         bounds.boundaryBufferMm += 20.0f;
     float sideLimit = 0.5f * c->obstacle2WidthMm + c->obstacle2EndSpaceMm;
-    bounds.obstacle2WidthMm = fmaxf(c->obstacle2WidthMm, width);
+    bounds.obstacle2WidthMm = width;
     bounds.obstacle2EndSpaceMm = sideLimit - 0.5f * bounds.obstacle2WidthMm;
     if (bounds.obstacle2EndSpaceMm <= 0.0f)
         return false;
@@ -632,7 +634,7 @@ static Task2RouteConfig ObservedBounds(const Task2RouteConfig *c, float width)
 {
     Task2RouteConfig bounds = *c;
     float sideLimit = 0.5f * c->obstacle2WidthMm + c->obstacle2EndSpaceMm;
-    bounds.obstacle2WidthMm = fmaxf(c->obstacle2WidthMm, width);
+    bounds.obstacle2WidthMm = width;
     bounds.obstacle2EndSpaceMm = sideLimit - 0.5f * bounds.obstacle2WidthMm;
     return bounds;
 }
@@ -1230,12 +1232,253 @@ static bool BuildSteps(Task2Route *route, const Task2RouteIRDeparture *ir, bool 
     return Reject(route, "NO_O2_APPROACH_OR_RETURN");
 }
 
+
+/* Return recovery is independent of camera visibility and sensing. Every
+ * candidate retains the original park walls, mouth tips and full-body goal. */
+#define RETURN_MAX_STEPS 16U
+static void ResetPlanning(void)
+{
+    planningWork.poseChecks = 0U;
+    planningWork.exhausted = false;
+}
+
+static bool CertifySection(const Task2RouteConfig *c, Task2RoutePose p,
+    const Task2RouteStep *steps, unsigned count, bool parked, Task2RouteReport *report)
+{
+    ResetPlanning();
+    *report = EmptyReport();
+#if TASK2_ROUTE_EXHAUSTIVE_CHECKS
+    if (!PlanningPose(c, &p, report)) return false;
+    for (unsigned i = 0U; i < count; ++i) {
+        float length = fabsf(steps[i].distanceMm);
+        if (!isfinite(length) || !isfinite(steps[i].radiusMm)) return false;
+        for (float d = 1.0f; d < length; d += 1.0f) {
+            Task2RoutePose sample = Advance(p, copysignf(d, steps[i].distanceMm), steps[i].radiusMm);
+            if (!PlanningPose(c, &sample, report)) return false;
+        }
+        p = Advance(p, steps[i].distanceMm, steps[i].radiusMm);
+        if (!PlanningPose(c, &p, report)) return false;
+    }
+    if (parked && !Parked(c, &p)) return false;
+#else
+    if (!BoundedSweep(c, p, steps, count, parked, report)) return false;
+    for (unsigned i = 0U; i < count; ++i)
+        p = Advance(p, steps[i].distanceMm, steps[i].radiusMm);
+#endif
+    report->valid = true;
+    report->finishPose = p;
+    report->plannerPoseChecks = planningWork.poseChecks;
+    return !planningWork.exhausted;
+}
+
+static Task2RoutePose PathFinish(Task2RoutePose p, const Task2RouteStep *steps, unsigned n)
+{
+    for (unsigned i = 0U; i < n; ++i) p = Advance(p, steps[i].distanceMm, steps[i].radiusMm);
+    return p;
+}
+
+static bool CertifyReturn(const Task2RouteConfig *c, Task2RoutePose p,
+    const Task2RouteStep *steps, unsigned count, unsigned home, Task2RouteReport *report)
+{
+    if (home > count) return false;
+    Task2RouteConfig outside = *c;
+    if (c->firstArrow != c->secondArrow) outside.obstacleBufferMm = 1.0f;
+    Task2RouteReport first, second;
+    if (home && !CertifySection(&outside, p, steps, home, false, &first)) return false;
+    p = PathFinish(p, steps, home);
+    if (!CertifySection(c, p, steps + home, count - home, true, &second)) return false;
+    *report = second;
+    if (home) {
+        report->minimumObstacleGapMm = fminf(report->minimumObstacleGapMm, first.minimumObstacleGapMm);
+        report->minimumSideMarginMm = fminf(report->minimumSideMarginMm, first.minimumSideMarginMm);
+        report->minimumParkSideMarginMm = fminf(report->minimumParkSideMarginMm, first.minimumParkSideMarginMm);
+        report->minimumParkBackMarginMm = fminf(report->minimumParkBackMarginMm, first.minimumParkBackMarginMm);
+        report->minimumParkWallMarginMm = fminf(report->minimumParkSideMarginMm, report->minimumParkBackMarginMm);
+        report->plannerPoseChecks += first.plannerPoseChecks;
+    }
+    report->completeReturnCertified = true;
+    report->obstacleBufferExceptionUsed = home && c->firstArrow != c->secondArrow;
+    return true;
+}
+
+/* Compact S ingress: normalise the heading, slide to its entry, then two
+ * opposite arcs with an optional transverse leg. The endpoint can stay in
+ * front of the mouth; the last straight puts the body centre at (-250,0). */
+static bool BuildRecoveryParking(const Task2RouteConfig *c, Task2RoutePose initial,
+    Task2RouteStep *out, unsigned *count)
+{
+    Task2RouteStep native[4]; unsigned n = 0U; bool headingOnly;
+    ResetPlanning();
+    if (BuildParkingReturn(c, initial, c->obstacle2WidthMm, native, &n, false, &headingOnly)) {
+        for (unsigned i = 0U; i < n; ++i) out[i] = native[i];
+        *count = n; return true;
+    }
+    const float radii[] = {275.0f, 325.0f, 400.0f};
+    const float ends[] = {100.0f, 50.0f, 150.0f, 0.0f, 200.0f};
+    float correction = WrapYaw(ROUTE_PI - initial.yawRad);
+    if (fabsf(correction) > 0.6f * ROUTE_PI) return false;
+    for (unsigned reverse = 0U; reverse < 2U; ++reverse) {
+        Task2RoutePose p = initial;
+        unsigned prefix = 0U;
+        if (fabsf(correction) > 0.00001f) {
+            float direction = reverse ? -1.0f : 1.0f;
+            out[prefix++] = (Task2RouteStep){.distanceMm = direction * ROUTE_MIN_RADIUS_MM * fabsf(correction),
+                .radiusMm = direction * copysignf(ROUTE_MIN_RADIUS_MM, correction), .speedCps = c->approachSpeedCps};
+            p = PathFinish(p, out, prefix);
+        }
+        float lateral = fabsf(p.yMm), sign = copysignf(1.0f, p.yMm);
+        if (lateral < 1.0f) {
+            float straight = p.xMm - ParkFinishX(c);
+            out[prefix] = (Task2RouteStep){.distanceMm = straight, .speedCps = c->approachSpeedCps};
+            Task2RouteReport certificate;
+            if (CertifySection(c, initial, out, prefix + 1U, true, &certificate)) {
+                *count = prefix + 1U; return true;
+            }
+        }
+        for (unsigned r = 0U; r < sizeof(radii)/sizeof(radii[0]); ++r) {
+            float radius = radii[r];
+            for (unsigned angle = 90U; angle >= 30U; angle -= 10U) {
+                float theta = angle * ROUTE_PI / 180.0f;
+                if (2.0f * radius * (1.0f - cosf(theta)) > lateral)
+                    theta = acosf(fmaxf(-1.0f, 1.0f - lateral / (2.0f * radius)));
+                if (theta <= 0.00001f) continue;
+                float diagonal = fmaxf(0.0f, (lateral - 2.0f * radius * (1.0f - cosf(theta))) / sinf(theta));
+                float longitudinal = 2.0f * radius * sinf(theta) + diagonal * cosf(theta);
+                for (unsigned end = 0U; end < sizeof(ends)/sizeof(ends[0]); ++end) {
+                    n = prefix;
+                    float slide = p.xMm - longitudinal - ends[end];
+                    if (fabsf(slide) > 0.05f)
+                        out[n++] = (Task2RouteStep){.distanceMm = slide, .speedCps = c->approachSpeedCps};
+                    out[n++] = (Task2RouteStep){.distanceMm = radius * theta,
+                        .radiusMm = sign * radius, .speedCps = c->approachSpeedCps};
+                    if (diagonal > 0.05f)
+                        out[n++] = (Task2RouteStep){.distanceMm = diagonal, .speedCps = c->approachSpeedCps};
+                    out[n++] = (Task2RouteStep){.distanceMm = radius * theta,
+                        .radiusMm = -sign * radius, .speedCps = c->approachSpeedCps};
+                    out[n++] = (Task2RouteStep){.distanceMm = ends[end] - ParkFinishX(c), .speedCps = c->approachSpeedCps};
+                    Task2RouteReport certificate;
+                    if (CertifySection(c, initial, out, n, true, &certificate)) { *count = n; return true; }
+                }
+            }
+        }
+    }
+    return false;
+}
+
+/* Check the remainder through parking before accepting an intermediate turn. */
+static bool CheckContinuation(const Task2RouteConfig *c, Task2RoutePose p,
+    const Task2RouteStep *prefix, unsigned prefixCount, bool needsRear, Task2RouteReport *certificate)
+{
+    Task2RouteStep full[RETURN_MAX_STEPS], rear[6], park[RETURN_MAX_STEPS];
+    unsigned n = prefixCount, rearCount = 0U, parkCount = 0U; bool tangent;
+    for (unsigned i = 0U; i < n; ++i) full[i] = prefix[i];
+    Task2RoutePose stop = PathFinish(p, full, n);
+    if (needsRear) {
+        ResetPlanning();
+        if (!BuildParallelReturn(c, stop, c->obstacle2WidthMm, rear, &rearCount, &tangent)) return false;
+        for (unsigned i = 0U; i < rearCount; ++i) full[n++] = rear[i];
+        stop = PathFinish(stop, rear, rearCount);
+    }
+    unsigned home = n;
+    if (!BuildRecoveryParking(c, stop, park, &parkCount) || n + parkCount > RETURN_MAX_STEPS) return false;
+    for (unsigned i = 0U; i < parkCount; ++i) full[n++] = park[i];
+    return CertifyReturn(c, p, full, n, home, certificate);
+}
+
+/* Analytic recovery rear turn. There is no arena end wall beyond O2: a
+ * positioning straight clears its back face before the inward U-turn. */
+static bool BuildRecoveryRear(const Task2RouteConfig *c, Task2RoutePose p,
+    Task2RouteStep *out, unsigned *count, unsigned *home)
+{
+    unsigned n = 0U;
+    float correction = WrapYaw(-p.yawRad);
+    if (fabsf(correction) > 0.55f * ROUTE_PI) return false;
+    if (fabsf(correction) > 0.00001f) {
+        out[n++] = (Task2RouteStep){.distanceMm = ROUTE_MIN_RADIUS_MM * fabsf(correction),
+            .radiusMm = copysignf(ROUTE_MIN_RADIUS_MM, correction), .speedCps = c->approachSpeedCps};
+        p = PathFinish(p, out, n);
+    }
+    float front = c->bodyCenterAheadOfRearAxleMm + 0.5f * c->bodyLengthMm + c->frontProtrusionMm;
+    float rearFace = c->parkToObstacle1Mm + 200.0f + c->obstacleFaceGapMm;
+    float advance = fmaxf(0.0f, rearFace + front + c->obstacleBufferMm + 40.0f - p.xMm);
+    if (advance > 0.05f) {
+        out[n] = (Task2RouteStep){.distanceMm = advance, .speedCps = c->approachSpeedCps};
+        p = Advance(p, advance, 0.0f); ++n;
+    }
+    if (!MakeRearArc(c, p, &out[n])) return false;
+    p = Advance(p, out[n].distanceMm, out[n].radiusMm); ++n;
+    *home = n;
+    unsigned parkingCount = 0U;
+    if (!BuildRecoveryParking(c, p, out + n, &parkingCount)) return false;
+    *count = n + parkingCount;
+    return *count <= RETURN_MAX_STEPS;
+}
+
+/* Preferred buffers, then small measured-pose adjustments, then reduced
+ * obstacle/arena allowances. Physical separation and hard carpark margins
+ * are checked on the complete candidate; no unchecked "always true" path. */
+static bool BuildReturnFallback(const Task2Route *route, Task2RoutePose initial,
+    float width, unsigned stage, Task2RouteStep *out, unsigned *count,
+    unsigned *home, Task2RouteConfig *policy, Task2RouteReport *certificate)
+{
+    Task2RouteConfig original = ObservedBounds(&route->config, width);
+    Task2RouteConfig physical = original;
+    physical.obstacleBufferMm = physical.boundaryBufferMm = 1.0f;
+    Task2RouteReport initialClearance = EmptyReport();
+    if (!Task2Route_CheckPose(&physical, &initial, &initialClearance)) return false;
+    const float obstacle[] = {original.obstacleBufferMm, 75.0f, 50.0f, 25.0f, 1.0f};
+    const float boundary[] = {original.boundaryBufferMm, 20.0f, 10.0f, 1.0f, 1.0f};
+    for (unsigned tier = 0U; tier < 5U; ++tier) {
+        Task2RouteConfig c = original;
+        c.obstacleBufferMm = fminf(original.obstacleBufferMm, obstacle[tier]);
+        c.boundaryBufferMm = fminf(original.boundaryBufferMm, boundary[tier]);
+        for (unsigned adjustment = 0U; adjustment < 17U; ++adjustment) {
+            unsigned n = 0U; Task2RoutePose p = initial;
+            float distance = adjustment ? (float)((adjustment + 1U) / 2U) * 20.0f * (adjustment % 2U ? -1.0f : 1.0f) : 0.0f;
+            if (adjustment) {
+                out[n++] = (Task2RouteStep){.distanceMm = distance, .speedCps = c.approachSpeedCps};
+                p = Advance(p, distance, 0.0f);
+            }
+            unsigned prefix = n, rearCount = 0U, parkCount = 0U, homeOffset = 0U;
+            Task2RouteStep rear[RETURN_MAX_STEPS];
+            if (stage == 2U) {
+                if (!BuildRecoveryParking(&c, p, out + n, &parkCount)) continue;
+                n += parkCount; homeOffset = prefix;
+            } else {
+                ResetPlanning();
+                if (stage == 0U && route->obstacle2LateralDeparture) {
+                    unsigned lateralCount = 0U;
+                    if (!BuildLateralClearance(&c, p, width, out + n, &lateralCount)) continue;
+                    p = PathFinish(p, out + n, lateralCount); n += lateralCount;
+                } else if (stage == 0U && route->obstacle2IRDeparture) {
+                    if (!BuildIRQuarterTurn(&c, p, width, out + n)) continue;
+                    p = Advance(p, out[n].distanceMm, out[n].radiusMm); ++n;
+                }
+                if (!BuildRecoveryRear(&c, p, rear, &rearCount, &homeOffset) || n + rearCount > RETURN_MAX_STEPS) continue;
+                homeOffset += n;
+                for (unsigned i = 0U; i < rearCount; ++i) out[n++] = rear[i];
+            }
+            if (!CertifyReturn(&c, initial, out, n, homeOffset, certificate)) continue;
+            *count = n; *home = homeOffset; *policy = c;
+            certificate->returnFallbackUsed = true;
+            certificate->poseAdjustmentUsed = adjustment != 0U;
+            for (unsigned i = 0U; i < n; ++i)
+                certificate->poseAdjustmentUsed |= out[i].distanceMm < 0.0f;
+            certificate->returnObstacleBufferMm = c.obstacleBufferMm;
+            certificate->returnBoundaryBufferMm = c.boundaryBufferMm;
+            return true;
+        }
+    }
+    return false;
+}
+
 static bool InstallSuffix(Task2Route *route, const Task2RoutePose *pose, float width,
     const Task2RouteStep *tail, unsigned count, unsigned completedStep, unsigned exceptionPrefixCount, const char *reason)
 {
 #if !TASK2_ROUTE_EXHAUSTIVE_CHECKS
     (void)width;
 #endif
+    bool completeCertified = route->report.completeReturnCertified;
     if (completedStep + 1U + count > TASK2_ROUTE_STEP_COUNT)
         return FinishPlanning(route, Reject(route, "RETURN_CAPACITY"));
     for (unsigned i = 0U; i < count; ++i)
@@ -1244,15 +1487,15 @@ static bool InstallSuffix(Task2Route *route, const Task2RoutePose *pose, float w
     route->totalTravelMm = route->totalYawRad = 0.0f;
     for (unsigned i = 0U; i < route->stepCount; ++i)
     {
-        route->totalTravelMm += route->steps[i].distanceMm;
+        route->totalTravelMm += fabsf(route->steps[i].distanceMm);
         if (route->steps[i].radiusMm != 0.0f)
             route->totalYawRad += route->steps[i].distanceMm / route->steps[i].radiusMm;
     }
     Task2RoutePose finish = *pose;
 #if TASK2_ROUTE_EXHAUSTIVE_CHECKS
-    Task2RouteConfig bounds = route->config;
+    Task2RouteConfig bounds = Task2Route_ReturnBounds(route);
     float sideLimit = 0.5f * bounds.obstacle2WidthMm + bounds.obstacle2EndSpaceMm;
-    bounds.obstacle2WidthMm = fmaxf(bounds.obstacle2WidthMm, width);
+    bounds.obstacle2WidthMm = width;
     bounds.obstacle2EndSpaceMm = sideLimit - 0.5f * bounds.obstacle2WidthMm;
 #else
     if (!route->report.valid)
@@ -1268,9 +1511,9 @@ static bool InstallSuffix(Task2Route *route, const Task2RoutePose *pose, float w
         Task2RouteConfig section = bounds;
         if (i < exceptionPrefixCount)
             section.obstacleBufferMm = 1.0f;
-        for (float d = 0.0f; d < tail[i].distanceMm; d += 1.0f)
+        for (float d = 0.0f; d < fabsf(tail[i].distanceMm); d += 1.0f)
         {
-            Task2RoutePose sample = Advance(finish, d, tail[i].radiusMm);
+            Task2RoutePose sample = Advance(finish, copysignf(d, tail[i].distanceMm), tail[i].radiusMm);
             (void)PlanningPose(&section, &sample, &route->report);
         }
 #endif
@@ -1278,9 +1521,44 @@ static bool InstallSuffix(Task2Route *route, const Task2RoutePose *pose, float w
     }
     route->report.finishPose = finish;
     route->report.valid = true;
+    route->report.completeReturnCertified = completeCertified;
     route->report.obstacleBufferExceptionUsed |= exceptionPrefixCount > 0U;
     route->report.reason = reason;
     return FinishPlanning(route, true);
+}
+
+
+Task2RouteConfig Task2Route_ReturnBounds(const Task2Route *route)
+{
+    Task2RouteConfig c = ObservedBounds(&route->config, route->returnWidthMm > 0.0f ? route->returnWidthMm : route->config.obstacle2WidthMm);
+    if (route->returnFallbackActive) {
+        c.obstacleBufferMm = route->returnObstacleBufferMm;
+        c.boundaryBufferMm = route->returnBoundaryBufferMm;
+    }
+    return c;
+}
+
+static bool InstallReturnFallback(Task2Route *route, const Task2RoutePose *p,
+    float width, unsigned completed, unsigned stage)
+{
+    Task2RouteStep tail[RETURN_MAX_STEPS]; unsigned n = 0U, home = 0U;
+    Task2RouteConfig policy; Task2RouteReport certificate;
+    if (!BuildReturnFallback(route, *p, width, stage, tail, &n, &home, &policy, &certificate)) {
+        ResetPlanning();
+        return Reject(route, "HARD_CLEARANCE_INFEASIBLE");
+    }
+    route->obstacle2ReturnPending = route->obstacle2ParallelReturnPending = route->obstacle2ParkReturnPending = false;
+    route->returnFallbackActive = true;
+    route->fallbackHomeStep = completed + 1U + home;
+    route->returnObstacleBufferMm = policy.obstacleBufferMm;
+    route->returnBoundaryBufferMm = policy.boundaryBufferMm;
+    route->returnWidthMm = width;
+    route->report = certificate;
+#if !TASK2_ROUTE_EXHAUSTIVE_CHECKS
+    planningWork.acceptedClearance = certificate;
+#endif
+    return InstallSuffix(route, p, width, tail, n, completed,
+        route->obstacle2IRDeparture ? home : 0U, "OK_CERTIFIED_RETURN_FALLBACK");
 }
 
 bool Task2Route_ReplanObstacle2(Task2Route *route, const Task2RoutePose *pose, float width,
@@ -1294,24 +1572,24 @@ bool Task2Route_ReplanObstacle2(Task2Route *route, const Task2RoutePose *pose, f
         (completedDepartureStep != TASK2_ROUTE_O2_DEPARTURE_STEP &&
          !((route->obstacle2IRDeparture || route->obstacle2LateralDeparture) && completedDepartureStep == TASK2_ROUTE_O2_IR_STRAIGHT_STEP)) ||
         !isfinite(pose->xMm) || !isfinite(pose->yMm) || !isfinite(pose->yawRad))
-        return route ? FinishPlanning(route, Reject(route, "NO_OBSERVED_EDGE_RETURN")) : false;
+        return route ? FinishPlanning(route, Reject(route, "INVALID_EDGE_RETURN_INPUT")) : false;
     if (route->obstacle2LateralDeparture)
     {
         if (!BuildLateralClearance(&route->config, *pose, width, tail, &count))
-            return FinishPlanning(route, Reject(route, "NO_LATERAL_CLEARANCE_RETURN"));
+            return InstallReturnFallback(route, pose, width, completedDepartureStep, 0U);
         route->obstacle2ParallelReturnPending = true;
     }
     else if (route->obstacle2IRDeparture)
     {
         if (!BuildIRQuarterTurn(&route->config, *pose, width, tail))
-            return FinishPlanning(route, Reject(route, "NO_IR_QUARTER_TURN"));
+            return InstallReturnFallback(route, pose, width, completedDepartureStep, 0U);
         count = 1U;
         route->obstacle2ParallelReturnPending = true;
     }
     else
     {
         if (!BuildTail(&route->config, *pose, width, tail, &count))
-            return FinishPlanning(route, Reject(route, "NO_OBSERVED_EDGE_RETURN"));
+            return InstallReturnFallback(route, pose, width, completedDepartureStep, 0U);
         /* The complete nominal tail is certified above. Execute through the
          * rear bypass only, then rebuild parking from that measured stop,
          * just as for IR routes. Do not carry arc exit error into the park. */
@@ -1321,6 +1599,17 @@ bool Task2Route_ReplanObstacle2(Task2Route *route, const Task2RoutePose *pose, f
             count = count == 9U ? 5U : 2U;
             route->obstacle2ParkReturnPending = true;
         }
+    }
+    if (route->obstacle2IRDeparture || route->obstacle2LateralDeparture) {
+        Task2RouteConfig bounds = ObservedBounds(&route->config, width);
+        Task2RouteReport complete;
+        if (!CheckContinuation(&bounds, *pose, tail, count, true, &complete))
+            return InstallReturnFallback(route, pose, width, completedDepartureStep, 0U);
+        route->report.completeReturnCertified = true;
+#if !TASK2_ROUTE_EXHAUSTIVE_CHECKS
+        planningWork.acceptedClearance = complete;
+#endif
+        route->returnWidthMm = width;
     }
     route->obstacle2ReturnPending = false;
     return InstallSuffix(route, pose, width, tail, count, completedDepartureStep,
@@ -1337,9 +1626,19 @@ bool Task2Route_ReplanParallelReturn(Task2Route *route, const Task2RoutePose *po
     bool tangentReturn = false;
     if (!route || !pose || !route->obstacle2ParallelReturnPending ||
         completedQuarterStep + 1U != route->stepCount || !isfinite(width) || width < 300.0f ||
-        !isfinite(pose->xMm) || !isfinite(pose->yMm) || !isfinite(pose->yawRad) ||
-        !BuildParallelReturn(&route->config, *pose, width, tail, &count, &tangentReturn))
-        return route ? FinishPlanning(route, Reject(route, "NO_PARALLEL_RETURN")) : false;
+        !isfinite(pose->xMm) || !isfinite(pose->yMm) || !isfinite(pose->yawRad))
+        return route ? FinishPlanning(route, Reject(route, "INVALID_PARALLEL_RETURN_INPUT")) : false;
+    if (!BuildParallelReturn(&route->config, *pose, width, tail, &count, &tangentReturn))
+        return InstallReturnFallback(route, pose, width, completedQuarterStep, 1U);
+    Task2RouteConfig bounds = ObservedBounds(&route->config, width);
+    Task2RouteReport complete;
+    if (!CheckContinuation(&bounds, *pose, tail, count, false, &complete))
+        return InstallReturnFallback(route, pose, width, completedQuarterStep, 1U);
+    route->report.completeReturnCertified = true;
+#if !TASK2_ROUTE_EXHAUSTIVE_CHECKS
+    planningWork.acceptedClearance = complete;
+#endif
+    route->returnWidthMm = width;
     route->obstacle2ParallelReturnPending = false;
     route->obstacle2TangentRearArc = tangentReturn;
     route->obstacle2ParkReturnPending = true;
@@ -1356,11 +1655,23 @@ bool Task2Route_ReplanParkingReturn(Task2Route *route, const Task2RoutePose *pos
     Task2RouteStep tail[4];
     unsigned count = 0U;
     bool headingOnly = false;
-    if (!route || !pose || !route->obstacle2ParkReturnPending ||
-        completedRearStep + 1U != route->stepCount || !isfinite(width) || width < 300.0f ||
-        !isfinite(pose->xMm) || !isfinite(pose->yMm) || !isfinite(pose->yawRad) ||
-        !BuildParkingReturn(&route->config, *pose, width, tail, &count, route->parkingHeadingCorrections < 2U, &headingOnly))
-        return route ? FinishPlanning(route, Reject(route, "NO_PARKING_RETURN")) : false;
+    if (!route || !pose || (!route->obstacle2ParkReturnPending && !route->returnFallbackActive) ||
+        (completedRearStep + 1U != route->stepCount && completedRearStep + 1U != route->fallbackHomeStep) || !isfinite(width) || width < 300.0f ||
+        !isfinite(pose->xMm) || !isfinite(pose->yMm) || !isfinite(pose->yawRad))
+        return route ? FinishPlanning(route, Reject(route, "INVALID_PARKING_RETURN_INPUT")) : false;
+    Task2RouteConfig policy = Task2Route_ReturnBounds(route);
+    if (!BuildParkingReturn(&policy, *pose, width, tail, &count, route->parkingHeadingCorrections < 2U, &headingOnly))
+        return InstallReturnFallback(route, pose, width, completedRearStep, 2U);
+    Task2RouteReport complete;
+    bool certified = headingOnly ? CheckContinuation(&policy, *pose, tail, count, false, &complete)
+        : CertifyReturn(&policy, *pose, tail, count, 0U, &complete);
+    if (!certified) return InstallReturnFallback(route, pose, width, completedRearStep, 2U);
+    route->report.completeReturnCertified = true;
+#if !TASK2_ROUTE_EXHAUSTIVE_CHECKS
+    planningWork.acceptedClearance = complete;
+#endif
+    route->returnWidthMm = width;
+    route->fallbackHomeStep = 0U;
     route->obstacle2ParkReturnPending = headingOnly;
     if (headingOnly)
         ++route->parkingHeadingCorrections;
@@ -1627,7 +1938,7 @@ static bool Create(const Task2RouteConfig *config, const Task2RouteIRDeparture *
         return FinishPlanning(route, false);
     for (unsigned i = 0U; i < route->stepCount; ++i)
     {
-        route->totalTravelMm += route->steps[i].distanceMm;
+        route->totalTravelMm += fabsf(route->steps[i].distanceMm);
         if (route->steps[i].radiusMm != 0.0f)
             route->totalYawRad += route->steps[i].distanceMm / route->steps[i].radiusMm;
     }
@@ -1716,11 +2027,20 @@ bool Task2Route_ReplanDeparture(Task2Route *route, const Task2RouteConfig *c,
     }
     if (!accepted) return FinishPlanning(route, Reject(route, "NO_DEPARTURE_FROM_STOP"));
     route->config = *c;
+    Task2RoutePose preview = PathFinish(*pose, steps, 2U);
+    Task2RouteStep returnSteps[RETURN_MAX_STEPS];
+    unsigned returnCount = 0U, returnHome = 0U;
+    Task2RouteConfig returnPolicy; Task2RouteReport returnCertificate;
+    if (!BuildReturnFallback(route, preview, c->obstacle2WidthMm, 0U,
+        returnSteps, &returnCount, &returnHome, &returnPolicy, &returnCertificate))
+        return Reject(route, "RETURN_PREVIEW_INFEASIBLE");
+    route->report.completeReturnCertified = true;
+    ResetPlanning();
     route->steps[4] = steps[0]; route->steps[5] = steps[1];
     route->stepCount = 6U;
     route->totalTravelMm = route->totalYawRad = 0.0f;
     for (unsigned i = 0U; i < route->stepCount; ++i) {
-        route->totalTravelMm += route->steps[i].distanceMm;
+        route->totalTravelMm += fabsf(route->steps[i].distanceMm);
         if (route->steps[i].radiusMm != 0.0f)
             route->totalYawRad += route->steps[i].distanceMm / route->steps[i].radiusMm;
     }

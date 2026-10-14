@@ -51,7 +51,7 @@ Send newline-terminated ASCII lines over the existing command link. A run number
 
 `Task2Estimate` separates dimensions, source, uncertainty and bound semantics from `Task2Route` geometry and `Task2App` execution. A future camera gap can enter through `Task2Estimate_SetGap(..., TASK2_ESTIMATE_CAMERA)` before O2 planning; the stationary gap stage consumes an already valid supplied estimate. Adding a Pi message/provider for that is separate work. No camera range/width message is invented in this branch.
 
-Current USS face projection assumes a flat face and the nearest ray within the configured 7.5-degree half cone. Its oblique-heading accuracy is provisional. O1 position and O1–O2 gap accept the configured 600–1500 mm course range; gap validation tolerates 1 mm of endpoint rounding. There is no silent nominal-gap fallback. Width starts with the **configured 500 mm planning footprint**, which is an assumption for integration, not an observed upper bound. A span or sensed edge can enlarge the return footprint while preserving the fixed arena width.
+Current USS face projection assumes a flat face and the nearest ray within the configured 7.5-degree half cone. Its oblique-heading accuracy is provisional. O1 position and O1–O2 gap accept the configured 600–1500 mm course range; gap validation tolerates 1 mm of endpoint rounding. There is no silent nominal-gap fallback. Width starts with the **configured 500 mm planning footprint**, which is an assumption for integration, not an observed upper bound. A span can enlarge the assumed footprint. After a confirmed edge, the sensed conservative width supersedes the assumption for return geometry while preserving the fixed arena width.
 
 ## Configuration and diagnostic points
 
@@ -67,7 +67,11 @@ The normal command-mode tuning is restored at the next stopped batch boundary. S
 
 Default speed ceilings are 7000 CPS cruise, 3000 approach and 2000 departure; the IR straight is capped at 500 until acquired and 750 after a trend candidate while absence confirmation settles. Every finite primitive retains the movement watchdog. The continuous IR straight has a width-independent 30-second watchdog, fresh-sensor and measured-clearance checks; its execution has no inferred-width distance endpoint. Active app time is limited to 120 seconds, excluding stationary arrow waits.
 
-Carpark side walls and mouth tips retain 100 mm clearance, the back wall 75 mm, and the arena boundary 35 mm. The existing LR/RL obstacle-buffer exception of 1 mm remains in the certified quarter-turn/rear-bypass sections; LL/RR use the normal 100 mm obstacle buffer. A successful edge stop can still fail later measured-pose planning. This branch does not promise a return path for every width, sensor error or pose.
+Carpark side walls and mouth tips retain 100 mm clearance, the back wall 75 mm, and the arena boundary 35 mm. The existing LR/RL obstacle-buffer exception of 1 mm remains in the certified quarter-turn/rear-bypass sections; LL/RR use the normal 100 mm obstacle buffer. Return planning now checks a complete continuation through buffered parking before accepting an intermediate turn. Before `ROUND2`, the modelled sensing endpoint also gets a complete-return check. A rejected preferred family triggers recovery, rather than a terminal `NO_*_RETURN` fault.
+
+Recovery first retains the preferred allowances and tries short forward/reverse adjustments (20 mm increments, up to 160 mm). It can position beyond O2, turn back in a calculated lane, and use an S ingress with a transverse segment. If necessary it reduces the obstacle/arena allowances through 100/35, 75/20, 50/10, 25/1 and 1/1 mm tiers (capped by the configured values). The existing IR outside-section 1 mm exception remains. **Carpark sides/mouth tips stay at 100 mm and the back wall at 75 mm in every tier.** Neither an actual obstacle/wall intersection nor an already invalid hard-carpark pose is certified. Missing sensors and invalid inputs still fault; `HARD_CLEARANCE_INFEASIBLE` remains if no checked recovery fits the hard constraints. A software test matrix is not an unconditional physical guarantee for arbitrary poses or incorrect estimates.
+
+The runtime uses the chosen recovery policy, so a reduced nominal allowance cannot reject its own certified path. A measured obstacle/arena allowance shortfall during departure invokes the permitted reduced-clearance policy, while physical separation and carpark margins remain hard. A fallback is checked again at its actual rear stop before ingress; a final unparked stop requests a parking correction rather than immediately reporting `T2_NOT_PARKED`. The step storage is expanded to 32 to include recovery primitives. Inspect `route.report.completeReturnCertified`, `returnFallbackUsed`, `poseAdjustmentUsed`, `runtimeReducedClearanceUsed` and the selected `returnObstacleBufferMm`/`returnBoundaryBufferMm` in the debugger.
 
 ## Host validation
 
@@ -76,6 +80,8 @@ Python 3 and GCC with AddressSanitizer/UndefinedBehaviorSanitizer are sufficient
 ```sh
 python3 hosttests/test_task2_app.py
 python3 hosttests/test_task2_app.py --exhaustive
+python3 hosttests/test_task2_return.py
+python3 hosttests/test_task2_return.py --exhaustive
 python3 hosttests/test_command_regression.py
 python3 Tests/Host/test_unified_motion.py
 ```
@@ -91,3 +97,5 @@ cc -std=c11 -Wall -Wextra -Werror -DTASK2_COURSE_DRY_RUN=1 -IApps/Inc \
   Apps/Src/Task2Run.c -lm -o /tmp/task2_link_sim
 /tmp/task2_link_sim
 ```
+
+The return harness replays run21, run16 and run22 stopped poses and their mirrors. Run21 recovers with a 40 mm reverse adjustment. It independently traces the full executed recovery, including measured-stop handoffs, checking hard carpark buffers and full final containment. The expanded matrix has 1,296 cases across all arrows, widths 300/500/751/800 mm, O1 positions and gaps 600/1050/1500 mm, lateral perturbations ±20 mm, and yaw perturbations ±3 degrees. An already-invalid hard carpark pose is explicitly rejected instead of certifying an unchecked path.

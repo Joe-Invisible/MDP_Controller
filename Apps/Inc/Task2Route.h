@@ -4,7 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define TASK2_ROUTE_STEP_COUNT 18U /* Storage capacity; use route.stepCount. */
+#define TASK2_ROUTE_STEP_COUNT 32U /* Includes recovery primitives; use route.stepCount. */
 #define TASK2_ROUTE_O2_APPROACH_STEP 3U
 #define TASK2_ROUTE_O2_DEPARTURE_STEP 4U
 #define TASK2_ROUTE_O2_IR_STRAIGHT_STEP 5U
@@ -100,6 +100,12 @@ typedef struct
     uint32_t plannerPoseChecks;
     bool planningBudgetExceeded;
     bool obstacleBufferExceptionUsed; /* IR quarter-turn/rear bypass, including positioning straight. */
+    bool returnFallbackUsed;
+    bool runtimeReducedClearanceUsed;
+    bool poseAdjustmentUsed;
+    bool completeReturnCertified;
+    float returnObstacleBufferMm;
+    float returnBoundaryBufferMm;
     uint32_t clearanceFromStep; /* MCU margins exclude the trusted O1 template. */
     bool recognitionPreviewValid; /* Earliest camera preview is computed only on PC. */
     /* Earliest eligible camera pose, including the angled O2 approach. */
@@ -110,7 +116,7 @@ typedef struct
 
 typedef struct
 {
-    float distanceMm; /* Preview length only when sensorTerminated is true. */
+    float distanceMm; /* Signed travel; negative recovery primitives reverse. Preview for sensorTerminated. */
     bool sensorTerminated; /* Straight runs until its owner confirms the edge. */
     float radiusMm; /* Zero: straight; positive: left; negative: right. */
     float speedCps; /* Hard ceiling; both approaches use soft speed requests. */
@@ -132,6 +138,10 @@ typedef struct
     uint32_t parkingHeadingCorrections; /* At most two measured-stop corrections. */
     bool obstacle2ParkReturnPending; /* Plan parking after the measured rear-arc stop. */
     bool obstacle2ParallelReturnPending; /* Plan the rest after the measured R275 stop. */
+    bool returnFallbackActive;
+    unsigned fallbackHomeStep;
+    float returnObstacleBufferMm, returnBoundaryBufferMm;
+    float returnWidthMm;
     Task2RouteReport report;
 } Task2Route;
 
@@ -149,6 +159,8 @@ bool Task2Route_ReplanDeparture(Task2Route *route, const Task2RouteConfig *confi
 bool Task2Route_CheckStraight(const Task2RouteConfig *, const Task2RoutePose *, float distanceMm);
 float Task2Route_RecognitionApproach(const Task2RouteConfig *config, const Task2RoutePose *start);
 bool Task2Route_IsParked(const Task2RouteConfig *config, const Task2RoutePose *pose);
+/* Runtime clearance policy for a certified fallback. Carpark buffers never change. */
+Task2RouteConfig Task2Route_ReturnBounds(const Task2Route *route);
 
 /* MCU: bounded continuous-clearance certificates. PC: optional 1 mm sweeps. */
 bool Task2Route_Create(const Task2RouteConfig *config, Task2Route *route);
@@ -164,8 +176,8 @@ bool Task2Route_ObstacleCameraVisible(const Task2RouteConfig *config,
 bool Task2Route_Obstacle1CameraVisible(const Task2RouteConfig *config,
     const Task2RoutePose *pose);
 
-/* Replace the unexecuted suffix after an edge stop. Width is an observed
- * conservative planning bound; configured width remains the test footprint. */
+/* Replace the unexecuted suffix after an edge stop. The sensed conservative
+ * width supersedes the nominal assumption, preserving the fixed arena width. */
 bool Task2Route_ReplanParallelReturn(Task2Route *route, const Task2RoutePose *pose,
     float observedWidthMm, unsigned completedQuarterStep);
 /* Join parking from the actual stopped rear-bypass pose. */
