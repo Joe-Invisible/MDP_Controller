@@ -67,8 +67,10 @@ static void Recorded(void) {
         Trace(&route,p,552.776367f,5,false);
         printf("PASS run21 mirror %d: reverse %.0f mm, park buffers hard\n",mirror,-route.steps[6].distanceMm);
         c.parkToObstacle1Mm=1042.33643f;
-        p=(Task2RoutePose){2037.50232f,-mirror*455.787964f,mirror*3.34525776f};
-        route=Setup(c,true,2);assert(Task2Route_ReplanParkingReturn(&route,&p,514.770386f,7));Trace(&route,p,514.770386f,7,true);
+        p=(Task2RoutePose){2037.50232f,-mirror*455.787964f,-mirror*3.34525776f};
+        route=Setup(c,true,2);assert(Task2Route_ReplanParkingReturn(&route,&p,514.770386f,7));
+        assert(route.stepCount==9 && route.steps[8].radiusMm!=0.0f); /* Loose arc before alignment. */
+        Trace(&route,p,514.770386f,7,true);
         printf("PASS run16 rear-stop mirror %d\n",mirror);
     }
     for(int mirror=-1;mirror<=1;mirror+=2) {
@@ -78,8 +80,35 @@ static void Recorded(void) {
         printf("PASS run22 mirror %d\n",mirror);
     }
 }
+static void ParkingPrecedence(void) {
+    for(int mirror=-1;mirror<=1;mirror+=2) {
+        Task2RouteConfig c=task2RouteConfig;c.firstArrow=c.secondArrow=(Task2Arrow)mirror;
+        Task2RoutePose p={1793.638916f,mirror*513.939575f,0};
+        Task2Route route=Setup(c,false,1);
+        assert(Task2Route_ReplanParallelReturn(&route,&p,547.915588f,7));
+        assert(route.obstacle2TangentRearArc && route.stepCount==10);
+        Trace(&route,p,547.915588f,7,false);
+        assert(route.obstacle2StraightParkReturn && route.stepCount==11);
+        printf("PASS same-direction mirror %d: valid interior tangent found, one parking straight preferred\n",mirror);
+        p=(Task2RoutePose){800,0,mirror*PI};route=Setup(c,false,2);
+        assert(Task2Route_ReplanParkingReturn(&route,&p,500,7));
+        assert(route.obstacle2StraightParkReturn && route.stepCount==9);
+        Trace(&route,p,500,7,true);
+        p=(Task2RoutePose){600,-mirror*100.0f,mirror*PI};route=Setup(c,false,2);
+        assert(Task2Route_ReplanParkingReturn(&route,&p,500,7));
+        assert(!route.obstacle2StraightParkReturn && route.stepCount==9 && route.steps[8].radiusMm!=0);
+        Trace(&route,p,500,7,true);
+        p=(Task2RoutePose){2202.217285f,-mirror*493.958008f,-mirror*PI};route=Setup(c,false,2);
+        assert(Task2Route_ReplanParkingReturn(&route,&p,547.915588f,7));
+        assert(!route.obstacle2StraightParkReturn && route.stepCount==12);
+        assert(route.steps[8].radiusMm==0 && route.steps[9].radiusMm!=0 &&
+            route.steps[10].radiusMm!=0 && route.steps[11].radiusMm==0);
+        Trace(&route,p,547.915588f,7,true);
+    }
+    puts("PASS parking precedence: straight, single loose arc, then four-segment alignment; hard buffers retained");
+}
 int main(void) {
-    setbuf(stdout,NULL);Recorded();
+    setbuf(stdout,NULL);Recorded();ParkingPrecedence();
     unsigned cases=0;
     const float widths[]={300,500,751,800};
     const float distances[]={600,1050,1500};

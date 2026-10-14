@@ -789,9 +789,44 @@ static bool RearBypassAt(const Task2RouteConfig *bounds, Task2RoutePose p,
     return true;
 }
 
-/* Plan only the rear bypass. Parking is built after its measured brake stop.
- * Prefer a direct arc; otherwise bracket a positioning straight geometrically
- * and refine it with at most ten clearance checks. The accepting check is reused. */
+/* Each candidate has its own bounded certificate budget. Rear and parking
+ * certificates are merged only after both succeed. */
+static void ResetPlanning(void);
+
+static bool RearParkingCandidate(const Task2RouteConfig *bounds, Task2RoutePose p,
+    float position, bool tangent, unsigned parkingKind, Task2RouteStep out[6], unsigned *count)
+{
+    ResetPlanning();
+    if (!RearBypassAt(bounds, p, position, out, count, tangent))
+        return false;
+    if (parkingKind == 2U) return true;
+#if !TASK2_ROUTE_EXHAUSTIVE_CHECKS
+    Task2RouteReport rearClearance = planningWork.acceptedClearance;
+#endif
+    Task2RoutePose finish = p;
+    for (unsigned i = 0U; i < *count; ++i)
+        finish = Advance(finish, out[i].distanceMm, out[i].radiusMm);
+    Task2RouteStep parking;
+    bool accepted = false;
+    if (parkingKind == 0U) {
+        ResetPlanning();
+        accepted = CheckParkingStraight(bounds, finish, &parking);
+    } else {
+        for (unsigned goal = 0U; goal < 3U && !accepted; ++goal) {
+            ResetPlanning();
+            accepted = CheckParkingArc(bounds, finish, -bounds->secondArrow * 25.0f * goal, &parking);
+        }
+    }
+    if (!accepted) return false;
+#if !TASK2_ROUTE_EXHAUSTIVE_CHECKS
+    MergeMargins(&planningWork.acceptedClearance, &rearClearance);
+#endif
+    return true;
+}
+
+/* Select the parking category before committing a rear bypass: one straight,
+ * then one loose arc, then parallel alignment. Positioning feasibility is not
+ * monotonic: a rejected far endpoint must not discard valid interior poses. */
 static bool BuildParallelReturn(const Task2RouteConfig *c, Task2RoutePose p,
     float width, Task2RouteStep out[6], unsigned *count, bool *tangentReturn)
 {
@@ -802,45 +837,37 @@ static bool BuildParallelReturn(const Task2RouteConfig *c, Task2RoutePose p,
     float rear = c->parkToObstacle1Mm + 200.0f + c->obstacleFaceGapMm;
     float front = c->bodyCenterAheadOfRearAxleMm + 0.5f * c->bodyLengthMm + c->frontProtrusionMm;
     float clearance = c->firstArrow == c->secondArrow ? c->obstacleBufferMm + 20.0f : 21.0f;
-    float upperPosition = (rear + front + clearance - p.xMm) / cosf(h);
-    for (unsigned attempt = 0U; attempt < 2U; ++attempt)
-    {
-        bool tangent = attempt == 0U;
-        if (!RearBypassAt(&bounds, p, 0.0f, out, count, tangent))
-        {
-            float hi = upperPosition, lo = 0.0f;
-            if (hi <= 0.0f || !RearBypassAt(&bounds, p, hi, out, count, tangent))
-                continue;
-            for (unsigned i = 0U; i < 10U; ++i)
-            {
-                if (planningWork.exhausted)
-                    return false;
-                float mid = 0.5f * (lo + hi);
-                if (RearBypassAt(&bounds, p, mid, out, count, tangent))
-                    hi = mid;
-                else
-                    lo = mid;
+    float upper = fmaxf(0.0f, (rear + front + clearance - p.xMm) / cosf(h)) + 160.0f;
+    for (unsigned kind = 0U; kind < 3U; ++kind) {
+        /* A straight uses a park-directed tangent. A single parking arc can
+         * also follow the ordinary parallel rear turn. Alignment uses that
+         * parallel turn only, after both one-primitive categories failed. */
+        unsigned first = kind == 2U ? 1U : 0U;
+        unsigned last = kind == 0U ? 0U : 1U;
+        for (unsigned turn = first; turn <= last; ++turn) {
+            bool tangent = turn == 0U;
+            for (unsigned probe = 0U; probe <= 32U; ++probe) {
+                float hi = upper * probe / 32.0f;
+                if (!RearParkingCandidate(&bounds, p, hi, tangent, kind, out, count))
+                    continue;
+                if (probe) {
+                    float lo = upper * (probe - 1U) / 32.0f;
+                    for (unsigned refine = 0U; refine < 8U; ++refine) {
+                        float mid = 0.5f * (lo + hi);
+                        if (RearParkingCandidate(&bounds, p, mid, tangent, kind, out, count)) hi = mid;
+                        else lo = mid;
+                    }
+                    /* Prefer a small extra entry reserve if it still preserves
+                     * this parking category, otherwise keep the proven pose. */
+                    if (RearParkingCandidate(&bounds, p, hi + 10.0f, tangent, kind, out, count))
+                        hi += 10.0f;
+                }
+                if (!RearParkingCandidate(&bounds, p, hi, tangent, kind, out, count))
+                    continue;
+                *tangentReturn = tangent;
+                return true;
             }
-            if (!RearBypassAt(&bounds, p, hi + 10.0f, out, count, tangent))
-                continue;
         }
-        if (tangent)
-        {
-#if !TASK2_ROUTE_EXHAUSTIVE_CHECKS
-            Task2RouteReport arcClearance = planningWork.acceptedClearance;
-#endif
-            Task2RoutePose finish = p;
-            for (unsigned i = 0U; i < *count; ++i)
-                finish = Advance(finish, out[i].distanceMm, out[i].radiusMm);
-            Task2RouteStep straight;
-            if (!CheckParkingStraight(&bounds, finish, &straight))
-                continue;
-#if !TASK2_ROUTE_EXHAUSTIVE_CHECKS
-            MergeMargins(&planningWork.acceptedClearance, &arcClearance);
-#endif
-        }
-        *tangentReturn = tangent;
-        return true;
     }
     return false;
 }
