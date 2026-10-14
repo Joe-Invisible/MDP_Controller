@@ -74,12 +74,14 @@ rejected. Straight return and parking keep the normal 100 mm obstacle buffer,
 35 mm arena side margin. Carpark walls have separate margins: **100 mm for
 both side walls and their entrance tips**, and **75 mm for the back wall**.
 Distances to the finite wall segments are checked even while the chassis is
-outside the park mouth, so corner approaches cannot evade the side buffer. The larger of nominal
-and observed width is checked, with the original arena side boundaries retained.
+outside the park mouth, so corner approaches cannot evade the side buffer. The sensed
+conservative width supersedes the nominal assumption for the return, with the
+original arena side boundaries retained.
 
 The fixed O1 template is validated offline, with no online sweep. Variable O2
 primitives use bounded interval certificates and reuse accepted clearance results.
-Every planning call has a 12,288 footprint-check budget. Prefix straight distances
+Each planning probe has a 12,288 footprint-check budget; recovery can try several
+bounded probes while stationary. Prefix straight distances
 are nominal geometry previews, not IR execution limits. `sensorTerminated=true`
 tells `LaunchStep()` to use continuous motion; measured lengths replace previews
 when the robot stops. Full +/-90-degree departure and a bounded initial-absence
@@ -316,3 +318,41 @@ Motion launch must not infer width/gap or choose which sensor supplies them.
 The experimental detector still projects an edge against the configured O2 plane;
 live gap estimation, camera assistance and adaptive approach shortening are
 separate pending changes, not implemented by this LL/RR update.
+
+
+### Checked return recovery (production and experiment)
+
+The return planner is shared with `feature/task2-integration`. Before accepting
+a quarter/lateral turn or rear bypass it checks a complete continuation through
+full-body buffered parking. Preferred-family failure now tries short signed
+forward/reverse adjustments in 20 mm increments up to 160 mm, positioning beyond
+O2, an analytic rear arc, and an S ingress with a transverse segment. If required,
+the obstacle/arena allowances decrease through 100/35, 75/20, 50/10, 25/1 and
+1/1 mm tiers (capped by configured values). The existing IR outside-section
+exception remains. **Carpark side walls and mouth tips always retain 100 mm;
+the back wall always retains 75 mm.** Body overlap is never certified.
+
+The stopped harness integrates signed encoder distance for reverse recovery,
+checks measured return clearance, replans at the actual rear stop before fallback
+ingress, and requests another parking correction for a final stop outside the
+full-body parking predicate. It reports completion only once the robot is inside.
+The experiment retains its configured-arrow recognition/approach harness; the
+production app separately certifies departure at its measured approach stop.
+Step capacity is now 32. Inspect `route.report.completeReturnCertified`,
+`returnFallbackUsed`, `poseAdjustmentUsed`, `runtimeReducedClearanceUsed` and the
+chosen `returnObstacleBufferMm`/`returnBoundaryBufferMm` in the export.
+
+```sh
+python Tests/Host/test_task2_return.py
+python Tests/Host/test_task2_return.py --exhaustive
+```
+
+This additional harness replays run21, run16 and run22 stopped poses and mirrors,
+including a 40 mm reverse recovery for the original run21 stop. It traces every
+recovery primitive and measured-stop handoff, verifying hard carpark buffers and
+final containment in 1,296 combinations of all arrows, widths 300/500/751/800 mm,
+O1 positions and gaps 600/1050/1500 mm, lateral perturbations +/-20 mm and yaw
+perturbations +/-3 degrees. An already-invalid hard-carpark pose is explicitly
+rejected. `HARD_CLEARANCE_INFEASIBLE` remains for poses where no checked recovery
+fits the hard constraints; passing the matrix is not a universal physical
+guarantee for arbitrary poses or incorrect estimates.

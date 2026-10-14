@@ -552,12 +552,12 @@ static void testRecordedQuarterReturn(void)
         Task2Route rejected = route;
         Task2RoutePose collision = {c.parkToObstacle1Mm + 150 + c.obstacleFaceGapMm, 0, side*PI/2};
         assert(!Task2Route_ReplanObstacle2(&rejected,&collision,647.003174f,5));
-        assert(!strcmp(rejected.report.reason,"NO_IR_QUARTER_TURN"));
+        assert(!strcmp(rejected.report.reason,"HARD_CLEARANCE_INFEASIBLE"));
         rejected = route;
         Task2RoutePose wall = stop;
         wall.yMm = side*700;
         assert(!Task2Route_ReplanObstacle2(&rejected,&wall,647.003174f,5));
-        assert(!strcmp(rejected.report.reason,"NO_IR_QUARTER_TURN"));
+        assert(!strcmp(rejected.report.reason,"HARD_CLEARANCE_INFEASIBLE"));
         assert(Task2Route_ReplanObstacle2(&route,&stop,647.003174f,5));
         assert(route.obstacle2ParallelReturnPending && route.stepCount==7);
         near(route.steps[6].radiusMm,-side*275,0);
@@ -918,7 +918,12 @@ static void testRun14And16Failures(void)
         else
         {
             Task2Route rejected=route;
-            assert(!Task2Route_ReplanParallelReturn(&rejected,&start,798.202332f,6));
+            /* A conservative former width must invoke checked recovery rather
+             * than terminate at the stopped parallel pose. */
+            assert(Task2Route_ReplanParallelReturn(&rejected,&start,798.202332f,6));
+            assert(rejected.report.returnFallbackUsed && rejected.report.completeReturnCertified);
+            Task2RouteConfig recovery=Task2Route_ReturnBounds(&rejected);
+            assert(recovery.parkSideWallBufferMm==100 && recovery.parkBackWallBufferMm==75);
             assert(Task2Route_ReplanParallelReturn(&route,&start,state.observedWidthMm,6));
         }
         task2MotionTestRoute=route;resetHardware(0);idealPose=start;

@@ -17,7 +17,7 @@ Task2ObstacleDetection task2MotionTestDetection = {.detected=true,.observedWidth
 Task2MotionTestStartupRange task2MotionTestStartupRange = {.attempted=true,.valid=true,.sensorToObstacleMm=1090,.parkToObstacle1Mm=1050};
 Task2MotionTestState task2MotionTestState = TASK2_TEST_COMPLETE;
 Task2MotionTestResult task2MotionTestResult = {.passed=true,.completedSteps=8,.elapsedMs=17535,.routeSetupMs=13,.returnSetupMs=7,.parallelReturnSetupMs=11,.startupPlannerPoseChecks=100,.arrow1Recognised=true,.arrow2Recognised=true,.arrow2RecognitionElapsedMs=3210};
-Task2Route task2MotionTestRoute = {.config={.parkToObstacle1Mm=1050,.recognitionCameraRangeMm=1000,.parkSideWallBufferMm=100,.parkBackWallBufferMm=75,.obstacle2IRConfirmationSpeedCps=750},.totalTravelMm=7780,.obstacle2IRDeparture=true};
+Task2Route task2MotionTestRoute = {.config={.parkToObstacle1Mm=1050,.recognitionCameraRangeMm=1000,.parkSideWallBufferMm=100,.parkBackWallBufferMm=75,.obstacle2IRConfirmationSpeedCps=750},.totalTravelMm=7780,.obstacle2IRDeparture=true,.report={.completeReturnCertified=true,.returnFallbackUsed=true,.poseAdjustmentUsed=true,.returnObstacleBufferMm=25,.returnBoundaryBufferMm=1},.steps={[18]={.distanceMm=-40}}};
 Task2MotionTestStepResult task2MotionTestStepResults[TASK2_ROUTE_STEP_COUNT] = {{.measuredDistanceMm=790,.yawPredictedReached=true}};
 MotionControllerConfig task2MotionTestControllerConfig = {.straightYawRateKp=270,.arcYawRateKp=270};
 Task2MotionTestSample task2MotionTestLog[TASK2_MOTION_TEST_LOG_CAPACITY] = {{.timeMs=100,.stepIndex=0,.targetSpeedCps=2000},{.timeMs=200,.stepIndex=4,.targetSpeedCps=5000,.irObserved=true,.irFresh=true,.irValid=true,.irArmed=true,.irAdc=395,.irAbsentSamples=2,.ultrasonicFresh=true,.ultrasonicValid=true,.lastUltrasonicRangeMm=2400,.ultrasonicJumpSamples=3}};
@@ -65,6 +65,10 @@ def main():
             assert "obstacle2ParkReturnPending" in log and "irTrendCandidateValid" in log and "edgeMethod" in log
             assert "parkingReturnSetupMs" in log and "obstacle2RearStoppedPose" in log
             assert "obstacle2ParallelReturnPending" in log and "obstacleBufferExceptionUsed" in log
+            assert "completeReturnCertified = true" in log and "returnFallbackUsed = true" in log
+            assert "poseAdjustmentUsed = true" in log and "distanceMm = -40" in log
+            assert "returnObstacleBufferMm = 25" in log and "returnBoundaryBufferMm = 1" in log
+            assert "Recovery:" in log and "fallbackHomeStep" in log
             assert "arrow2RecognitionElapsedMs = 3210" in log
             assert "TASK2_TEST_COMPLETE" in log and "completedSteps = 8" in log
             assert "totalTravelMm = 7780" in log

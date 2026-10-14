@@ -31,6 +31,7 @@ define task2-motion-export
         echo Steps: Approach O1 -> O1 depart -> O1 bypass exit -> Approach O2 -> USS departure (median jump or confirmed no echo) -> measured edge stop -> clearance/back -> measured rear stop -> measured parking (straight/arc/alignment)\n
     end
     end
+    echo Recovery: full return certificate, signed pose adjustments, selected obstacle/arena allowances; carpark buffers stay hard. See route.report and fallbackHomeStep.\n
     echo ADC trace: raw/median/peak/decline, candidate and edge method; irFresh=true marks every selected IR read; irValid reports conversion validity.\n
     echo USS trace: raw range/validity, median residual/baseline, separate jump and no-echo counts; ultrasonicFresh marks LL/RR observations.\n
     p task2MotionTestStepResults

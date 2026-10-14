@@ -54,6 +54,7 @@ static RobotTestFixture fixture;
 static Task2RoutePose estimatedPose;
 static float completedTravelMm, completedYawRad, previousStepTravelMm, previousStepYawRad;
 static MotionControllerArcConfig testArcConfig;
+static bool returningHome;
 static MotionControllerArcFeedforwardPoint negativeFeedforwardPoints[9];
 /* Preserve the finite-curvature calibration used by the previous stopped run. */
 static const MotionControllerArcFeedforwardPoint positiveFeedforwardPoints[] = {
@@ -152,7 +153,7 @@ static MotionControllerStatus LaunchStep(void)
 static void UpdatePose(void)
 {
     const MotionController *c = &fixture.motionController;
-    float travel = fabsf(c->travelledDistanceMm);
+    float travel = c->travelledDistanceMm;
     float yaw = c->yawDeg * TASK2_PI / 180.0f;
     float ds = travel - previousStepTravelMm;
     float middleHeading = completedYawRad + 0.5f * (previousStepYawRad + yaw);
@@ -161,9 +162,32 @@ static void UpdatePose(void)
     estimatedPose.yawRad = completedYawRad + yaw;
     previousStepTravelMm = travel;
     previousStepYawRad = yaw;
-    task2MotionTestResult.measuredTravelMm = completedTravelMm + travel;
+    task2MotionTestResult.measuredTravelMm = completedTravelMm + fabsf(travel);
     task2MotionTestResult.measuredYawRad = completedYawRad + yaw;
     task2MotionTestResult.finalPoseEstimate = estimatedPose;
+}
+
+static bool CheckReturnPose(void)
+{
+    Task2RouteConfig bounds = Task2Route_ReturnBounds(&task2MotionTestRoute);
+    if (task2MotionTestRoute.obstacle2IRDeparture && !returningHome)
+        bounds.obstacleBufferMm = 1.0f;
+    Task2RouteReport report = {.minimumObstacleGapMm = INFINITY, .minimumSideMarginMm = INFINITY,
+        .minimumParkSideMarginMm = INFINITY, .minimumParkBackMarginMm = INFINITY};
+    if (Task2Route_CheckPose(&bounds, &estimatedPose, &report)) return true;
+    if (report.minimumParkSideMarginMm < bounds.parkSideWallBufferMm ||
+        report.minimumParkBackMarginMm < bounds.parkBackWallBufferMm)
+    {
+        task2MotionTestRoute.report.reason = "T2_HARD_PARK_CLEARANCE";
+        return false;
+    }
+    if (report.minimumObstacleGapMm < 1.0f || report.minimumSideMarginMm < 1.0f)
+    {
+        task2MotionTestRoute.report.reason = "T2_CLEARANCE";
+        return false;
+    }
+    task2MotionTestRoute.report.runtimeReducedClearanceUsed = true;
+    return true;
 }
 
 static bool ObservingObstacle2(void)
@@ -274,6 +298,7 @@ void Task2MotionTestRun(void)
     for (unsigned i = 0U; i < TASK2_ROUTE_STEP_COUNT; ++i)
         task2MotionTestStepResults[i] = (Task2MotionTestStepResult){0};
     completedTravelMm = completedYawRad = previousStepTravelMm = previousStepYawRad = 0.0f;
+    returningHome = false;
     estimatedPose = (Task2RoutePose){TASK2_ROUTE_START_X_MM, 0.0f, 0.0f};
     if (!Task2ObstacleDetection_ValidConfig(&task2MotionTestSensorConfig) ||
         task2MotionTestConfig.controlPeriodMs == 0U || task2MotionTestConfig.logPeriodMs == 0U ||
@@ -406,6 +431,8 @@ void Task2MotionTestRun(void)
             task2MotionTestResult.status = MotionController_Update(&fixture.motionController,
                 (nowMs - previousUpdateMs) / 1000.0f);
             UpdatePose();
+            if (task2MotionTestResult.obstacle2EdgeStopped && !CheckReturnPose())
+                task2MotionTestResult.status = MOTIONCONTROLLER_STATUS_INVALID_STATE;
             if (task2MotionTestResult.status == MOTIONCONTROLLER_STATUS_OK && !edgeBraking &&
                 task2MotionTestState == TASK2_TEST_RUNNING)
                 task2MotionTestResult.status = LimitIRDepartureSpeed();
@@ -505,7 +532,7 @@ void Task2MotionTestRun(void)
                 break;
             const MotionController *c = &fixture.motionController;
             task2MotionTestStepResults[task2MotionTestStepIndex] = (Task2MotionTestStepResult){
-                fabsf(c->travelledDistanceMm), c->yawDeg * TASK2_PI / 180.0f,
+                c->travelledDistanceMm, c->yawDeg * TASK2_PI / 180.0f,
                 c->terminalYawPredictedReached, c->terminalDistanceLimitReached};
             completedTravelMm = task2MotionTestResult.measuredTravelMm;
             completedYawRad = task2MotionTestResult.measuredYawRad;
@@ -571,9 +598,12 @@ void Task2MotionTestRun(void)
                     break;
                 }
             }
-            if (task2MotionTestRoute.obstacle2ParkReturnPending &&
-                task2MotionTestResult.completedSteps == task2MotionTestRoute.stepCount)
+            if ((task2MotionTestRoute.obstacle2ParkReturnPending &&
+                    task2MotionTestResult.completedSteps == task2MotionTestRoute.stepCount) ||
+                (task2MotionTestRoute.returnFallbackActive && task2MotionTestRoute.fallbackHomeStep > 0U &&
+                    task2MotionTestStepIndex + 1U == task2MotionTestRoute.fallbackHomeStep))
             {
+                returningHome = true;
                 if (task2MotionTestRoute.parkingHeadingCorrections == 0U)
                     task2MotionTestResult.obstacle2RearStoppedPose = estimatedPose;
                 uint32_t parkingStart = HAL_GetTick();
@@ -581,6 +611,18 @@ void Task2MotionTestRun(void)
                     &estimatedPose, task2MotionTestDetection.observedWidthMm, task2MotionTestStepIndex);
                 task2MotionTestResult.parkingReturnSetupMs += HAL_GetTick() - parkingStart;
                 if (!parkingPlanned)
+                {
+                    task2MotionTestResult.status = MOTIONCONTROLLER_STATUS_PROFILE_ERROR;
+                    break;
+                }
+            }
+            if (task2MotionTestResult.completedSteps == task2MotionTestRoute.stepCount &&
+                !Task2Route_IsParked(&task2MotionTestRoute.config, &estimatedPose))
+            {
+                returningHome = true;
+                task2MotionTestRoute.obstacle2ParkReturnPending = true;
+                if (!Task2Route_ReplanParkingReturn(&task2MotionTestRoute, &estimatedPose,
+                    task2MotionTestDetection.observedWidthMm, task2MotionTestStepIndex))
                 {
                     task2MotionTestResult.status = MOTIONCONTROLLER_STATUS_PROFILE_ERROR;
                     break;

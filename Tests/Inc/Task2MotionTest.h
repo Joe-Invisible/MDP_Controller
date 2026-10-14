@@ -69,7 +69,7 @@ typedef struct
 
 typedef struct
 {
-    float measuredDistanceMm;
+    float measuredDistanceMm; /* Signed travel; negative means reverse recovery. */
     float measuredYawRad;
     bool yawPredictedReached;
     bool distanceLimitReached;
