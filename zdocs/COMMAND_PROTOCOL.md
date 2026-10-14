@@ -339,14 +339,14 @@ stationary. While it runs, the RPi and STM also exchange (r = the batch id):
 
 | Direction | Line | Meaning |
 | --- | --- | --- |
-| RPi -> STM | `A - 1 L` / `A - 1 R` / `A - 1 -` | Before START only: arrow 1 already seen (`-` clears it), so the route can be planned before START. Planning only: never the run's arrow; dropped when a run starts |
+| RPi -> STM | `A - 1 L` / `A - 1 R` / `A - 1 -` | Before START only: arrow 1 preview (`-` clears it). Stored for protocol compatibility; current app does not pre-plan from it. Never the run's arrow; dropped at start |
 | STM -> RPi | `ACK - 1 L` / `NAK - n STATE` | Stored / during a run, or n is not 1 |
 | STM -> RPi | `EV r APPROACH n` | Approaching obstacle n (2: camera past obstacle 1's face) |
 | RPi -> STM | `A r n L` / `A r n R` | Arrow on obstacle n |
 | STM -> RPi | `ACK r n L` | Stored; repeated for a resend |
 | STM -> RPi | `NAK r n ARROW` / `NAK r n STATE` | Other side already stored (kept) / wrong run or not approaching n |
 | STM -> RPi | `EV r WAIT n` | Stopped at the decision point without arrow n; never guesses |
-| RPi -> STM | `W r mm` | Obstacle 2 bullseye span (reserved; a lower bound, not its width) |
+| RPi -> STM | `W r mm` | Obstacle 2 bullseye span (lower bound; may enlarge the planning footprint) |
 | STM -> RPi | `ACK r W mm` / `NAK r W STATE` | Stored / after ROUND2 or another run |
 | STM -> RPi | `EV r ROUND 2` | Committed to the way round obstacle 2 |
 | RPi -> STM | `Q T` | Course state |
@@ -355,9 +355,12 @@ stationary. While it runs, the RPi and STM also exchange (r = the batch id):
 
 Stages: `IDLE APPROACH1 WAIT1 SWERVE1 APPROACH2 WAIT2 ROUND2 HOME DONE STOPPED FAULT`.
 `Apps/Src/Task2Commands.c` holds this state (host-tested). The route lives in
-`Apps/Src/Task2Course.c` behind `Task2CourseIo` (straight, arc, busy, brake);
-each primitive is guarded by the movement watchdog.
+`Apps/Src/Task2App.c` behind `Task2AppIo` (motion requests and sensor/odometry snapshots).
+`Task2Course` selects that app or the explicit dry run; each primitive is guarded by the movement watchdog.
 `Apps/Src/Task2Run.c` decides when DONE, STOPPED and FAULT may be reported
 (host-tested in `hosttests/task2_run_test.c`); MotionTask only calls it. `TASK2_COURSE_DRY_RUN=1`
-(the default) runs timed stages without motion and shows `T2 DRY RUN` on the
-OLED: a bench test of the RPi link only.
+runs timed stages without motion and shows `T2 DRY RUN` on the OLED: a bench test
+of the RPi link only. The default is now `0`, selecting actual movement. See
+[TASK2_INTEGRATION.md](TASK2_INTEGRATION.md) for configuration, the test sequence,
+measurement assumptions and validation commands. A newly accepted batch does not
+send an immediate ACK; Task2 starts by emitting `EV r APPROACH 1`.

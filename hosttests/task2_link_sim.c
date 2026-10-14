@@ -5,7 +5,7 @@
  * 200 ms brake after S). Lines in on
  * stdin, replies out on stdout, so the RPi's own code can talk to it.
  *
- * cc -std=c11 -Wall -Wextra -Werror -IApps/Inc hosttests/task2_link_sim.c
+ * cc -std=c11 -Wall -Wextra -Werror -DTASK2_COURSE_DRY_RUN=1 -IApps/Inc hosttests/task2_link_sim.c
  *    Apps/Src/Command{Parser,Session,Motion}.c Apps/Src/Task2{Commands,Course,Run}.c
  *    -lm -o /tmp/task2_link_sim
  *

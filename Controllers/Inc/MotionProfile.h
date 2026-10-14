@@ -1,7 +1,7 @@
 /*
  * MotionProfile.h
  *
- * Generates a bounded vehicle-speed reference for finite-distance motion.
+ * Generates a bounded vehicle-speed reference for finite-distance or caller-terminated motion.
  * All distances and speeds are unsigned magnitudes.
  *
  *  Created on: 2026年9月7日
@@ -26,6 +26,8 @@ typedef struct MotionProfile {
      */
     float targetDistanceMm;
     float maxSpeedMmps;
+    /* Optional soft cruise request. Zero inherits maxSpeedMmps. */
+    float requestedCruiseSpeedMmps;
 
     /*
      * Current generated speed reference
@@ -33,6 +35,7 @@ typedef struct MotionProfile {
     float targetSpeedMmps;
 
     bool active;
+    bool continuous; /* No distance completion; caller stops the profile. */
 
     float completionToleranceMm;
 
@@ -59,6 +62,13 @@ bool MotionProfile_Start(
     float distanceMm,
     float maxSpeedMmps);
 
+/* Start acceleration-limited cruise without a distance endpoint. */
+bool MotionProfile_StartContinuous(MotionProfile *profile, float maxSpeedMmps);
+
+/* Change cruise speed while active, preserving distance, speed and progress.
+ * The hard max/stopping envelope still wins; requests use normal accel/decel. */
+bool MotionProfile_RequestCruiseSpeed(MotionProfile *profile, float speedMmps);
+
 /**
  * @brief Updates the speed reference using travelled
  * 		distance measured from the start of the motion
@@ -70,6 +80,14 @@ float MotionProfile_Update(
     MotionProfile *profile,
     float travelledDistanceMm,
     float dt);
+
+/* Same acceleration/completion rules, with a stopping-speed envelope computed
+ * by a path planner for varying deceleration along the remaining distance. */
+float MotionProfile_UpdateWithBrakingLimit(
+    MotionProfile *profile,
+    float travelledDistanceMm,
+    float dt,
+    float brakingSpeedLimitMmps);
 
 /**
  * @brief Stops profile generation and resets the

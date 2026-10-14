@@ -65,6 +65,39 @@ static MotionController motionController;
 /* MotionController retains this configuration pointer for its lifetime. */
 static MotionControllerConfig runtimeMotionConfig;
 
+static MotionControllerConfig commandMotionConfig, task2MotionConfig;
+static MotionControllerArcConfig task2ArcConfig;
+static MotionControllerArcFeedforwardPoint task2NegativePoints[9];
+static const MotionControllerArcFeedforwardPoint task2PositivePoints[] = {
+    {0.0000005f, -0.05208333f}, {0.000054f, -5.625f}, {0.000183f, -11.25f}, {0.000436f, -16.875f},
+    {1.0f / 1500.0f, -22.5f}, {1.0f / 1000.0f, -27.7f},
+    {1.0f / 500.0f, -47.5f}, {1.0f / 300.0f, -75.0f}, {1.0f / 275.0f, -81.7f},
+};
+static bool MotionTask_ConfigureTask2(void) {
+    commandMotionConfig = runtimeMotionConfig;
+    task2MotionConfig = runtimeMotionConfig;
+    task2MotionConfig.straightYawRateKp = task2MotionConfig.arcYawRateKp = 200.0f;
+    task2MotionConfig.straightYawRateKi = task2MotionConfig.arcYawRateKi = 100.0f;
+    task2MotionConfig.straightYawRateKd = task2MotionConfig.arcYawRateKd = 0.0f;
+    task2MotionConfig.straightHeadingKpPerSec = task2MotionConfig.arcHeadingKpPerSec = 0.2f;
+    task2MotionConfig.straightAccelerationMmps2 = task2MotionConfig.straightDecelerationMmps2 = 3000.0f;
+    task2MotionConfig.arcAccelerationMmps2 = task2MotionConfig.arcDecelerationMmps2 = 2000.0f;
+    task2MotionConfig.useMatchedYawRateReferenceFilter = false;
+    task2ArcConfig = arcMotionConfig;
+    task2ArcConfig.positivePoints = task2PositivePoints;
+    task2ArcConfig.positivePointCount = sizeof(task2PositivePoints) / sizeof(task2PositivePoints[0]);
+    uint32_t count = arcMotionConfig.negativePointCount;
+    if (!count || count >= sizeof(task2NegativePoints) / sizeof(task2NegativePoints[0])) return false;
+    for (uint32_t i = 0; i < count; ++i) task2NegativePoints[i] = arcMotionConfig.negativePoints[i];
+    const MotionControllerArcFeedforwardPoint *near = &task2NegativePoints[count - 1U];
+    task2NegativePoints[count] = (MotionControllerArcFeedforwardPoint){-0.0000005f,
+        near->rawSteeringCommand * -0.0000005f / near->curvaturePerMm};
+    task2ArcConfig.negativePoints = task2NegativePoints;
+    task2ArcConfig.negativePointCount = count + 1U;
+    task2MotionConfig.arcConfig = &task2ArcConfig;
+    return true;
+}
+
 static OLED_Handle_t cmdStatus;
 
 /* NULL means success; a precise reason remains readable through STATUS. */
@@ -292,8 +325,8 @@ static const char *MotionTask_Task2Move(float distanceMm, float radiusMm, float 
         ? COMMANDMOTION_STRAIGHT_COMPLETION_TOLERANCE_MM
         : runtimeMotionConfig.motionCompletionToleranceMm;
     if (!MotionProfile_Init(&motionController.motionProfile,
-                            runtimeMotionConfig.motionAccelerationMmps2,
-                            runtimeMotionConfig.motionDecelerationMmps2,
+                            (radiusMm == 0.0f ? runtimeMotionConfig.straightAccelerationMmps2 : runtimeMotionConfig.arcAccelerationMmps2),
+                            (radiusMm == 0.0f ? runtimeMotionConfig.straightDecelerationMmps2 : runtimeMotionConfig.arcDecelerationMmps2),
                             completionToleranceMm))
         return "REJECTED";
     float mmPerCount = 3.14159265358979323846f *
@@ -330,12 +363,46 @@ static void MotionTask_Task2Brake(void *context) {
     MotionController_Brake(&motionController);
 }
 
-static const Task2CourseIo task2CourseIo = {
+static const char *MotionTask_Task2Speed(void *context, float speedCps) {
+    (void)context;
+    return MotionController_RequestCruiseSpeed(&motionController, speedCps)
+        == MOTIONCONTROLLER_STATUS_OK ? NULL : "T2_SPEED";
+}
+static const char *MotionTask_Task2Continuous(void *context, float speedCps) {
+    (void)context;
+    if (MotionController_IsBusy(&motionController)) return "T2_BUSY";
+    /* Time/progress watchdog, independent of inferred width. No motion endpoint. */
+    if (!MotionWatchdog_Start(&watchdog, HAL_GetTick(), 1.0f, 1.0f, WATCH_PREPARE)) return "REJECTED";
+    watchdog.limitMs = 30000U;
+    return MotionController_MoveStraightContinuous(&motionController, speedCps)
+        == MOTIONCONTROLLER_STATUS_OK ? NULL : "REJECTED";
+}
+static Task2MotionReading MotionTask_Task2Motion(void *context) {
+    (void)context;
+    return (Task2MotionReading){
+        .distanceMm = motionController.travelledDistanceMm,
+        .yawRad = motionController.yawDeg * 3.14159265358979323846f / 180.0f,
+        .moving = MotionController_IsBusy(&motionController),
+        .braking = motionController.mode == MOTIONCONTROLLER_BRAKING,
+    };
+}
+static UltrasonicReading MotionTask_Task2USS(void *context) {
+    (void)context; return SensorTask_GetUltrasonic();
+}
+static IRPairReading MotionTask_Task2IR(void *context) {
+    (void)context; return SensorTask_GetIR();
+}
+
+static Task2CourseIo task2CourseIo = {
     .moveStraight = MotionTask_Task2Straight,
     .moveArc = MotionTask_Task2Arc,
     .busy = MotionTask_Task2Busy,
     .brake = MotionTask_Task2Brake,
-    .requestSpeed = NULL,
+    .requestSpeed = MotionTask_Task2Speed,
+    .moveContinuous = MotionTask_Task2Continuous,
+    .motion = MotionTask_Task2Motion,
+    .ultrasonic = MotionTask_Task2USS,
+    .infrared = MotionTask_Task2IR,
 };
 
 static void MotionTask_SendTask2Events(void) {
@@ -348,6 +415,13 @@ static const char *MotionTask_Start(const Command *cmd) {
     ultrasonicCommand = false;
     progressTracking = false;
     CommandProgress_Attempt(&commandProgress, (unsigned)session.next + 1U, cmd);
+    runtimeMotionConfig = cmd->type == COMMAND_TASK2 ? task2MotionConfig : commandMotionConfig;
+    /* Switch at a stopped batch boundary, retaining command-mode wheel tuning. */
+    leftWheelController.pid.kp = rightWheelController.pid.kp =
+        cmd->type == COMMAND_TASK2 ? 0.03f : WHEELSPEEDCONTROLLER_KP;
+    leftWheelController.pid.ki = rightWheelController.pid.ki =
+        cmd->type == COMMAND_TASK2 ? 0.0f : WHEELSPEEDCONTROLLER_KI;
+    leftWheelController.pid.kd = rightWheelController.pid.kd = 0.0f;
     if (cmd->type == COMMAND_TASK2) {
         Task2CommandArrow arrow1 = cmd->param > 0.0f ? TASK2_COMMAND_ARROW_LEFT
                                  : cmd->param < 0.0f ? TASK2_COMMAND_ARROW_RIGHT : TASK2_COMMAND_ARROW_NONE;
@@ -375,8 +449,8 @@ static const char *MotionTask_Start(const Command *cmd) {
     if (cmd->type == COMMAND_ULTRASONIC)
         completionToleranceMm = ULTRASONIC_APPROACH_STOP_MARGIN_MM;
     if (!MotionProfile_Init(&motionController.motionProfile,
-                            runtimeMotionConfig.motionAccelerationMmps2,
-                            runtimeMotionConfig.motionDecelerationMmps2,
+                            (motion.radiusMm == 0.0f ? runtimeMotionConfig.straightAccelerationMmps2 : runtimeMotionConfig.arcAccelerationMmps2),
+                            (motion.radiusMm == 0.0f ? runtimeMotionConfig.straightDecelerationMmps2 : runtimeMotionConfig.arcDecelerationMmps2),
                             completionToleranceMm))
         return "REJECTED";
     float mmPerCount = 3.14159265358979323846f *
@@ -535,6 +609,13 @@ void MotionTask(void *argument) {
         }
     }
 
+    if (!MotionTask_ConfigureTask2()) {
+        CommandLink_Send("FAULT - T2_CONFIG\n");
+        return;
+    }
+    task2CourseIo.mmPerCount = 3.14159265358979323846f *
+        runtimeMotionConfig.kinematics->rearWheelDiameterMm / runtimeMotionConfig.kinematics->rearEncoderCountsPerRev;
+    task2CourseIo.decelerationMmps2 = task2MotionConfig.arcDecelerationMmps2;
     MotionTask_CentreSteering();
     OLED_Post(&cmdStatus, "READY");
     CommandLink_Send("READY\n");

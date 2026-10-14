@@ -21,14 +21,14 @@
  *   STM -> RPi   ACK - 1 L|R|- stored, for planning only: the run's arrow 1 comes from its
  *                start line, "r:T2L" / "r:T2R" (or none with "r:T2"), never from the preview
  *                NAK - n STATE during a run, or n is not 1
- *   RPi -> STM   W r mm        obstacle 2 bullseye span (reserved; see Task2Commands_Span)
+ *   RPi -> STM   W r mm        obstacle 2 bullseye span (lower bound; see Task2Commands_Span)
  *   STM -> RPi   ACK r W mm    stored; NAK r W STATE after ROUND2 or for another run
  *   RPi -> STM   Q T           course state
  *   STM -> RPi   T r stage a1 a2   e.g. "T 12 WAIT2 L -"; "T - IDLE - -" before any run
  *   STM -> RPi   EV r APPROACH n | EV r WAIT n | EV r ROUND 2 | EV r SUMMARY x1 x2 w2 path
  *
- * The preview lets the course plan obstacle 1 before START (Task2Commands_Preview); if the
- * start line's arrow differs, the course replans.
+ * The preview remains available through Task2Commands_Preview for future pre-planning;
+ * the current app plans after START from fresh ranging and the actual run arrow.
  * A stored arrow never changes. The course reads it with Task2Commands_Arrow()
  * and never guesses: with no arrow at its decision point it stops in WAITn
  * until one arrives or S cancels the run.

@@ -200,6 +200,14 @@ void SteeringController_SetRawCommandRateLimited(
     float command,
     float dt);
 
+/** Raw control with a caller-selected software slew limit in raw units/s.
+ * Does not change the calibration or the rate used by other callers. */
+void SteeringController_SetRawCommandWithRateLimit(
+    SteeringController *controller,
+    float command,
+    float dt,
+    float maxCommandRatePerSec);
+
 /**
  * @brief Command a steering position.
  *

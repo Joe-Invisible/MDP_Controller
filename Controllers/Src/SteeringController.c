@@ -588,10 +588,25 @@ void SteeringController_SetRawCommandRateLimited(
     float desiredCommand,
     float dt)
 {
+    if (controller == NULL || controller->calibration == NULL)
+    {
+        return;
+    }
+    SteeringController_SetRawCommandWithRateLimit(
+        controller, desiredCommand, dt, controller->calibration->maxCommandRatePerSec);
+}
+
+
+void SteeringController_SetRawCommandWithRateLimit(
+    SteeringController *controller,
+    float desiredCommand,
+    float dt,
+    float maxCommandRatePerSec)
+{
     if (controller == NULL ||
         controller->servo == NULL ||
-        controller->calibration == NULL ||
-        dt <= 0.0f)
+        !isfinite(desiredCommand) || !isfinite(dt) || dt <= 0.0f ||
+        !isfinite(maxCommandRatePerSec) || maxCommandRatePerSec <= 0.0f)
     {
         return;
     }
@@ -602,13 +617,8 @@ void SteeringController_SetRawCommandRateLimited(
             SERVO_STEER_MIN,
             SERVO_STEER_MAX);
 
-    /*
-     * Reuse the experimentally validated steering-command slew
-     * rate for now. This can later be moved out of the legacy
-     * calibration configuration.
-     */
     float maxDeltaCommand =
-        controller->calibration->maxCommandRatePerSec * dt;
+        maxCommandRatePerSec * dt;
 
     float deltaCommand =
         desiredCommand - controller->command;

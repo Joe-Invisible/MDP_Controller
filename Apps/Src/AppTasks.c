@@ -23,11 +23,12 @@ const osThreadAttr_t OLEDTask_attributes = {
 
 /*
  * Owns motion and protocol state. The larger stack accommodates strtof
- * when parsing a batch; controller and batch storage are static.
+ * when parsing a batch and certifying Task2 geometry; controller, course,
+ * sensor history and batch storage are static.
  */
 const osThreadAttr_t MotionTask_attributes = {
   .name = "MotionTask",
-  .stack_size = 512 * 4,
+  .stack_size = 1536 * 4,
   .priority = (osPriority_t) osPriorityAboveNormal,
 };
 

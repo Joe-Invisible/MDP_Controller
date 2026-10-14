@@ -19,7 +19,7 @@ typedef struct { uint32_t unused; } TIM_HandleTypeDef;
 typedef struct { uint32_t unused; } I2C_HandleTypeDef;
 #endif
 """
-HARNESS = r'''
+FIXTURE_HARNESS = r'''
 #include "MotionController.h"
 #include "SteeringControllerConfig.h"
 #include <assert.h>
@@ -80,11 +80,24 @@ static MotionControllerStatus initMotion(Fixture *f)
                                 &f->steering, &f->imu, &f->config);
 }
 
+static MotionControllerArcConfig fixtureArcConfig;
+
 static void setup(Fixture *f, bool legacy)
 {
     *f = (Fixture){0};
     f->config = motionControllerConfig;
     f->config.useLegacyStraightSteering = legacy;
+    /* Test operating point is explicit, independent of command-branch tuning. */
+    f->config.straightHeadingKpPerSec = f->config.arcHeadingKpPerSec = 0.5f;
+    f->config.straightYawRateKp = f->config.arcYawRateKp = 100.0f;
+    f->config.straightYawRateKi = f->config.arcYawRateKi = 50.0f;
+    f->config.straightAccelerationMmps2 = f->config.arcAccelerationMmps2 = 1500.0f;
+    f->config.straightDecelerationMmps2 = f->config.arcDecelerationMmps2 = 1000.0f;
+    /* Preparation assertions use fixed times, independent of experiment tuning. */
+    f->config.straightSteeringSettlingTimeSec = 0.5f;
+    fixtureArcConfig = *f->config.arcConfig;
+    fixtureArcConfig.steeringSettlingTimeSec = 0.5f;
+    f->config.arcConfig = &fixtureArcConfig;
     f->config.arcYawRateFilterTauSec = 0.0f;
     f->left.motor = &f->leftMotor;
     f->right.motor = &f->rightMotor;
@@ -122,19 +135,25 @@ static void prepare(Fixture *f, MotionControllerMode preparing,
     near(f->motion.yawDeg, 0.0f, 0.0f);
 }
 
+'''
+HARNESS = FIXTURE_HARNESS + r'''
 static void testStraightSignsAndGeometry(void)
 {
     for (int direction = -1; direction <= 1; direction += 2) {
         for (int yawSign = -1; yawSign <= 1; yawSign += 2) {
             Fixture f;
             setup(&f, false);
+            /* Exercise the heading bound independently of production gain tuning. */
+            f.config.straightHeadingKpPerSec = 2.0f;
+            assert(initMotion(&f) == 0);
             /* Exercise both return directions from a raw arc command. */
             SteeringController_SetRawCommand(&f.steering, yawSign * 60.0f);
             assert(MotionController_MoveStraight(&f.motion, direction * 500.0f,
                                                 2000.0f) == 0);
             float centre = SteeringController_GetCommand(&f.steering);
             near(f.motion.arcSteeringFeedforwardCommand, centre, 0.0f);
-            assert(f.steering.effectiveAngleModelValid);
+            assert(!f.steering.effectiveAngleModelValid);
+            near(centre, f.config.straightSteeringFeedforwardCommand, 0.0f);
             prepare(&f, MOTIONCONTROLLER_STRAIGHT_PREPARING,
                         MOTIONCONTROLLER_STRAIGHT);
             f.motion.yawDeg = yawSign * 2.0f;
@@ -175,10 +194,10 @@ static void testFixedStraightFeedforward(void)
     for (int direction = -1; direction <= 1; direction += 2) {
         Fixture f;
         setup(&f, false);
-        f.config.arcYawRateKp = 0.0f;
-        f.config.arcYawRateKi = 0.0f;
-        f.config.arcYawRateKd = 0.0f;
-        f.config.arcHeadingKpPerSec = 0.0f;
+        f.config.straightYawRateKp = 0.0f;
+        f.config.straightYawRateKi = 0.0f;
+        f.config.straightYawRateKd = 0.0f;
+        f.config.straightHeadingKpPerSec = 0.0f;
         assert(initMotion(&f) == MOTIONCONTROLLER_STATUS_OK);
         assert(MotionController_MoveStraight(&f.motion, direction * 1000.0f,
                                             2000.0f) == 0);
@@ -212,11 +231,18 @@ static void testArcAndReverse(void)
         for (int turn = -1; turn <= 1; turn += 2) {
             Fixture f;
             setup(&f, false);
+            /* Explicit nonzero outer gain for sign/curvature checks; production
+             * arc heading gain is currently zero. Supply measured wheel speed
+             * because yaw-rate FF now uses filtered measured centre speed. */
+            f.config.arcHeadingKpPerSec = 1.0f;
+            assert(initMotion(&f) == 0);
+            f.left.measuredSpeedCps = direction * 100.0f;
+            f.right.measuredSpeedCps = direction * 100.0f;
             assert(MotionController_MoveArc(&f.motion, direction * 500.0f,
                                             turn * 500.0f, 2000.0f) == 0);
             near(f.steering.command, turn == -1 ? 47.5f : -47.5f, 1e-5f);
             prepare(&f, MOTIONCONTROLLER_ARC_PREPARING, MOTIONCONTROLLER_ARC);
-            near(f.motion.arcCommandedCurvaturePerMm, turn / 500.0f, 1e-7f);
+            near(f.motion.targetCurvaturePerMm, turn / 500.0f, 1e-7f);
             assert(f.motion.arcFeedforwardYawRateRadPerSec * turn * direction > 0);
             float nominalKappa = f.motion.targetCurvaturePerMm;
             f.motion.yawDeg = 10.0f;
@@ -291,6 +317,41 @@ static void testLegacyAndValidation(void)
     assert(initMotion(&f) == MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION);
 }
 
+static void testStandaloneArcTerminalPolicy(void)
+{
+    for (int direction = -1; direction <= 1; direction += 2) {
+        for (int turn = -1; turn <= 1; turn += 2) {
+            for (unsigned early = 0; early < 2; ++early) {
+                Fixture f;
+                setup(&f, false);
+                f.config.arcConfig = &(MotionControllerArcConfig){
+                    arcMotionConfig.negativePoints, arcMotionConfig.negativePointCount,
+                    arcMotionConfig.positivePoints, arcMotionConfig.positivePointCount, 0
+                };
+                assert(initMotion(&f) == 0);
+                assert(MotionController_MoveArc(&f.motion, direction * 500, turn * 500, 2000) == 0);
+                float mm = PI * kinematics.rearWheelDiameterMm / kinematics.rearEncoderCountsPerRev;
+                int yawDirection = direction * turn;
+                f.motion.yawDeg = yawDirection * (1 - (early ? 0.04f : 0.1f)) * 180 / PI;
+                gyroDps = early ? yawDirection * 40 : 0;
+                int counts = (int)roundf((early ? 490 : 501) / mm);
+                f.leftMotor.state.encCount = f.rightMotor.state.encCount = direction * counts;
+                update(&f, DT);
+                if (early) assert(f.motion.mode == MOTIONCONTROLLER_BRAKING);
+                else {
+                    assert(f.motion.mode == MOTIONCONTROLLER_ARC);
+                    near(fabsf(f.motion.targetSpeedCps), 400, 1e-4f);
+                    near(f.motion.arcDesiredYawRad, yawDirection, 1e-6f);
+                    f.leftMotor.state.encCount = f.rightMotor.state.encCount =
+                        direction * (int)ceilf(531 / mm);
+                    update(&f, DT);
+                    assert(f.motion.mode == MOTIONCONTROLLER_BRAKING);
+                }
+            }
+        }
+    }
+}
+
 static void testCompletionAndFaults(void)
 {
     Fixture f;
@@ -329,13 +390,83 @@ static void testCompletionAndFaults(void)
     near(f.right.targetSpeedCps, 0, 0);
 }
 
+
+static void testStandaloneCruiseRequests(void)
+{
+    for (int direction=-1; direction<=1; direction+=2)
+    for (unsigned arc=0; arc<2; ++arc)
+    {
+        Fixture f; setup(&f,false);
+        assert((arc ? MotionController_MoveArc(&f.motion,direction*4000,500,5000)
+                    : MotionController_MoveStraight(&f.motion,direction*4000,5000)) == 0);
+        assert(MotionController_RequestCruiseSpeed(&f.motion,2000) == 0);
+        prepare(&f,arc ? MOTIONCONTROLLER_ARC_PREPARING : MOTIONCONTROLLER_STRAIGHT_PREPARING,
+            arc ? MOTIONCONTROLLER_ARC : MOTIONCONTROLLER_STRAIGHT);
+        for(unsigned i=0;i<100;++i)update(&f,DT);
+        near(fabsf(f.motion.targetSpeedCps),2000,0.01f);
+        float before=f.motion.motionProfile.targetSpeedMmps;
+        assert(MotionController_RequestCruiseSpeed(&f.motion,5000) == 0);
+        update(&f,DT);
+        near(f.motion.motionProfile.targetSpeedMmps,
+            before+f.motion.motionProfile.accelerationMmps2*DT,0.01f);
+        before=f.motion.motionProfile.targetSpeedMmps;
+        assert(MotionController_RequestCruiseSpeed(&f.motion,1000) == 0);
+        update(&f,DT);
+        near(f.motion.motionProfile.targetSpeedMmps,
+            before-f.motion.motionProfile.decelerationMmps2*DT,0.01f);
+        near(f.motion.targetDistanceMm,4000,0);
+        assert(f.motion.motionDirection == direction);
+        assert(MotionController_RequestCruiseSpeed(&f.motion,0) == MOTIONCONTROLLER_STATUS_INVALID_SPEED);
+        assert(MotionController_RequestCruiseSpeed(&f.motion,5001) == MOTIONCONTROLLER_STATUS_INVALID_SPEED);
+        assert(MotionController_Brake(&f.motion) == 0);
+        assert(MotionController_RequestCruiseSpeed(&f.motion,2000) == MOTIONCONTROLLER_STATUS_INVALID_STATE);
+        MotionController_Stop(&f.motion);
+    }
+}
+
+static void testContinuousStraight(void)
+{
+    for (int direction = -1; direction <= 1; direction += 2)
+    {
+        Fixture f;
+        setup(&f, false);
+        assert(MotionController_MoveStraightContinuous(&f.motion, direction * 2000.0f) == 0);
+        prepare(&f, MOTIONCONTROLLER_STRAIGHT_PREPARING, MOTIONCONTROLLER_STRAIGHT);
+        assert(f.motion.motionProfile.continuous && f.motion.targetDistanceMm == 0);
+        for (unsigned i = 0; i < 3000; ++i)
+        {
+            f.leftMotor.state.encCount += direction;
+            f.rightMotor.state.encCount += direction;
+            update(&f, DT);
+            assert(f.motion.mode == MOTIONCONTROLLER_STRAIGHT);
+        }
+        assert(fabsf(f.motion.travelledDistanceMm) > 300);
+        near(f.motion.targetSpeedCps, direction * 2000.0f, 0.1f);
+        assert(MotionController_RequestCruiseSpeed(&f.motion, 1000) == 0);
+        for (unsigned i = 0; i < 1000; ++i) update(&f, DT);
+        near(f.motion.targetSpeedCps, direction * 1000.0f, 0.1f);
+        assert(MotionController_Brake(&f.motion) == 0);
+        for (unsigned i = 0; i < f.config.stopStableSampleCount; ++i) update(&f, DT);
+        assert(!MotionController_IsBusy(&f.motion));
+        assert(MotionController_MoveStraight(&f.motion, 50, 1000) == 0);
+        assert(!f.motion.motionProfile.continuous);
+        assert(MotionController_Stop(&f.motion) == 0);
+        assert(MotionController_MoveStraightContinuous(&f.motion, 0) == MOTIONCONTROLLER_STATUS_INVALID_SPEED);
+        assert(MotionController_MoveStraightContinuous(&f.motion, NAN) == MOTIONCONTROLLER_STATUS_INVALID_SPEED);
+    }
+    puts("PASS: caller-terminated forward/reverse straight, cruise requests, braking and finite-motion reset");
+}
+
 int main(void)
 {
+    testContinuousStraight();
+    testStandaloneCruiseRequests();
     testStraightSignsAndGeometry();
     testFixedStraightFeedforward();
     testArcAndReverse();
     testLowSpeedAndFilter();
     testLegacyAndValidation();
+    testStandaloneArcTerminalPolicy();
     testCompletionAndFaults();
     puts("PASS: unified forward/reverse straight and arcs, curvature limits, "
          "wheel geometry/odometry, preparation, filter, legacy, braking and IMU fault");
@@ -344,14 +475,14 @@ int main(void)
 '''
 
 
-def main():
+def run_harness(harness):
     sources = ["MotionController", "MotionControllerConfig", "SteeringController",
                "SteeringControllerConfig", "PIDController", "MotionProfile",
                "RobotKinematics"]
     with tempfile.TemporaryDirectory(prefix="mdp-motion-test-") as directory:
         work = Path(directory)
         (work / "stm32f4xx_hal.h").write_text(HAL_STUB)
-        (work / "test.c").write_text(HARNESS)
+        (work / "test.c").write_text(harness)
         command = shlex.split(os.environ.get("CC", "gcc")) + [
             "-std=c11", "-Wall", "-Wextra", "-Werror", "-pedantic", "-O1",
             "-fsanitize=undefined", "-fno-sanitize-recover=all",
@@ -362,6 +493,10 @@ def main():
         command += ["-lm", "-o", str(work / "test")]
         subprocess.run(command, check=True)
         subprocess.run([str(work / "test")], check=True)
+
+
+def main():
+    run_harness(HARNESS)
 
 
 if __name__ == "__main__":

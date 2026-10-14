@@ -1,4 +1,4 @@
-/* cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -IApps/Inc hosttests/task2_course_test.c Apps/Src/Task2Course.c Apps/Src/Task2Commands.c -lm -o /tmp/task2_course_test */
+/* cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -DTASK2_COURSE_DRY_RUN=1 -IApps/Inc hosttests/task2_course_test.c Apps/Src/Task2Course.c Apps/Src/Task2Commands.c -lm -o /tmp/task2_course_test */
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>

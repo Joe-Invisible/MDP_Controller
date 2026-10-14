@@ -68,11 +68,30 @@ bool MotionProfile_Start(
         return false;
     }
 
+    profile->continuous = false;
     profile->targetDistanceMm = distanceMm;
     profile->maxSpeedMmps = maxSpeedMmps;
     profile->targetSpeedMmps = 0.0f;
+    profile->requestedCruiseSpeedMmps = 0.0f;
     profile->active = true;
 
+    return true;
+}
+
+bool MotionProfile_StartContinuous(MotionProfile *profile, float maxSpeedMmps)
+{
+    if (!isfinite(maxSpeedMmps) || !MotionProfile_Start(profile, 1.0f, maxSpeedMmps))
+        return false;
+    profile->targetDistanceMm = 0.0f; /* No endpoint in continuous mode. */
+    profile->continuous = true;
+    return true;
+}
+
+bool MotionProfile_RequestCruiseSpeed(MotionProfile *profile, float speedMmps)
+{
+    if (profile == NULL || !profile->active || !isfinite(speedMmps) || speedMmps <= 0.0f)
+        return false;
+    profile->requestedCruiseSpeedMmps = speedMmps;
     return true;
 }
 
@@ -80,6 +99,26 @@ float MotionProfile_Update(
     MotionProfile *profile,
     float travelledDistanceMm,
     float dt)
+{
+    if (profile == NULL || !profile->active)
+        return 0.0f;
+
+    if (profile->continuous)
+        return MotionProfile_UpdateWithBrakingLimit(
+            profile, travelledDistanceMm, dt, profile->maxSpeedMmps);
+
+    float remainingDistanceMm = fmaxf(
+        0.0f, profile->targetDistanceMm - fmaxf(0.0f, travelledDistanceMm));
+    return MotionProfile_UpdateWithBrakingLimit(
+        profile, travelledDistanceMm, dt,
+        sqrtf(2.0f * profile->decelerationMmps2 * remainingDistanceMm));
+}
+
+float MotionProfile_UpdateWithBrakingLimit(
+    MotionProfile *profile,
+    float travelledDistanceMm,
+    float dt,
+    float brakingSpeedLimitMmps)
 {
     if (profile == NULL || !profile->active)
         return 0.0f;
@@ -93,7 +132,7 @@ float MotionProfile_Update(
     float remainingDistanceMm =
         profile->targetDistanceMm - travelledDistanceMm;
 
-    if (remainingDistanceMm <= profile->completionToleranceMm)
+    if (!profile->continuous && remainingDistanceMm <= profile->completionToleranceMm)
     {
         MotionProfile_Stop(profile);
         return 0.0f;
@@ -110,27 +149,29 @@ float MotionProfile_Update(
         profile->accelerationMmps2 * dt;
 
     /*
-     * Maximum speed from which zero speed can still be reached
-     * over the remaining distance using the configured
-     * deceleration magnitude:
-     *
-     *     v^2 = 2 a s
+     * Maximum speed from which zero can still be reached over the remaining
+     * distance. The ordinary update supplies sqrt(2*d*s); a variable-limit
+     * path supplies sqrt(2*integral(d ds)) instead.
      */
-    float brakingLimitedSpeedMmps =
-        sqrtf(
-            2.0f *
-            profile->decelerationMmps2 *
-            remainingDistanceMm);
+    if (!isfinite(brakingSpeedLimitMmps) || brakingSpeedLimitMmps < 0.0f)
+    {
+        MotionProfile_Stop(profile);
+        return 0.0f;
+    }
 
     /*
      * This automatically generates a triangular profile
      * instead if the requested distance is too short to
      * attain the max speed
      */
+    float cruiseLimitMmps = profile->maxSpeedMmps;
+    if (profile->requestedCruiseSpeedMmps > 0.0f)
+        cruiseLimitMmps = fminf(cruiseLimitMmps, fmaxf(profile->requestedCruiseSpeedMmps,
+            profile->targetSpeedMmps - profile->decelerationMmps2 * dt));
     profile->targetSpeedMmps = MotionProfile_Min3(
-        profile->maxSpeedMmps,
+        cruiseLimitMmps,
         accelerationLimitedSpeedMmps,
-        brakingLimitedSpeedMmps);
+        brakingSpeedLimitMmps);
 
     return profile->targetSpeedMmps;
 }

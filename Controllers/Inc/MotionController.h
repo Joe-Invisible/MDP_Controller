@@ -18,6 +18,7 @@
 #include "WheelSpeedController.h"
 #include "SteeringController.h"
 #include "MotionProfile.h"
+#include "MotionPathProfile.h"
 
 #include "MotionControllerConfig.h"
 
@@ -54,6 +55,9 @@ typedef enum
 	 * the front axle is settling mechanically before motion.
 	 */
 	MOTIONCONTROLLER_STRAIGHT_PREPARING,
+    /* Continuous varying-reference run, with one initial preparation. */
+    MOTIONCONTROLLER_PROFILE_PREPARING,
+    MOTIONCONTROLLER_PROFILE,
 } MotionControllerMode;
 
 /**
@@ -82,6 +86,15 @@ typedef struct
 {
 	/* True only after MotionController_Init() completes successfully. */
 	bool initialized;
+
+    /* Profile is copied; callback context must outlive execution. */
+    MotionPathProfile pathProfile;
+    MotionPathSample pathSample;
+    MotionPathSample pathFinalSample;
+    /* Observational termination reasons; the distance guard can stop a turn
+     * before predicted final yaw is attained. Braking drift still applies. */
+    bool terminalYawPredictedReached;
+    bool terminalDistanceLimitReached;
 
 	/*
 	 * Controlled hardware / lower-level controllers
@@ -127,6 +140,10 @@ typedef struct
 	float arcHeadingErrorRad;
 
 	float arcFeedforwardYawRateRadPerSec;
+    /* Geometric reference before/after the gyro-matched LPF. Filter history
+     * persists across virtual junctions and resets at a new motion origin. */
+    float arcUnfilteredFeedforwardYawRateRadPerSec;
+    float arcFilteredFeedforwardYawRateRadPerSec;
 	float arcHeadingYawRateCorrectionRadPerSec;
 	float arcTargetYawRateRadPerSec;
 
@@ -268,6 +285,20 @@ MotionControllerStatus MotionController_MoveStraight(
 	float distanceMm,
 	float speedCps);
 
+/* Caller-terminated straight with the same steering preparation and control.
+ * signedSpeedCps selects forward/reverse; magnitude is the cruise ceiling.
+ * No distance endpoint. The owner must call Brake/Stop, including on timeout.
+ */
+MotionControllerStatus MotionController_MoveStraightContinuous(
+    MotionController *controller, float signedSpeedCps);
+
+/* Soft cruise request for the current motion, including fused profiles.
+ * Launch with the intended upper cruise speed, then request approach speed;
+ * raise it again on recognition. Speed must not exceed the launched ceiling.
+ * Preparation is supported; idle/braking is rejected. No endpoint/yaw reset. */
+MotionControllerStatus MotionController_RequestCruiseSpeed(
+    MotionController *controller, float speedCps);
+
 /**
  * Constant-curvature arc motion.
  *
@@ -296,6 +327,27 @@ MotionControllerStatus MotionController_MoveArc(
     float distanceMm,
     float radiusMm,
     float speedCps);
+
+/**
+ * Experimental continuous, rest-to-rest profile. Callback references are
+ * evaluated AFTER current encoder odometry is sampled. One preparation at
+ * run start; distance completion by default. A final constant-curvature arc
+ * can opt into the same yaw-priority terminal policy as standalone arcs.
+ * Legacy straight steering is rejected. No PI/filter/odometry reset at
+ * virtual junctions. Callback must be pure, bounded and nonblocking.
+ * Caller must preflight its entire profile; invalid runtime samples stop it.
+ */
+MotionControllerStatus MotionController_FollowProfile(
+    MotionController *controller,
+    const MotionPathProfile *profile);
+
+/* Profile-only FF lookup: explicitly bridges raw straight FF to the nearest
+ * calibrated point on each side of zero. Standalone arc lookup is unchanged.
+ * This centre-region interpolation is an unvalidated experimental model. */
+MotionControllerStatus MotionController_GetProfileFeedforward(
+    const MotionController *controller,
+    float curvaturePerMm,
+    float *rawCommand);
 
 /**
  * Full brake. Unfinished motion will be aborted.

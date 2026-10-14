@@ -310,3 +310,14 @@ Relevant board, motor-driver, motor/encoder/servo, MCU, sensor, and IMU document
 The control architecture is intentionally layered so that peripheral access, low-level feedback control, robot-level motion control, and the RPi-facing application can be developed and tested independently.
 
 The project favors measured hardware behavior over purely geometric assumptions: wheel-speed models, curvature feedforward points, controller gains, braking behavior, and terminal-motion parameters are derived and validated experimentally, with test logs retained where useful for regression and reproducibility.
+
+## Task 2 integration
+
+This branch runs the production `Task2App` through the existing RPi command session.
+Start a numbered `r:T2`, `r:T2L` or `r:T2R` batch and provide actual camera arrows
+with `A r n L/R`. The app uses SensorTask snapshots, measured-pose planning,
+and the existing run/stop/fault lifecycle. Actual motion is the default;
+`TASK2_COURSE_DRY_RUN=1` explicitly selects the protocol-only bench course.
+See [the integration guide](zdocs/TASK2_INTEGRATION.md) for build settings, exact
+RPi exchanges, assumptions and host checks. This is an integration candidate,
+not a claim that every physical route or sensor model is validated.

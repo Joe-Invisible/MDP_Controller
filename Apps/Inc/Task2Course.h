@@ -6,12 +6,13 @@
 #include <stdint.h>
 
 #include "Task2Commands.h"
+#include "Task2App.h"
 
 /*
- * The Task 2 course, run by MotionTask for batch "r:T2". This is the one
- * place the route goes. It sees the RPi only through Task2Commands (arrows,
- * width, stage events) and moves the robot only through Task2CourseIo, so it
- * can be driven on the host with a fake Io (hosttests/task2_course_test.c).
+ * The Task 2 course adapter, run by MotionTask for batch "r:T2".
+ * It selects Task2App or the explicit dry run. It sees the RPi only through Task2Commands (arrows,
+ * bullseye span, stage events) and moves the robot only through Task2CourseIo, so it
+ * can be driven with fake Io (hosttests/test_task2_app.py; dry-run tests are separate).
  *
  * Contract:
  *   - Report every stage with Task2Commands_SetStage; APPROACH2 only once the
@@ -22,7 +23,8 @@
  *     movement watchdog. Start the next only when io->busy() is false.
  *   - io->brake() ends the current primitive (e.g. at a sensed obstacle edge);
  *     the run continues. Only MotionTask aborts the whole run (S or fault).
- *   - Return quickly: Update runs every 10 ms control tick.
+ *   - Update runs on the 10 ms control tick. Planning occurs only while stationary
+ *     and uses a bounded clearance-check budget; sensor callbacks only copy snapshots.
  *   - Queue Task2Commands_Summary, then return TASK2COURSE_DONE once parked.
  *     MotionTask sets the DONE stage and sends the summary and "DONE r" only
  *     when the wheels are stationary.
@@ -31,7 +33,7 @@
 
 /* 1: no motion; stages advance on timers (Pi link bench test). 0: the real route. */
 #ifndef TASK2_COURSE_DRY_RUN
-#define TASK2_COURSE_DRY_RUN 1
+#define TASK2_COURSE_DRY_RUN 0
 #endif
 
 typedef enum {
@@ -40,22 +42,12 @@ typedef enum {
     TASK2COURSE_FAULT,
 } Task2CourseStatus;
 
-typedef struct {
-    void *context;
-    /* Start one stopped primitive; NULL on success, otherwise a static fault token. */
-    const char *(*moveStraight)(void *context, float distanceMm, float speedCps);
-    const char *(*moveArc)(void *context, float distanceMm, float radiusMm, float speedCps);
-    bool (*busy)(void *context);
-    /* Brake the current primitive; the course goes on once !busy(). */
-    void (*brake)(void *context);
-    /* Raise or lower the running primitive's cruise speed, e.g. after recognition.
-     * NULL when the controller has no live speed request. */
-    const char *(*requestSpeed)(void *context, float speedCps);
-} Task2CourseIo;
+typedef Task2AppIo Task2CourseIo;
 
 typedef struct {
     const Task2CourseIo *io;
     uint32_t stageStartedMs;
+    Task2App app;
     const char *fault;     /* static token when Update returns TASK2COURSE_FAULT */
 } Task2Course;
 

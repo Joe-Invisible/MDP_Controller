@@ -1,0 +1,186 @@
+#ifndef TASK2_ROUTE_H
+#define TASK2_ROUTE_H
+
+#include <stdbool.h>
+#include <stdint.h>
+
+#define TASK2_ROUTE_STEP_COUNT 18U /* Storage capacity; use route.stepCount. */
+#define TASK2_ROUTE_O2_APPROACH_STEP 3U
+#define TASK2_ROUTE_O2_DEPARTURE_STEP 4U
+#define TASK2_ROUTE_O2_IR_STRAIGHT_STEP 5U
+#define TASK2_ROUTE_START_X_MM (-250.0f)
+#define TASK2_ROUTE_PARK_CENTER_X_MM (-250.0f)
+#ifndef TASK2_ROUTE_RUNTIME_POSE_CHECK_LIMIT
+#define TASK2_ROUTE_RUNTIME_POSE_CHECK_LIMIT 12288U
+#endif
+#ifndef TASK2_ROUTE_EXHAUSTIVE_CHECKS
+#define TASK2_ROUTE_EXHAUSTIVE_CHECKS 0 /* PC tools opt into exhaustive 1 mm validation. */
+#endif
+
+typedef enum
+{
+    TASK2_ARROW_RIGHT = -1,
+    TASK2_ARROW_LEFT = 1,
+} Task2Arrow;
+
+/* Geometry inputs frozen by the app. Poses reference the rear axle midpoint. */
+typedef struct
+{
+    Task2Arrow firstArrow;
+    Task2Arrow secondArrow;
+    float obstacle2WidthMm;
+    float parkToObstacle1Mm;       /* Park mouth to O1 front face. */
+    float obstacleFaceGapMm;       /* O1 back face to O2 front face. */
+    float obstacleBufferMm;        /* Minimum nominal outer-body clearance. */
+    float parkBackWallBufferMm; /* Back wall has a separate, slightly smaller margin. */
+    float parkSideWallBufferMm; /* Also protects the two entrance wall tips. */
+    float boundaryBufferMm;         /* Nominal margin from arena side boundaries. */
+    float obstacle2EndSpaceMm;     /* Worst-case available space at each end. */
+
+    float cruiseSpeedCps;
+    float approachSpeedCps;        /* Soft request before either arrow is recognised. */
+    float bodyLengthMm;
+    float bodyWidthMm;
+    float bodyCenterAheadOfRearAxleMm;
+    float frontProtrusionMm;       /* Included conservatively at full body width. */
+    float cameraBehindFrontMm;
+    float recognitionCameraRangeMm;
+    float cameraHorizontalFovDeg;
+    float recognitionTargetWidthMm; /* Assumed centred arrow; measure to replace. */
+
+    float firstArcCameraRangeMm;   /* Anchored nominal O1 entry. */
+    float firstRejoinBeyondFaceMm; /* Virtual original rejoin anchor: fixes O1 sweep angle. */
+    float firstRadiusMm;
+    float secondArcCameraRangeMm;  /* Minimum camera range at departure, normally 500. */
+    float obstacle1ExitYawDeg;     /* Inward magnitude, mirrored by firstArrow. */
+    float obstacle2ApproachMaxMm;
+    float obstacle2DepartureWidthReserveMm; /* Whole-width reserve for sensing delay/model. */
+    float obstacle2DepartureSpeedCps;
+    float obstacle2IRAcquisitionSpeedCps; /* Soft cap on the IR straight until presence is armed. */
+    float obstacle2IRConfirmationSpeedCps; /* Slow after a confirmed decline while awaiting absence. */
+    float secondDepartureRadiusMm;
+    float secondIRDepartureRadiusMm; /* Opposite arrows: looser arc to the stopped 90-degree heading. */
+    float secondIRDepartureGuardExtraMm; /* Beyond confirmation and braking estimates. */
+    float secondBackExtraRadiusMm; /* Back radius = W2/2 + this value. */
+
+} Task2RouteConfig;
+
+typedef struct
+{
+    float xMm;
+    float yMm;
+    float yawRad;
+} Task2RoutePose;
+
+typedef struct
+{
+    float aheadMm;
+    float leftMm;
+    float yawDeg; /* Beam direction relative to chassis +x. */
+} Task2SensorMount;
+
+typedef struct
+{
+    Task2SensorMount mount;
+    float guardTravelMm; /* Confirmation, braking and additional travel reserve. */
+    float edgeUncertaintyMm;
+    float acquisitionMinYawDeg;
+    float acquisitionTravelMm; /* Fresh-sample confirmation window at departure speed. */
+} Task2RouteIRDeparture;
+
+typedef struct
+{
+    bool valid;
+    const char *reason;
+    float minimumObstacleGapMm;
+    float minimumSideMarginMm;
+    float minimumParkWallMarginMm;
+    float minimumParkBackMarginMm;
+    float minimumParkSideMarginMm;
+    uint32_t plannerPoseChecks;
+    bool planningBudgetExceeded;
+    bool obstacleBufferExceptionUsed; /* IR quarter-turn/rear bypass, including positioning straight. */
+    uint32_t clearanceFromStep; /* MCU margins exclude the trusted O1 template. */
+    bool recognitionPreviewValid; /* Earliest camera preview is computed only on PC. */
+    /* Earliest eligible camera pose, including the angled O2 approach. */
+    Task2RoutePose recognitionPose[2];
+    float recognitionProgressMm[2];
+    Task2RoutePose finishPose;
+} Task2RouteReport;
+
+typedef struct
+{
+    float distanceMm; /* Preview length only when sensorTerminated is true. */
+    bool sensorTerminated; /* Straight runs until its owner confirms the edge. */
+    float radiusMm; /* Zero: straight; positive: left; negative: right. */
+    float speedCps; /* Hard ceiling; both approaches use soft speed requests. */
+} Task2RouteStep;
+
+typedef struct
+{
+    Task2RouteConfig config; /* Frozen inputs for this standalone run. */
+    Task2RouteStep steps[TASK2_ROUTE_STEP_COUNT];
+    uint32_t stepCount;
+    float totalTravelMm;
+    float totalYawRad;
+    bool obstacle2IRDeparture;
+    bool obstacle2LateralDeparture; /* Bounded turn/straight for an external edge detector. */
+    bool obstacle2ReturnPending;
+    bool obstacle2TangentRearArc; /* Rear arc aims along a straight into the park. */
+    bool obstacle2StraightParkReturn; /* Actual measured stop allowed one parking straight. */
+    bool obstacle2DirectRearArc; /* False: a forward positioning straight was needed. */
+    uint32_t parkingHeadingCorrections; /* At most two measured-stop corrections. */
+    bool obstacle2ParkReturnPending; /* Plan parking after the measured rear-arc stop. */
+    bool obstacle2ParallelReturnPending; /* Plan the rest after the measured R275 stop. */
+    Task2RouteReport report;
+} Task2Route;
+
+/* Default geometry; Task2App snapshots it at run start. */
+extern Task2RouteConfig task2RouteConfig;
+extern const char *const task2RouteStepNames[TASK2_ROUTE_STEP_COUNT];
+
+/* Production staging: no O2 route is selected until its actual arrow arrives. */
+bool Task2Route_CreateObstacle1(const Task2RouteConfig *config, Task2Route *route);
+bool Task2Route_CreateFromPose(const Task2RouteConfig *config,
+    const Task2RouteIRDeparture *ir, const Task2RoutePose *start, Task2Route *route);
+/* Freeze the latest span/geometry and certify departure from the actual approach stop. */
+bool Task2Route_ReplanDeparture(Task2Route *route, const Task2RouteConfig *config,
+    const Task2RoutePose *stoppedPose, const Task2RouteIRDeparture *ir);
+bool Task2Route_CheckStraight(const Task2RouteConfig *, const Task2RoutePose *, float distanceMm);
+float Task2Route_RecognitionApproach(const Task2RouteConfig *config, const Task2RoutePose *start);
+bool Task2Route_IsParked(const Task2RouteConfig *config, const Task2RoutePose *pose);
+
+/* MCU: bounded continuous-clearance certificates. PC: optional 1 mm sweeps. */
+bool Task2Route_Create(const Task2RouteConfig *config, Task2Route *route);
+/* Same arrows: early recognition, bounded sensing legs; suffix uses measured edge pose. */
+bool Task2Route_CreateLateral(const Task2RouteConfig *config, Task2Route *route);
+/* Opposite-arrow prefix: nominal preview is checked; suffix is built at the IR stop. */
+bool Task2Route_CreateIR(const Task2RouteConfig *config,
+    const Task2RouteIRDeparture *ir, Task2Route *route);
+
+/* Instantaneous recognition simulation: whole horizontal O1 target in view. */
+bool Task2Route_ObstacleCameraVisible(const Task2RouteConfig *config,
+    const Task2RoutePose *pose, unsigned obstacle);
+bool Task2Route_Obstacle1CameraVisible(const Task2RouteConfig *config,
+    const Task2RoutePose *pose);
+
+/* Replace the unexecuted suffix after an edge stop. Width is an observed
+ * conservative planning bound; configured width remains the test footprint. */
+bool Task2Route_ReplanParallelReturn(Task2Route *route, const Task2RoutePose *pose,
+    float observedWidthMm, unsigned completedQuarterStep);
+/* Join parking from the actual stopped rear-bypass pose. */
+bool Task2Route_ReplanParkingReturn(Task2Route *route, const Task2RoutePose *pose,
+    float observedWidthMm, unsigned completedRearStep);
+
+bool Task2Route_ReplanObstacle2(Task2Route *route, const Task2RoutePose *stoppedPose,
+    float observedWidthMm, unsigned completedDepartureStep);
+
+/* Independent footprint checks, also usable for host ideal execution checks. */
+/* O1-only footprint check; also useful for host geometry regressions. */
+bool Task2Route_CheckObstacle1Pose(const Task2RouteConfig *config,
+    float arenaHalfWidthMm, const Task2RoutePose *pose, Task2RouteReport *report);
+
+bool Task2Route_CheckPose(const Task2RouteConfig *config,
+    const Task2RoutePose *pose, Task2RouteReport *report);
+
+#endif

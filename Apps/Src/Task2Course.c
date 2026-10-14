@@ -1,6 +1,7 @@
 #include "Task2Course.h"
 
 #include <math.h>
+#include <string.h>
 
 #if TASK2_COURSE_DRY_RUN
 /*
@@ -71,11 +72,22 @@ void Task2Course_Abort(Task2Course *c) {
 }
 
 #else
-/*
- * The real route goes here (port of Tests/Src/Task2MotionTest.c's run loop):
- * plan from the startup range, start each primitive with io->moveStraight /
- * io->moveArc, wait for !io->busy(), take arrow n from Task2Commands_Arrow
- * at its decision point (WAITn without one), and report every stage.
- */
-#error "Task 2 route not ported yet: build with TASK2_COURSE_DRY_RUN=1"
+const char *Task2Course_Start(Task2Course *c, const Task2CourseIo *io,
+                              Task2Commands *t, uint32_t nowMs) {
+    (void)t;
+    memset(c, 0, sizeof(*c));
+    c->io = io; c->stageStartedMs = nowMs;
+    c->fault = Task2App_Start(&c->app, io, nowMs);
+    return c->fault;
+}
+Task2CourseStatus Task2Course_Update(Task2Course *c, Task2Commands *t, uint32_t nowMs) {
+    Task2AppStatus status = Task2App_Update(&c->app, t, nowMs);
+    c->fault = c->app.fault;
+    return status == TASK2_APP_DONE ? TASK2COURSE_DONE
+        : status == TASK2_APP_FAULT ? TASK2COURSE_FAULT : TASK2COURSE_RUNNING;
+}
+void Task2Course_Abort(Task2Course *c) {
+    Task2App_Abort(&c->app);
+    c->io = NULL;
+}
 #endif
