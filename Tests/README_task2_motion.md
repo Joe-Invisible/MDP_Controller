@@ -356,3 +356,22 @@ perturbations +/-3 degrees. An already-invalid hard-carpark pose is explicitly
 rejected. `HARD_CLEARANCE_INFEASIBLE` remains for poses where no checked recovery
 fits the hard constraints; passing the matrix is not a universal physical
 guarantee for arbitrary poses or incorrect estimates.
+
+
+Return selection follows **one straight -> one loose parking arc -> four-segment
+parallel alignment**, within the current clearance policy. The rear-bypass
+planner searches and certifies the one-straight candidate family first, then
+the one-arc family; it reaches parallel alignment only when those searches
+find no accepted candidate. Each positioning family samples 33 distances
+inside a geometry-derived interval, then refines an accepted interval and
+retains a 10 mm entry reserve when that remains valid. Rejection at the far
+endpoint no longer discards valid intermediate positioning distances.
+Parking is evaluated again after the actual rear stop in the same order.
+Carpark sides/tips remain 100 mm and the back wall 75 mm throughout.
+
+The previously drawn 1050/1050/500 mm LL/RR examples now use a tangent rear arc
+and one parking straight, instead of the four-segment parking join. Regression
+cases check the missed intermediate-position tangent in both mirrors, straight
+preference, loose-arc preference when a straight fails, and four-segment
+alignment when neither single-primitive category passes. The run16 replay yaw
+sign matches the recorded stopped pose and its mirror.

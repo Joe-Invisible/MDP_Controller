@@ -1090,9 +1090,12 @@ int main(void)
     task2RouteConfig=original; task2MotionTestConfig.measureObstacle1AtStartup=false;
     task2RouteConfig.firstArrow=0; resetHardware(0); Task2MotionTestRun();
     assert(!task2MotionTestResult.passed && robot==NULL && starts==0);
+    /* IR-specific scenarios must not depend on the user's selected test pair. */
+    Task2RouteConfig opposite=original;
+    opposite.firstArrow=-opposite.secondArrow;
     for(unsigned s=1;s<=6;++s)
     {
-        task2RouteConfig=original; resetHardware(s); Task2MotionTestRun();
+        task2RouteConfig=opposite; resetHardware(s); Task2MotionTestRun();
         assert(!task2MotionTestResult.passed && starts==1);
         assert(robot->motionController.mode==MOTIONCONTROLLER_IDLE);
         if(s==1)assert(task2MotionTestResult.cancelled);
@@ -1100,12 +1103,12 @@ int main(void)
         if(s==5)assert(task2MotionTestResult.timedOut && task2MotionTestDetection.armed[original.secondArrow==1 ? TASK2_SENSOR_RIGHT_IR : TASK2_SENSOR_LEFT_IR]);
         else if(s>=3)assert(task2MotionTestResult.status!=0);
     }
-    task2RouteConfig=original;resetHardware(7);Task2MotionTestRun();checkCompleted();
+    task2RouteConfig=opposite;resetHardware(7);Task2MotionTestRun();checkCompleted();
     assert(task2MotionTestDetection.edgeMethod==TASK2_EDGE_IR_INITIAL_ABSENCE_BOUND);
-    task2RouteConfig=original;resetHardware(8);Task2MotionTestRun();
+    task2RouteConfig=opposite;resetHardware(8);Task2MotionTestRun();
     assert(!task2MotionTestResult.passed && task2MotionTestDetection.fault);
     assert(robot->motionController.mode==MOTIONCONTROLLER_IDLE);
-    task2RouteConfig=original;resetHardware(9);Task2MotionTestRun();checkCompleted();
+    task2RouteConfig=opposite;resetHardware(9);Task2MotionTestRun();checkCompleted();
     puts("PASS: initially absent IR, IR ADC fault, and ultrasonic background cannot terminate opposite-arrow departure");
     task2RouteConfig=tuned;resetHardware(0);Task2MotionTestRun();checkCompleted();
     puts("PASS: current published tuning and arrow configuration");
