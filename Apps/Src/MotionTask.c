@@ -795,6 +795,7 @@ void MotionTask(void *argument) {
         StartButton_Update(&startButton, SW1_ReadState() == SW1_Enabled,
                            HAL_GetTick());
         bool busy = MotionController_IsBusy(&motionController);
+        Task2Run_Idle(&task2, &task2CourseIo, busy, HAL_GetTick());
         if (!busy) MotionTask_SampleProgress();
         if (!busy && commandRunning && !ultrasonicCommand && !task2.active) {
             MotionTask_Capture("DONE");

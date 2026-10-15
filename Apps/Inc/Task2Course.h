@@ -65,6 +65,10 @@ const char *Task2Course_Start(Task2Course *course, const Task2CourseIo *io,
                               Task2Commands *commands, uint32_t nowMs);
 Task2CourseStatus Task2Course_Update(Task2Course *course, Task2Commands *commands,
                                      uint32_t nowMs);
+/* O1's range from before START, right after a successful Start. Only the R275 sequence uses it. */
+void Task2Course_UsePrestart(Task2Course *course, const Task2WrapPrestartRange *range);
+/* The camera's depth to O1 before START (mm, 0: none); right after a successful Start. Only the R275 sequence uses it. */
+void Task2Course_UseCameraO1(Task2Course *course, unsigned depthMm);
 /* MotionTask has braked (S or fault); forget the run. */
 void Task2Course_Abort(Task2Course *course);
 /* A fault from outside the course; call before Task2Course_Abort so its state is still there. */

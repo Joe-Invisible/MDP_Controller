@@ -33,6 +33,7 @@ typedef struct {
     bool active;      /* the T2 command is running */
     bool stopping;    /* S accepted; STOPPED once stationary */
     bool finishing;   /* course done; waiting for stationary wheels */
+    Task2WrapPrestart prestart;  /* ultrasonic samples from before START */
 } Task2Run;
 
 void Task2Run_Init(Task2Run *r);
@@ -41,6 +42,9 @@ void Task2Run_Init(Task2Run *r);
  * NULL on success, else a fault token. */
 const char *Task2Run_Start(Task2Run *r, uint8_t run, Task2CommandArrow arrow1,
                            const Task2CourseIo *io, uint32_t nowMs);
+
+/* Every control tick while no run is active: keeps the ultrasonic samples a run may range O1 from. */
+void Task2Run_Idle(Task2Run *r, const Task2CourseIo *io, bool moving, uint32_t nowMs);
 
 /* Every control tick while active. On TASK2RUN_FAULT, *fault is a static token. */
 Task2RunStatus Task2Run_Update(Task2Run *r, bool busy, uint32_t nowMs, const char **fault);

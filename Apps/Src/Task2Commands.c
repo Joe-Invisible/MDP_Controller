@@ -215,9 +215,28 @@ static void Span(Task2Commands *t, const char *p, char *reply) {
     snprintf(reply, TASK2COMMANDS_REPLY_SIZE, "ACK %lu W %lu\n", run, span);
 }
 
+/* "Z - 1 d": camera depth to obstacle 1's arrow before the run; only between runs. */
+static void PreviewDepth(Task2Commands *t, const char *p, char *reply) {
+    unsigned long obstacle, depth;
+    if (!Field(&p, 1U, 1U, ' ', &obstacle) || !Field(&p, 1U, 9999U, '\0', &depth)) {
+        snprintf(reply, TASK2COMMANDS_REPLY_SIZE, "NAK - PARSE\n");
+        return;
+    }
+    if (RunActive(t)) {
+        snprintf(reply, TASK2COMMANDS_REPLY_SIZE, "NAK - Z STATE\n");
+        return;
+    }
+    t->previewO1DepthMm = (uint16_t)depth;
+    snprintf(reply, TASK2COMMANDS_REPLY_SIZE, "ACK - Z %lu\n", depth);
+}
+
 /* "Z r d": camera depth to obstacle 2's arrow; only while obstacle 2's arrow is still being read. */
 static void Depth(Task2Commands *t, const char *p, char *reply) {
     unsigned long run, depth;
+    if (p[0] == '-' && p[1] == ' ') {
+        PreviewDepth(t, p + 2, reply);
+        return;
+    }
     if (!Field(&p, 0U, 255U, ' ', &run) || !Field(&p, 1U, 9999U, '\0', &depth)) {
         snprintf(reply, TASK2COMMANDS_REPLY_SIZE, "NAK - PARSE\n");
         return;

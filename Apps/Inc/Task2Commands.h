@@ -21,6 +21,10 @@
  *   STM -> RPi   ACK - 1 L|R|- stored, for planning only: the run's arrow 1 comes from its
  *                start line, "r:T2L" / "r:T2R" (or none with "r:T2"), never from the preview
  *                NAK - n STATE during a run, or n is not 1
+ *   RPi -> STM   Z - 1 mm      camera depth to obstacle 1's arrow before the run (lens axis, from the
+ *                              photos that decided the preview); only between runs
+ *   STM -> RPi   ACK - Z mm u  stored, with u the steady ultrasonic range to obstacle 1 from the robot's
+ *                              front in mm, or "-" (added by Task2Run); NAK - Z STATE during a run
  *   RPi -> STM   W r mm        obstacle 2 bullseye span (lower bound; see Task2Commands_Span)
  *   STM -> RPi   ACK r W mm    stored; NAK r W STATE after ROUND2 or for another run
  *   RPi -> STM   Q T           course state
@@ -68,6 +72,7 @@ typedef struct {
     uint16_t obstacle2SpanMm;
     bool hasDepth;
     uint16_t obstacle2DepthMm;
+    uint16_t previewO1DepthMm;   /* camera depth to obstacle 1 before the run; 0: none. Cleared by Begin */
     /* Events waiting to be sent, oldest first. MotionTask drains it every tick. */
     char outbox[TASK2COMMANDS_OUTBOX][TASK2COMMANDS_REPLY_SIZE];
     unsigned outboxHead, outboxCount;

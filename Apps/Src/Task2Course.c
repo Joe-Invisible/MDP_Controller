@@ -74,6 +74,12 @@ void Task2Course_Abort(Task2Course *c) {
 void Task2Course_NoteFault(Task2Course *c, const char *reason) {
     (void)c; (void)reason;
 }
+void Task2Course_UsePrestart(Task2Course *c, const Task2WrapPrestartRange *range) {
+    (void)c; (void)range;
+}
+void Task2Course_UseCameraO1(Task2Course *c, unsigned depthMm) {
+    (void)c; (void)depthMm;
+}
 
 #elif TASK2_COURSE_WRAP
 const char *Task2Course_Start(Task2Course *c, const Task2CourseIo *io,
@@ -97,6 +103,12 @@ void Task2Course_Abort(Task2Course *c) {
 void Task2Course_NoteFault(Task2Course *c, const char *reason) {
     Task2Wrap_NoteFault(&c->wrap, reason);
 }
+void Task2Course_UsePrestart(Task2Course *c, const Task2WrapPrestartRange *range) {
+    Task2Wrap_UsePrestart(&c->wrap, range);
+}
+void Task2Course_UseCameraO1(Task2Course *c, unsigned depthMm) {
+    Task2Wrap_UseCameraO1(&c->wrap, depthMm);
+}
 
 #else
 const char *Task2Course_Start(Task2Course *c, const Task2CourseIo *io,
@@ -119,6 +131,12 @@ void Task2Course_Abort(Task2Course *c) {
 }
 void Task2Course_NoteFault(Task2Course *c, const char *reason) {
     Task2App_NoteFault(&c->app, reason);
+}
+void Task2Course_UsePrestart(Task2Course *c, const Task2WrapPrestartRange *range) {
+    (void)c; (void)range;
+}
+void Task2Course_UseCameraO1(Task2Course *c, unsigned depthMm) {
+    (void)c; (void)depthMm;
 }
 #endif
 

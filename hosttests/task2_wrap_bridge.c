@@ -65,6 +65,12 @@ void bridge_arrow2(int arrow) {
     snprintf(line, sizeof(line), "A 1 2 %c", arrow > 0 ? 'L' : 'R');
     (void)Task2Commands_Receive(&commands, line, reply);
 }
+/* The camera's depth to O2's arrow, as the Pi sends it just before arrow 2. */
+void bridge_depth(int depthMm) {
+    char line[24], reply[TASK2COMMANDS_REPLY_SIZE];
+    snprintf(line, sizeof(line), "Z 1 %d", depthMm);
+    (void)Task2Commands_Receive(&commands, line, reply);
+}
 int bridge_stage(void) { return (int)commands.stage; }
 int bridge_phase(void) { return (int)wrap.phase; }
 const char *bridge_fault(void) { return wrap.fault ? wrap.fault : ""; }
