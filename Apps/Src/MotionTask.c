@@ -26,6 +26,12 @@
 #include "SensorTask.h"
 #include "UltrasonicApproach.h"
 #include "Task2Run.h"
+#include "Task2Wire.h"
+#include "Task2PlanFrames.h"
+
+#ifndef TASK2_PLAN_HOST
+#define TASK2_PLAN_HOST 1   /* Plan Task 2 on a host when one answers; the STM plans itself otherwise. */
+#endif
 #include "userbutton.h"
 #include "OLEDManager.h"
 
@@ -277,16 +283,22 @@ static void MotionTask_Capture(const char *event) {
  * The Pi sends one batch, then waits for DONE; this is not a streaming
  * command queue. STATUS and S are read even while a movement is busy.
  */
-static bool MotionTask_ReadLine(char **line) {
+/* Set by the last MotionTask_ReadFrame: it stopped because no byte was waiting, not on its budget. */
+static bool readFrameIdle;
+
+static bool MotionTask_ReadFrame(char **line) {
     static char buffer[MOTIONTASK_MAX_FRAME_LEN + 1U];
     static size_t length;
     static bool discarding;
     static uint32_t drops;
 
+    readFrameIdle = false;
     for (unsigned i = 0; i < MOTIONTASK_RX_BYTES_PER_TICK; ++i) {
         uint8_t byte;
-        if (CommandLink_ReadBytes(&byte, 1, 0) != 1)
+        if (CommandLink_ReadBytes(&byte, 1, 0) != 1) {
+            readFrameIdle = true;
             break;
+        }
         uint32_t currentDrops = CommandLink_GetDropCount();
         if (currentDrops != drops) {
             drops = currentDrops;
@@ -317,7 +329,134 @@ static bool MotionTask_ReadLine(char **line) {
     return false;
 }
 
+/* Lines that arrived while a Task 2 plan was awaited, handed out before new input. A stop goes first. */
+#define MOTIONTASK_DEFERRED_LINES 6U
+static char deferredLines[MOTIONTASK_DEFERRED_LINES][MOTIONTASK_MAX_FRAME_LEN + 1U];
+static unsigned deferredHead, deferredCount;
+static uint32_t deferredDropped;
+
+static void MotionTask_Defer(const char *line, bool first) {
+    if (deferredCount == MOTIONTASK_DEFERRED_LINES) {
+        if (!first) { ++deferredDropped; return; }
+        --deferredCount;                    /* a stop displaces the newest queued line */
+        ++deferredDropped;
+    }
+    unsigned slot = first ? (deferredHead + MOTIONTASK_DEFERRED_LINES - 1U) % MOTIONTASK_DEFERRED_LINES
+                          : (deferredHead + deferredCount) % MOTIONTASK_DEFERRED_LINES;
+    if (first) deferredHead = slot;
+    (void)snprintf(deferredLines[slot], sizeof(deferredLines[slot]), "%s", line);
+    ++deferredCount;
+}
+
+static bool MotionTask_ReadLine(char **line) {
+    static char held[MOTIONTASK_MAX_FRAME_LEN + 1U];
+    if (deferredCount) {
+        memcpy(held, deferredLines[deferredHead], sizeof(held));
+        deferredHead = (deferredHead + 1U) % MOTIONTASK_DEFERRED_LINES;
+        --deferredCount;
+        *line = held;
+        return true;
+    }
+    return MotionTask_ReadFrame(line);
+}
+
+#if TASK2_PLAN_HOST
+/*
+ * Task 2 planning on a host, through the Pi. The request goes out as one line, "PQ <gen> <hex>"; the
+ * reply comes back in frames (Task2PlanFrames). The robot is stationary at every planning point.
+ * While waiting, a stop ends the wait at once and every other line is kept, in order, for the main
+ * loop: status queries and arrows are answered late by up to the timeout, not lost unless more than
+ * MOTIONTASK_DEFERRED_LINES arrive (counted in deferredDropped). A stop is also looked for between
+ * request chunks and once more before any answer is returned, so a malformed or missing reply never
+ * hides a stop that has already arrived.
+ */
+#define TASK2_PLAN_TIMEOUT_MS 1500U
+static char planHex[2U * TASK2_WIRE_MAX_BYTES + 1U];
+static Task2PlanFrames planFrames;
+
+/* Everything already received, up to a bound that covers the whole receive buffer: true if it held a
+ * stop (kept first for the main loop). A frame that ends a read budget, or is discarded as too long,
+ * does not end the search; only an empty UART does. */
+/* CommandLink buffers 256 bytes: at most 256 one-byte (empty) lines; a long line takes 64 bytes a read. */
+#define TASK2_PLAN_DRAIN_READS 264U
+static bool MotionTask_Task2PlanStop(void) {
+    char *line;
+    bool stop = false;
+    for (unsigned reads = 0U; reads < TASK2_PLAN_DRAIN_READS; ++reads) {
+        if (!MotionTask_ReadFrame(&line)) {
+            if (readFrameIdle) break;
+            continue;
+        }
+        Task2PlanFrame kind = Task2PlanFrames_Feed(&planFrames, line);
+        if (kind == TASK2_PLAN_FRAME_STOP) stop = true;
+        else if (kind == TASK2_PLAN_FRAME_OTHER) MotionTask_Defer(line, false);
+    }
+    if (stop) MotionTask_Defer("S", true);
+    return stop;
+}
+
+static size_t MotionTask_Task2Exchange(uint16_t generation, const uint8_t *request, size_t length,
+                                       uint8_t *reply, size_t capacity) {
+    size_t hex = Task2Wire_ToHex(request, length, planHex, sizeof(planHex));
+    if (!hex) return 0U;
+    Task2PlanFrames_Begin(&planFrames, generation);
+    char head[16];
+    (void)snprintf(head, sizeof(head), "PQ %u ", (unsigned)generation);
+    CommandLink_Send(head);
+    for (size_t at = 0U; at < hex; at += 160U) {     /* each send within CommandLink's 20 ms */
+        char chunk[161];
+        size_t k = hex - at < 160U ? hex - at : 160U;
+        memcpy(chunk, planHex + at, k);
+        chunk[k] = '\0';
+        CommandLink_Send(chunk);
+        if (MotionTask_Task2PlanStop()) {
+            CommandLink_Send("\n");                 /* the cut request is never answered usefully */
+            return TASK2_PLAN_CANCELLED;
+        }
+    }
+    CommandLink_Send("\n");
+    uint32_t started = HAL_GetTick();
+    while (HAL_GetTick() - started < TASK2_PLAN_TIMEOUT_MS) {
+        char *line;
+        while (MotionTask_ReadFrame(&line)) {
+            switch (Task2PlanFrames_Feed(&planFrames, line)) {
+            case TASK2_PLAN_FRAME_STOP:
+                MotionTask_Defer(line, true);
+                return TASK2_PLAN_CANCELLED;
+            case TASK2_PLAN_FRAME_OTHER:
+                MotionTask_Defer(line, false);
+                break;
+            case TASK2_PLAN_FRAME_DONE: {
+                size_t total = Task2PlanFrames_Length(&planFrames);
+                if (total > capacity) return 0U;
+                memcpy(reply, planFrames.data, total);
+                return total;
+            }
+            case TASK2_PLAN_FRAME_NONE:
+            case TASK2_PLAN_FRAME_BAD:
+                return 0U;
+            default:
+                break;
+            }
+        }
+        osDelay(1);
+    }
+    return 0U;
+}
+
+static size_t MotionTask_Task2Plan(void *context, uint16_t generation, const uint8_t *request, size_t length,
+                                   uint8_t *reply, size_t capacity) {
+    (void)context;
+    size_t got = MotionTask_Task2Exchange(generation, request, length, reply, capacity);
+    if (got == TASK2_PLAN_CANCELLED) return got;
+    return MotionTask_Task2PlanStop() ? TASK2_PLAN_CANCELLED : got;
+}
+#endif
+
 /* One Task 2 primitive, guarded by the movement watchdog like any batch command. */
+/* A Task 2 move was launched in this pass, possibly after a long planning wait. */
+static bool task2Launched;
+
 static const char *MotionTask_Task2Move(float distanceMm, float radiusMm, float speedCps) {
     if (MotionController_IsBusy(&motionController))
         return "T2_BUSY";
@@ -339,6 +478,7 @@ static const char *MotionTask_Task2Move(float distanceMm, float radiusMm, float 
     MotionControllerStatus status = radiusMm != 0.0f
         ? MotionController_MoveArc(&motionController, distanceMm, radiusMm, speedCps)
         : MotionController_MoveStraight(&motionController, distanceMm, speedCps);
+    task2Launched |= status == MOTIONCONTROLLER_STATUS_OK;
     return status == MOTIONCONTROLLER_STATUS_OK ? NULL : "REJECTED";
 }
 
@@ -374,8 +514,9 @@ static const char *MotionTask_Task2Continuous(void *context, float speedCps) {
     /* Time/progress watchdog, independent of inferred width. No motion endpoint. */
     if (!MotionWatchdog_Start(&watchdog, HAL_GetTick(), 1.0f, 1.0f, WATCH_PREPARE)) return "REJECTED";
     watchdog.limitMs = 30000U;
-    return MotionController_MoveStraightContinuous(&motionController, speedCps)
-        == MOTIONCONTROLLER_STATUS_OK ? NULL : "REJECTED";
+    MotionControllerStatus status = MotionController_MoveStraightContinuous(&motionController, speedCps);
+    task2Launched |= status == MOTIONCONTROLLER_STATUS_OK;
+    return status == MOTIONCONTROLLER_STATUS_OK ? NULL : "REJECTED";
 }
 static Task2MotionReading MotionTask_Task2Motion(void *context) {
     (void)context;
@@ -404,6 +545,23 @@ static Task2CourseIo task2CourseIo = {
     .ultrasonic = MotionTask_Task2USS,
     .infrared = MotionTask_Task2IR,
 };
+
+#if TASK2_DIAGNOSTICS
+static char task2DiagLines[TASK2_DIAG_PARTS][TASK2_DIAG_LINE_SIZE];
+
+/* Microseconds from the core cycle counter for Task 2 planning time. Differences within one planning
+ * call are exact; the count itself is only a running total. */
+static uint32_t MotionTask_Task2ElapsedUs(void *context) {
+    static uint32_t lastCycles, us, spare;
+    (void)context;
+    uint32_t now = DWT->CYCCNT, perUs = SystemCoreClock / 1000000U;
+    uint32_t cycles = now - lastCycles + spare;
+    lastCycles = now;
+    us += cycles / perUs;
+    spare = cycles % perUs;
+    return us;
+}
+#endif
 
 static void MotionTask_SendTask2Events(void) {
     char event[TASK2COMMANDS_REPLY_SIZE];
@@ -482,7 +640,7 @@ static const char *MotionTask_Start(const Command *cmd) {
 static void MotionTask_Fault(const char *reason) {
     MotionTask_Capture(reason);
     ultrasonicCommand = false;
-    Task2Run_Fault(&task2);
+    Task2Run_FaultReason(&task2, reason);
     /* Brake actively; the session stays faulted until standalone S.
      * A U range-verification fault can occur after an earlier stop: track
      * this braking phase too, without fabricating pre-start measurements.
@@ -616,6 +774,14 @@ void MotionTask(void *argument) {
     task2CourseIo.mmPerCount = 3.14159265358979323846f *
         runtimeMotionConfig.kinematics->rearWheelDiameterMm / runtimeMotionConfig.kinematics->rearEncoderCountsPerRev;
     task2CourseIo.decelerationMmps2 = task2MotionConfig.arcDecelerationMmps2;
+#if TASK2_PLAN_HOST
+    task2CourseIo.plan = MotionTask_Task2Plan;
+#endif
+#if TASK2_DIAGNOSTICS
+    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+    task2CourseIo.elapsedUs = MotionTask_Task2ElapsedUs;
+#endif
     MotionTask_CentreSteering();
     OLED_Post(&cmdStatus, "READY");
     CommandLink_Send("READY\n");
@@ -659,6 +825,36 @@ void MotionTask(void *argument) {
                                              sizeof(diagnosticReply));
                 CommandLink_Send(diagnosticReply);
                 reply[0] = '\0';
+            } else
+#endif
+#if TASK2_DIAGNOSTICS
+            /* Task 2 planning records, only while stationary: each send blocks the loop briefly. */
+            if (strncmp(line, "D T", 3) == 0 && (line[3] == '\0' || line[3] == ' ')) {
+                if (MotionController_IsBusy(&motionController)) {
+                    (void)snprintf(reply, sizeof(reply), "DT - BUSY\n");
+                } else {
+                    unsigned n = Task2Run_Diagnostics(&task2, line, task2DiagLines, TASK2_DIAG_PARTS);
+                    for (unsigned i = 0U; i < n; ++i)
+                        CommandLink_Send(task2DiagLines[i]);
+                    if (n == 0U)
+                        (void)snprintf(reply, sizeof(reply), "DT - NONE\n");
+                    else
+                        reply[0] = '\0';
+                }
+            } else if (strncmp(line, "D R", 3) == 0 && (line[3] == '\0' || line[3] == ' ')) {
+                /* The run trace, a block at a time, only between runs: during one it still grows, and blocks of
+                 * one fetch must come from the same trace. */
+                if (MotionController_IsBusy(&motionController) || task2.active || task2.stopping || task2.finishing) {
+                    (void)snprintf(reply, sizeof(reply), "DR - BUSY\n");
+                } else {
+                    unsigned n = Task2Run_Trace(&task2, line, task2DiagLines, TASK2_DIAG_PARTS);
+                    for (unsigned i = 0U; i < n; ++i)
+                        CommandLink_Send(task2DiagLines[i]);
+                    if (n == 0U)
+                        (void)snprintf(reply, sizeof(reply), "DR - NONE\n");
+                    else
+                        reply[0] = '\0';
+                }
             } else
 #endif
             if (strcmp(line, "G") == 0) {
@@ -721,6 +917,12 @@ void MotionTask(void *argument) {
         MotionTask_SendTask2Events();
 
         uint32_t now = osKernelGetTickCount();
+        /* A move launched in this pass starts its clock now: a planning wait before it is not time it has
+         * spent, and charging it would skip the steering settle. */
+        if (task2Launched) {
+            previousUpdate = now;
+            task2Launched = false;
+        }
         uint32_t elapsedTicks = now - previousUpdate;
         float dt = elapsedTicks ? (float)elapsedTicks / osKernelGetTickFreq()
                                 : MOTIONTASK_CONTROL_PERIOD_S;

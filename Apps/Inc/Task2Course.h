@@ -7,10 +7,11 @@
 
 #include "Task2Commands.h"
 #include "Task2App.h"
+#include "Task2Wrap.h"
 
 /*
  * The Task 2 course adapter, run by MotionTask for batch "r:T2".
- * It selects Task2App or the explicit dry run. It sees the RPi only through Task2Commands (arrows,
+ * It selects the R275 sequence (Task2Wrap), the planner (Task2App) or the explicit dry run. It sees the RPi only through Task2Commands (arrows,
  * bullseye span, stage events) and moves the robot only through Task2CourseIo, so it
  * can be driven with fake Io (hosttests/test_task2_app.py; dry-run tests are separate).
  *
@@ -35,6 +36,10 @@
 #ifndef TASK2_COURSE_DRY_RUN
 #define TASK2_COURSE_DRY_RUN 0
 #endif
+/* 1: the fixed R275 sequence (Task2Wrap). 0: the route planner (Task2App). */
+#ifndef TASK2_COURSE_WRAP
+#define TASK2_COURSE_WRAP 1
+#endif
 
 typedef enum {
     TASK2COURSE_RUNNING,
@@ -47,7 +52,11 @@ typedef Task2AppIo Task2CourseIo;
 typedef struct {
     const Task2CourseIo *io;
     uint32_t stageStartedMs;
+#if TASK2_COURSE_WRAP
+    Task2Wrap wrap;
+#else
     Task2App app;
+#endif
     const char *fault;     /* static token when Update returns TASK2COURSE_FAULT */
 } Task2Course;
 
@@ -58,5 +67,12 @@ Task2CourseStatus Task2Course_Update(Task2Course *course, Task2Commands *command
                                      uint32_t nowMs);
 /* MotionTask has braked (S or fault); forget the run. */
 void Task2Course_Abort(Task2Course *course);
+/* A fault from outside the course; call before Task2Course_Abort so its state is still there. */
+void Task2Course_NoteFault(Task2Course *course, const char *reason);
+#if TASK2_DIAGNOSTICS
+/* The selected route's decision records and run trace, for the Pi's "D T" / "D R" requests. */
+const Task2Diagnostics *Task2Course_Diagnostics(const Task2Course *course);
+const Task2Trace *Task2Course_Trace(const Task2Course *course);
+#endif
 
 #endif

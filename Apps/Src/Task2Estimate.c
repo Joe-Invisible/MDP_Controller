@@ -6,8 +6,20 @@ void Task2Estimate_Init(Task2Estimate *e, const Task2RouteConfig *c) {
         .obstacle2Width = {true, true, c->obstacle2WidthMm, 0.0f, TASK2_ESTIMATE_CONFIGURED},
     };
 }
+/* The rules place both obstacles 600-1500 mm apart. A reading may stray past those limits by its own
+ * uncertainty plus a measured bias: on the floor (14 Oct) the O1-O2 gap read 25-58 mm short on every run,
+ * so a real 600 mm gap read 549. Such a reading is taken as the limit; anything further out is not this
+ * course. */
+#ifndef TASK2_RANGE_BIAS_ALLOWANCE_MM
+#define TASK2_RANGE_BIAS_ALLOWANCE_MM 60.0f
+#endif
+static bool InCourse(float mm, float uncertainty) {
+    float allowance = uncertainty + TASK2_RANGE_BIAS_ALLOWANCE_MM;
+    return isfinite(mm) && isfinite(uncertainty) && uncertainty >= 0.0f &&
+        mm >= 600.0f - 1.0f - allowance && mm <= 1500.0f + 1.0f + allowance;
+}
 bool Task2Estimate_SetGap(Task2Estimate *e, float mm, float uncertainty, Task2EstimateSource source) {
-    if (!isfinite(mm) || mm < 599.0f || mm > 1501.0f || !isfinite(uncertainty) || uncertainty < 0.0f)
+    if (!InCourse(mm, uncertainty))
         return false;
     e->faceGap = (Task2Dimension){true, false, fminf(1500.0f, fmaxf(600.0f, mm)), uncertainty, source};
     return true;
@@ -15,8 +27,9 @@ bool Task2Estimate_SetGap(Task2Estimate *e, float mm, float uncertainty, Task2Es
 bool Task2Estimate_SetFace(Task2Estimate *e, unsigned obstacle, float face, float uncertainty) {
     if (!isfinite(face) || !isfinite(uncertainty) || uncertainty < 0.0f) return false;
     if (obstacle == 1U) {
-        if (face < 600.0f || face > 1500.0f) return false;
-        e->obstacle1Face = (Task2Dimension){true, false, face, uncertainty, TASK2_ESTIMATE_ULTRASONIC};
+        if (!InCourse(face, uncertainty)) return false;
+        e->obstacle1Face = (Task2Dimension){true, false, fminf(1500.0f, fmaxf(600.0f, face)), uncertainty,
+                                            TASK2_ESTIMATE_ULTRASONIC};
         return true;
     }
     if (obstacle != 2U || !e->obstacle1Face.valid) return false;

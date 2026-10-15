@@ -66,6 +66,8 @@ typedef struct {
     Task2CommandArrow preview;   /* arrow 1 seen before the run: for planning, never committed */
     bool hasSpan;
     uint16_t obstacle2SpanMm;
+    bool hasDepth;
+    uint16_t obstacle2DepthMm;
     /* Events waiting to be sent, oldest first. MotionTask drains it every tick. */
     char outbox[TASK2COMMANDS_OUTBOX][TASK2COMMANDS_REPLY_SIZE];
     unsigned outboxHead, outboxCount;
@@ -79,7 +81,7 @@ void Task2Commands_Init(Task2Commands *t);
 void Task2Commands_Begin(Task2Commands *t, uint8_t run, Task2CommandArrow arrow1);
 
 /*
- * Handles "A ...", "W ..." and "Q T". Returns false for any other line,
+ * Handles "A ...", "W ...", "Z ..." and "Q T". Returns false for any other line,
  * leaving it to CommandSession. When true, reply holds the line to send.
  */
 bool Task2Commands_Receive(Task2Commands *t, const char *line,
@@ -99,6 +101,12 @@ Task2CommandArrow Task2Commands_Preview(const Task2Commands *t);
  * not the width itself (how far in the bullseyes sit is not in the rules).
  */
 bool Task2Commands_Span(const Task2Commands *t, uint16_t *spanMm);
+
+/*
+ * Camera depth to obstacle 2's arrow for this run, if any: along the lens axis, from photos taken while the
+ * robot stood still in APPROACH2. Sent by the Pi just before arrow 2.
+ */
+bool Task2Commands_Depth(const Task2Commands *t, uint16_t *depthMm);
 
 /* Queues "EV r SUMMARY ..." for the log, just before DONE. NAN prints "-". */
 void Task2Commands_Summary(Task2Commands *t, float obstacle1FaceMm,

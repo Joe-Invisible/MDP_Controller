@@ -71,6 +71,33 @@ void Task2Course_Abort(Task2Course *c) {
     c->io = NULL;
 }
 
+void Task2Course_NoteFault(Task2Course *c, const char *reason) {
+    (void)c; (void)reason;
+}
+
+#elif TASK2_COURSE_WRAP
+const char *Task2Course_Start(Task2Course *c, const Task2CourseIo *io,
+                              Task2Commands *t, uint32_t nowMs) {
+    (void)t;
+    memset(c, 0, sizeof(*c));
+    c->io = io; c->stageStartedMs = nowMs;
+    c->fault = Task2Wrap_Start(&c->wrap, io, nowMs);
+    return c->fault;
+}
+Task2CourseStatus Task2Course_Update(Task2Course *c, Task2Commands *t, uint32_t nowMs) {
+    Task2AppStatus status = Task2Wrap_Update(&c->wrap, t, nowMs);
+    c->fault = c->wrap.fault;
+    return status == TASK2_APP_DONE ? TASK2COURSE_DONE
+        : status == TASK2_APP_FAULT ? TASK2COURSE_FAULT : TASK2COURSE_RUNNING;
+}
+void Task2Course_Abort(Task2Course *c) {
+    Task2Wrap_Abort(&c->wrap);
+    c->io = NULL;
+}
+void Task2Course_NoteFault(Task2Course *c, const char *reason) {
+    Task2Wrap_NoteFault(&c->wrap, reason);
+}
+
 #else
 const char *Task2Course_Start(Task2Course *c, const Task2CourseIo *io,
                               Task2Commands *t, uint32_t nowMs) {
@@ -90,4 +117,17 @@ void Task2Course_Abort(Task2Course *c) {
     Task2App_Abort(&c->app);
     c->io = NULL;
 }
+void Task2Course_NoteFault(Task2Course *c, const char *reason) {
+    Task2App_NoteFault(&c->app, reason);
+}
+#endif
+
+#if TASK2_DIAGNOSTICS
+#if TASK2_COURSE_WRAP
+const Task2Diagnostics *Task2Course_Diagnostics(const Task2Course *c) { return &c->wrap.diag; }
+const Task2Trace *Task2Course_Trace(const Task2Course *c) { return &c->wrap.trace; }
+#else
+const Task2Diagnostics *Task2Course_Diagnostics(const Task2Course *c) { return &c->app.diag; }
+const Task2Trace *Task2Course_Trace(const Task2Course *c) { return &c->app.trace; }
+#endif
 #endif

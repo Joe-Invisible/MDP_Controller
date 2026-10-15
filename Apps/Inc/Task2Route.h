@@ -156,8 +156,22 @@ bool Task2Route_CreateFromPose(const Task2RouteConfig *config,
 /* Freeze the latest span/geometry and certify departure from the actual approach stop. */
 bool Task2Route_ReplanDeparture(Task2Route *route, const Task2RouteConfig *config,
     const Task2RoutePose *stoppedPose, const Task2RouteIRDeparture *ir);
+/* Same-side wide O2: from a stop, turn along the face and traverse with the side IR. */
+bool Task2Route_ReplanIRTraverse(Task2Route *route, const Task2RouteConfig *config,
+    const Task2RoutePose *pose, const Task2RouteIRDeparture *ir);
 bool Task2Route_CheckStraight(const Task2RouteConfig *, const Task2RoutePose *, float distanceMm);
+/* A route planned elsewhere: its steps from `first` on, driven from `start`, must be physically clear
+ * of the obstacles, car park and proven side limit of the caller's own geometry. widthMm is the measured
+ * O2 width the call planned with (NAN: the config's); a sensor-ended straight must point forward and is
+ * checked for sensorCommittedMm (> 0), the travel before its sensor can end it, whatever its preview. */
+bool Task2Route_CertifySuffix(const Task2Route *route, const Task2RouteConfig *authority,
+    const Task2RoutePose *start, unsigned first, float widthMm, float sensorCommittedMm);
+/* Pose checks made since boot; the difference across a call is that call's whole planning work. */
+uint32_t Task2Route_TotalPlanningChecks(void);
 float Task2Route_RecognitionApproach(const Task2RouteConfig *config, const Task2RoutePose *start);
+/* x of obstacle 2's face from a camera depth (along the lens axis) to its arrow, centred at y = 0, taken at
+ * pose; NAN if the face cannot be in front of the lens. */
+float Task2Route_CameraFaceX(const Task2RouteConfig *config, const Task2RoutePose *pose, float depthMm);
 bool Task2Route_IsParked(const Task2RouteConfig *config, const Task2RoutePose *pose);
 /* Runtime clearance policy for a certified fallback. Carpark buffers never change. */
 Task2RouteConfig Task2Route_ReturnBounds(const Task2Route *route);

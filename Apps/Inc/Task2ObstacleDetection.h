@@ -18,6 +18,7 @@ typedef struct
     float ultrasonicMaxDepartureYawDeg; /* Relative to the O2 face normal. */
     uint16_t irPresentAdc; /* Inclusive raw 12-bit ADC thresholds. */
     uint16_t irAbsentAdc;
+    uint16_t irFaceDropAdc; /* Once armed, "gone" is also anything this far below the face level; 0 disables. */
     float irAcquisitionMinYawDeg; /* Mirrored chassis yaw; side IR becomes eligible here. */
     uint16_t irTrendMinDropAdc; /* Median-filtered drop from the preceding plateau. */
     uint16_t irTrendReboundAdc; /* Small upward fluctuations do not cancel a decline. */
@@ -91,6 +92,18 @@ typedef struct
     Task2EdgeMethod edgeMethod;
     float observedWidthMm;
     Task2RoutePose edgePose;
+    /* O2 half-length proven by armed, present face samples: the hit's lateral coordinate on the
+     * face plane, less edge and pose uncertainty. A lower bound, unlike observedWidthMm. */
+    float faceExtentLowerMm;
+    float faceHitMm[8];        /* Latest consecutive face hits (at most 8 are compared). */
+    uint32_t faceHitCount;     /* Consecutive qualifying samples; reset by any non-present one. */
+    Task2RoutePose lastUltrasonicPose; /* Capture pose of lastUltrasonicRangeMm. */
+    bool reacquire;               /* Same-side, unarmed: the IR reads no face beyond the proven face; back onto it. */
+    uint16_t irFaceRecentAdc[3];  /* Latest consecutive present readings. */
+    uint32_t irFaceRecentCount;
+    uint16_t irFaceMedianAdc[8];  /* Medians of three, from the latest present readings once armed. */
+    uint32_t irFaceMedianCount;
+    uint16_t irFaceLevelAdc;      /* Highest of irFaceMedianAdc: the face level; 0 before any. */
 } Task2ObstacleDetection;
 
 bool Task2ObstacleDetection_ValidConfig(const Task2ObstacleSensorConfig *config);

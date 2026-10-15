@@ -64,6 +64,12 @@ void Task2Run_Fault(Task2Run *r) {
     Task2Commands_SetStage(&r->commands, TASK2_STAGE_FAULT);
 }
 
+void Task2Run_FaultReason(Task2Run *r, const char *reason) {
+    if (r->active)
+        Task2Course_NoteFault(&r->course, reason);
+    Task2Run_Fault(r);
+}
+
 void Task2Run_Stationary(Task2Run *r) {
     if (r->stopping) {
         r->stopping = false;
@@ -77,4 +83,24 @@ bool Task2Run_NextEvent(Task2Run *r, char line[TASK2COMMANDS_REPLY_SIZE]) {
 
 bool Task2Run_Receive(Task2Run *r, const char *line, char reply[TASK2COMMANDS_REPLY_SIZE]) {
     return Task2Commands_Receive(&r->commands, line, reply);
+}
+
+unsigned Task2Run_Diagnostics(const Task2Run *r, const char *line,
+                              char lines[][TASK2_DIAG_LINE_SIZE], unsigned maxLines) {
+#if TASK2_DIAGNOSTICS
+    return Task2Diag_Reply(Task2Course_Diagnostics(&r->course), r->commands.run, line, lines, maxLines);
+#else
+    (void)r; (void)line; (void)lines; (void)maxLines;
+    return 0U;
+#endif
+}
+
+unsigned Task2Run_Trace(const Task2Run *r, const char *line,
+                        char lines[][TASK2_DIAG_LINE_SIZE], unsigned maxLines) {
+#if TASK2_DIAGNOSTICS
+    return Task2Trace_Reply(Task2Course_Trace(&r->course), r->commands.run, line, lines, maxLines);
+#else
+    (void)r; (void)line; (void)lines; (void)maxLines;
+    return 0U;
+#endif
 }

@@ -50,6 +50,8 @@ void Task2Run_Stop(Task2Run *r);
 
 /* The batch is faulting (braking requested). */
 void Task2Run_Fault(Task2Run *r);
+/* The same, recording the fault's reason with the course's state first. */
+void Task2Run_FaultReason(Task2Run *r, const char *reason);
 
 /* Call on every tick the wheels are stationary, before CommandSession_Stopped. */
 void Task2Run_Stationary(Task2Run *r);
@@ -59,5 +61,12 @@ bool Task2Run_NextEvent(Task2Run *r, char line[TASK2COMMANDS_REPLY_SIZE]);
 
 /* A/W/Q T lines; false for anything else. */
 bool Task2Run_Receive(Task2Run *r, const char *line, char reply[TASK2COMMANDS_REPLY_SIZE]);
+
+/* "D T" / "D T g" for the latest run (see Task2Diagnostics.h); the number of lines written. */
+unsigned Task2Run_Diagnostics(const Task2Run *r, const char *line,
+                              char lines[][TASK2_DIAG_LINE_SIZE], unsigned maxLines);
+/* "D R" / "D R b": the latest run's trace (see Task2Diagnostics.h); the number of lines written. */
+unsigned Task2Run_Trace(const Task2Run *r, const char *line,
+                        char lines[][TASK2_DIAG_LINE_SIZE], unsigned maxLines);
 
 #endif

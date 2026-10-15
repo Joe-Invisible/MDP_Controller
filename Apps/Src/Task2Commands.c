@@ -88,6 +88,13 @@ bool Task2Commands_Span(const Task2Commands *t, uint16_t *spanMm) {
     return true;
 }
 
+bool Task2Commands_Depth(const Task2Commands *t, uint16_t *depthMm) {
+    if (!t->started || !t->hasDepth)
+        return false;
+    *depthMm = t->obstacle2DepthMm;
+    return true;
+}
+
 void Task2Commands_ClearEvents(Task2Commands *t) {
     t->outboxHead = 0U;
     t->outboxCount = 0U;
@@ -208,6 +215,22 @@ static void Span(Task2Commands *t, const char *p, char *reply) {
     snprintf(reply, TASK2COMMANDS_REPLY_SIZE, "ACK %lu W %lu\n", run, span);
 }
 
+/* "Z r d": camera depth to obstacle 2's arrow; only while obstacle 2's arrow is still being read. */
+static void Depth(Task2Commands *t, const char *p, char *reply) {
+    unsigned long run, depth;
+    if (!Field(&p, 0U, 255U, ' ', &run) || !Field(&p, 1U, 9999U, '\0', &depth)) {
+        snprintf(reply, TASK2COMMANDS_REPLY_SIZE, "NAK - PARSE\n");
+        return;
+    }
+    if (!t->started || run != t->run || !ArmedFor(t->stage, 2U)) {
+        snprintf(reply, TASK2COMMANDS_REPLY_SIZE, "NAK %lu Z STATE\n", run);
+        return;
+    }
+    t->hasDepth = true;
+    t->obstacle2DepthMm = (uint16_t)depth;
+    snprintf(reply, TASK2COMMANDS_REPLY_SIZE, "ACK %lu Z %lu\n", run, depth);
+}
+
 static char ArrowLetter(Task2CommandArrow arrow) {
     return arrow == TASK2_COMMAND_ARROW_LEFT ? 'L'
          : arrow == TASK2_COMMAND_ARROW_RIGHT ? 'R' : '-';
@@ -231,6 +254,10 @@ bool Task2Commands_Receive(Task2Commands *t, const char *line,
     }
     if (strncmp(line, "W ", 2) == 0) {
         Span(t, line + 2, reply);
+        return true;
+    }
+    if (strncmp(line, "Z ", 2) == 0) {
+        Depth(t, line + 2, reply);
         return true;
     }
     return false;
