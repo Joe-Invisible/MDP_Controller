@@ -23,8 +23,11 @@
  * from arrow 2 on. Bad behind O2: `badStatus` while the robot is behind O2 (the back-leg search). Bad late on the
  * back leg: `badStatus` once the robot is behind O2 and within 300 mm of the start line, coming from the near end,
  * so the no-data brake at cruise carries it past the point where the search would slow down. */
+/* Background: within a metre past either O2 end, the O2-side IR reads what floor 203326 run 0 read there (mostly
+ * between the two levels, some above present), starting `backgroundStart` samples into that sequence. */
 typedef enum { IR_NORMAL, IR_ALWAYS_ABSENT, IR_BACK_FACE_LATE, IR_REBOUND, IR_BAD, IR_FROZEN, IR_BAD_BEHIND_O2,
-               IR_BAD_LATE_BACK_LEG } IRFault;
+               IR_BAD_LATE_BACK_LEG, IR_BACKGROUND } IRFault;
+static unsigned backgroundStart;
 typedef struct {
     float d1, gap, width;
     int arrow1, arrow2;
@@ -168,6 +171,13 @@ static void Sensors(void) {
         }
         /* Rebound: the O2-side IR reads present once more on the second absent sample after seeing the face. */
         int side = sim.c.arrow2 > 0 ? 1 : 0;
+        if (sim.c.ir == IR_BACKGROUND && adc[side] != 1500U) {
+            static const uint16_t floor203326[] = {513, 529, 594, 570, 676, 559, 577, 568, 768, 808, 684, 695, 791, 696,
+                                                   677, 515, 632};
+            float oy = sim.y + m[side]->aheadMm * sinf(sim.yaw) + m[side]->leftMm * cosf(sim.yaw);
+            if (fabsf(oy) > h && fabsf(oy) < h + 1000.0f)
+                adc[side] = floor203326[(sim.irSeq + backgroundStart) % (sizeof floor203326 / sizeof floor203326[0])];
+        }
         if (sim.c.ir == IR_REBOUND) {
             if (adc[side] == 1500U) sim.seenPresent = true;
             else if (sim.seenPresent && !sim.reboundDone && ++sim.lossCalls == 2) { adc[side] = 1500U; sim.reboundDone = true; }
@@ -186,7 +196,7 @@ static void Sensors(void) {
     }
 }
 
-typedef struct { Task2AppStatus status; const char *fault; float minO1, minO2; float x, y; uint32_t ms; int speedRefused; float parkMargin; char records[1024]; } Outcome;
+typedef struct { Task2AppStatus status; const char *fault; float minO1, minO2; float x, y; uint32_t ms; int speedRefused; float parkMargin; char records[1024]; float endLateMm, endEarlyMm; } Outcome;
 /* Smallest distance from a body corner to the car park's walls at the end (negative when a corner is outside). */
 static float ParkMargin(void) {
     float c = cosf(sim.yaw), s = sinf(sim.yaw), best = INFINITY;
@@ -228,6 +238,10 @@ static Outcome Run(Case c) {
         status = Task2Wrap_Update(&w, &t, sim.now);
     }
     Outcome o = {status, w.fault, sim.minO1, sim.minO2, sim.x, sim.y, sim.now, speedRefused, ParkMargin(), {0}};
+    /* How far past (late) or short of (early) the real O2 ends the measured ones are; belief y = truth y here. */
+    float nearPast = fabsf(w.nearEndYMm) - 0.5f * c.width, farPast = fabsf(w.farEndYMm) - 0.5f * c.width;
+    o.endLateMm = fmaxf(nearPast, farPast);
+    o.endEarlyMm = fmaxf(-nearPast, -farPast);
     speedRefused = 0;
     size_t n = 0;
     for (unsigned i = 0U; i < w.diag.count; ++i) {
@@ -361,6 +375,20 @@ int main(void) {
         Outcome o = Run((Case){900.0f, 1000.0f, 1060.0f, 1, s, IR_REBOUND, false, SENSOR_OK, 0U, 0, false, 0});
         Expect(o.status == TASK2_APP_DONE && o.minO2 > 20.0f, s > 0 ? "rebound, left" : "rebound, right", &o);
     }
+    /* Something past O2's ends holds the O2-side IR between the levels: the drop from the face still ends both
+     * searches near the real ends, never at the search limit. */
+    for (int s = -1; s <= 1; s += 2) for (backgroundStart = 0U; backgroundStart < 17U; backgroundStart += 8U) {
+        Outcome clean = Run((Case){600.0f, 600.0f, 1060.0f, 1, s, IR_NORMAL, false, SENSOR_OK, 0U, 0, false, 0});
+        Outcome o = Run((Case){600.0f, 600.0f, 1060.0f, 1, s, IR_BACKGROUND, false, SENSOR_OK, 0U, 0, false, 0});
+        char name[80]; snprintf(name, sizeof(name), "IR background past the ends, arrow 2 %+d, from sample %u", s, backgroundStart);
+        printf("    (O2 ends: up to %.0f mm late, %.0f mm early; no background %.0f late, %.0f early)\n", (double)o.endLateMm,
+               (double)o.endEarlyMm, (double)clean.endLateMm, (double)clean.endEarlyMm);
+        /* No earlier than without the background beyond one sample at search speed (early turns into O2); late by
+         * at most 150 mm, not a runaway. */
+        Expect(o.status == TASK2_APP_DONE && !strstr(o.records, "T2_IR_EXHAUSTED") && o.minO2 > 20.0f && o.parkMargin > 60.0f &&
+               o.endEarlyMm <= clean.endEarlyMm + 20.0f && o.endLateMm < 150.0f, name, &o);
+    }
+    backgroundStart = 0U;
     /* Ultrasonic dead past O1 at the minimum gap: no forward sidestep into O2; nearest O2 assumed. */
     for (int k = 0; k < 4; ++k) {
         Outcome o = Run((Case){600.0f, 600.0f, 300.0f, pairs[k][0], pairs[k][1], IR_NORMAL, true, SENSOR_OK, 0U, 0, false, 0});

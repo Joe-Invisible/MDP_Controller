@@ -490,6 +490,24 @@ static const char *BeginSearch(Task2Wrap *w, bool want, int direction, float spe
                                       : SEARCH_LIMIT_MM;
     return Straight(w, (float)direction * length, speedMmps);
 }
+static void NoteFace(Task2WrapSearch *s, uint16_t adc) { s->faceAdc[s->faceCount++ % TASK2_WRAP_FACE_SAMPLES] = adc; }
+/* The face level an end drops from: the highest of the latest present samples. */
+static uint16_t FaceLevel(const Task2WrapSearch *s) {
+    uint16_t level = 0U;
+    unsigned n = s->faceCount < TASK2_WRAP_FACE_SAMPLES ? s->faceCount : TASK2_WRAP_FACE_SAMPLES;
+    for (unsigned i = 0U; i < n; ++i) if (s->faceAdc[i] > level) level = s->faceAdc[i];
+    return level;
+}
+/* The wanted state on this sample. For an end, something beyond it (floor: 500-800 for a metre past O2) can hold
+ * the IR between the two levels, so a sample under the present level and irFaceDropAdc below the face is gone
+ * too. */
+static bool SearchHit(Task2WrapSearch *s, uint16_t adc, bool present) {
+    if (s->want) return present;
+    uint16_t drop = task2AppSensorDefaults.irFaceDropAdc;
+    bool dropped = drop && adc < task2AppSensorDefaults.irPresentAdc && adc + drop <= FaceLevel(s);
+    if (adc >= task2AppSensorDefaults.irPresentAdc) NoteFace(s, adc);
+    return !present || dropped;
+}
 /* Feeds the search; true once it has finished (found and braked, or ran out). */
 static bool Search(Task2Wrap *w, uint32_t now, bool busy, const char **fault) {
     Task2WrapSearch *s = &w->search;
@@ -514,7 +532,8 @@ static bool Search(Task2Wrap *w, uint32_t now, bool busy, const char **fault) {
             /* An end is only where a face, seen on three samples in a row, goes out of view. */
             s->faceRun = present ? s->faceRun + 1U : 0U;
             s->seenFace = s->faceRun >= IR_CONFIRM_SAMPLES;
-        } else if (present == s->want) {
+            if (present) NoteFace(s, adc);
+        } else if (SearchHit(s, adc, present)) {
             if (++s->run == 1U) {
                 s->firstIrYMm = y;
                 s->firstSpeedMmps = s->slowed || !isfinite(s->slowAtYMm) ? IR_SEARCH_MMPS : CRUISE_CPS * w->io->mmPerCount;

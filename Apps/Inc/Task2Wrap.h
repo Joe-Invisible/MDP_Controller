@@ -134,6 +134,7 @@ typedef struct {
     bool active;
 } Task2WrapRange;
 
+#define TASK2_WRAP_FACE_SAMPLES 5U
 /* A side-IR search along O2: the state wanted on three samples in a row, and where the first was taken.
  * A search for the face's end only counts once the face itself has been seen. */
 typedef struct {
@@ -147,6 +148,8 @@ typedef struct {
     bool present;      /* Hysteresis state between the absent and present levels. */
     uint32_t lastIrMs; /* When the last valid sample arrived (or the search began). */
     bool noData;       /* Ran out because the IR gave no valid samples, not by distance. */
+    uint16_t faceAdc[TASK2_WRAP_FACE_SAMPLES];  /* The latest present samples on the face, for the level an end drops from. */
+    unsigned faceCount;
 } Task2WrapSearch;
 
 typedef struct {

@@ -82,8 +82,8 @@ static const MotionControllerArcFeedforwardPoint task2PositivePoints[] = {
 static bool MotionTask_ConfigureTask2(void) {
     commandMotionConfig = runtimeMotionConfig;
     task2MotionConfig = runtimeMotionConfig;
-    task2MotionConfig.straightYawRateKp = task2MotionConfig.arcYawRateKp = 200.0f;
-    task2MotionConfig.straightYawRateKi = task2MotionConfig.arcYawRateKi = 100.0f;
+    task2MotionConfig.straightYawRateKp = task2MotionConfig.arcYawRateKp = 100.0f;
+    task2MotionConfig.straightYawRateKi = task2MotionConfig.arcYawRateKi = 50.0f;
     task2MotionConfig.straightYawRateKd = task2MotionConfig.arcYawRateKd = 0.0f;
     task2MotionConfig.straightHeadingKpPerSec = task2MotionConfig.arcHeadingKpPerSec = 0.2f;
     task2MotionConfig.straightAccelerationMmps2 = task2MotionConfig.straightDecelerationMmps2 = 3000.0f;
