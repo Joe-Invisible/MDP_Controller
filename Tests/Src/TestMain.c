@@ -11,5 +11,7 @@ void InvokeTest(void)
     OLED_Clear();
     LED_On();
     Task2MotionTestRun();
-    while (1) { /* Results remain available for export. */ }
+    while (1)
+    { /* Results remain available for export. */
+    }
 }

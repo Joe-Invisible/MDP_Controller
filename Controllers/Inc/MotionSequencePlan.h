@@ -72,20 +72,19 @@ extern const MotionSequenceConfig motionSequenceConfig;
 
 /* Optional local-slope model. NULL selects the supplied scalar fallback. */
 void MotionSequencePlan_SetFeedforward(MotionSequencePlan *plan,
-    const MotionControllerArcConfig *config, float straightCommand);
+                                       const MotionControllerArcConfig *config,
+                                       float straightCommand);
 
-bool MotionSequencePlan_Prepare(
-    MotionSequencePlan *plan,
-    const MotionSequenceConfig *config,
-    float mmPerCount,
-    float straightAccelerationMmps2,
-    float straightDecelerationMmps2,
-    float arcAccelerationMmps2,
-    float arcDecelerationMmps2,
-    float rawSlopeBound,
-    float rawRatePerSec);
-bool MotionSequencePlan_Evaluate(
-    const void *context, float progressMm, MotionPathSample *sample);
+bool MotionSequencePlan_Prepare(MotionSequencePlan *plan,
+                                const MotionSequenceConfig *config,
+                                float mmPerCount,
+                                float straightAccelerationMmps2,
+                                float straightDecelerationMmps2,
+                                float arcAccelerationMmps2,
+                                float arcDecelerationMmps2,
+                                float rawSlopeBound,
+                                float rawRatePerSec);
+bool MotionSequencePlan_Evaluate(const void *context, float progressMm, MotionPathSample *sample);
 uint32_t MotionSequencePlan_RunEnd(const MotionSequencePlan *plan, uint32_t first);
 
 #endif

@@ -14,13 +14,13 @@ typedef struct
     float ultrasonicRangeToleranceMm;
     uint32_t ultrasonicApproachMedianSamples;
     uint32_t ultrasonicDepartureMedianSamples;
-    float ultrasonicJumpMm; /* Upward change after compensating for chassis motion. */
+    float ultrasonicJumpMm;             /* Upward change after compensating for chassis motion. */
     float ultrasonicMaxDepartureYawDeg; /* Relative to the O2 face normal. */
-    uint16_t irPresentAdc; /* Inclusive raw 12-bit ADC thresholds. */
+    uint16_t irPresentAdc;              /* Inclusive raw 12-bit ADC thresholds. */
     uint16_t irAbsentAdc;
     float irAcquisitionMinYawDeg; /* Mirrored chassis yaw; side IR becomes eligible here. */
-    uint16_t irTrendMinDropAdc; /* Median-filtered drop from the preceding plateau. */
-    uint16_t irTrendReboundAdc; /* Small upward fluctuations do not cancel a decline. */
+    uint16_t irTrendMinDropAdc;   /* Median-filtered drop from the preceding plateau. */
+    uint16_t irTrendReboundAdc;   /* Small upward fluctuations do not cancel a decline. */
     uint32_t irTrendSamples;
     float irTrendMinTravelMm;
     float edgeUncertaintyMm;
@@ -30,14 +30,19 @@ typedef struct
     uint32_t absentSamples;
 } Task2ObstacleSensorConfig;
 
-typedef enum { TASK2_SENSOR_ULTRASONIC, TASK2_SENSOR_LEFT_IR, TASK2_SENSOR_RIGHT_IR,
-    TASK2_SENSOR_COUNT } Task2ObstacleSensor;
+typedef enum
+{
+    TASK2_SENSOR_ULTRASONIC,
+    TASK2_SENSOR_LEFT_IR,
+    TASK2_SENSOR_RIGHT_IR,
+    TASK2_SENSOR_COUNT
+} Task2ObstacleSensor;
 
 typedef struct
 {
     bool valid;
-    bool fault; /* ADC/trigger fault is distinct from a completed no-echo timeout. */
-    float value; /* mm for ultrasonic; raw ADC counts (0..4095) for IR. */
+    bool fault;          /* ADC/trigger fault is distinct from a completed no-echo timeout. */
+    float value;         /* mm for ultrasonic; raw ADC counts (0..4095) for IR. */
     Task2RoutePose pose; /* Pose when the measurement was triggered. */
 } Task2ObstacleObservation;
 
@@ -96,13 +101,15 @@ typedef struct
 bool Task2ObstacleDetection_ValidConfig(const Task2ObstacleSensorConfig *config);
 /* Keep acquired O2 evidence; seed a shorter departure window from its baseline. */
 void Task2ObstacleDetection_BeginUSSDeparture(Task2ObstacleDetection *state,
-    const Task2ObstacleSensorConfig *config);
+                                              const Task2ObstacleSensorConfig *config);
 /* Called once at the stopped-heading start of the sensor-terminated straight. */
 void Task2ObstacleDetection_BeginIRTraverse(Task2ObstacleDetection *state,
-    const Task2RoutePose *pose);
+                                            const Task2RoutePose *pose);
 /* USS: approach acquisition, LL/RR departure loss. IR: LR/RL straight only. */
 void Task2ObstacleDetection_Observe(Task2ObstacleDetection *state,
-    const Task2ObstacleSensorConfig *config, const Task2RouteConfig *route,
-    Task2ObstacleSensor sensor, const Task2ObstacleObservation *observation,
-    bool departing);
+                                    const Task2ObstacleSensorConfig *config,
+                                    const Task2RouteConfig *route,
+                                    Task2ObstacleSensor sensor,
+                                    const Task2ObstacleObservation *observation,
+                                    bool departing);
 #endif

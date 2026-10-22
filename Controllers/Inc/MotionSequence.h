@@ -32,18 +32,18 @@ typedef struct
     bool initialized;
 } MotionSequence;
 
-MotionControllerStatus MotionSequence_Begin(
-    MotionSequence *sequence,
-    MotionController *controller,
-    const MotionSequenceConfig *config);
-MotionControllerStatus MotionSequence_AddStraight(
-    MotionSequence *sequence, float signedDistanceMm, float speedCps, bool stopAfter);
-MotionControllerStatus MotionSequence_AddArc(
-    MotionSequence *sequence,
-    float signedDistanceMm,
-    float radiusMm,
-    float speedCps,
-    bool stopAfter);
+MotionControllerStatus MotionSequence_Begin(MotionSequence *sequence,
+                                            MotionController *controller,
+                                            const MotionSequenceConfig *config);
+MotionControllerStatus MotionSequence_AddStraight(MotionSequence *sequence,
+                                                  float signedDistanceMm,
+                                                  float speedCps,
+                                                  bool stopAfter);
+MotionControllerStatus MotionSequence_AddArc(MotionSequence *sequence,
+                                             float signedDistanceMm,
+                                             float radiusMm,
+                                             float speedCps,
+                                             bool stopAfter);
 /* Preflight and launch asynchronously. Empty sequence completes immediately.
  * Capacity or infeasible plan is PROFILE_ERROR. No heap allocation. */
 MotionControllerStatus MotionSequence_Execute(MotionSequence *sequence);
