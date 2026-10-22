@@ -13,7 +13,8 @@
 #include <stdbool.h>
 #include "stm32f4xx_hal.h"
 
-typedef enum {
+typedef enum
+{
     DCMOTOR_MODE_NEUTRAL = 0,
     DCMOTOR_MODE_DRIVE,
     DCMOTOR_MODE_BRAKE
@@ -22,42 +23,43 @@ typedef enum {
 /**
  * Peripheral Configuration Parameters
  */
-typedef struct DCMotorConfg {
-	/**
+typedef struct DCMotorConfg
+{
+    /**
 	 * PWM source timer module
 	 */
-	TIM_HandleTypeDef* pwmHtim;
-	/**
+    TIM_HandleTypeDef *pwmHtim;
+    /**
 	 * PWM source channel 1
 	 */
-	uint32_t pwmChannel1;
-	/**
+    uint32_t pwmChannel1;
+    /**
 	 * PWM source channel 1
 	 */
-	uint32_t pwmChannel2;
+    uint32_t pwmChannel2;
 
-	/**
+    /**
 	 * Adjust according to hardware polarity
 	 */
-	uint32_t flipDirection;
+    uint32_t flipDirection;
 
-	/**
+    /**
 	 * Encoder timer module
 	 */
-	TIM_HandleTypeDef* encHtim;
+    TIM_HandleTypeDef *encHtim;
 
 } DCMotorConfg;
-
 
 /**
  * Application-level runtime states of the Motor.
  */
-typedef struct DCMotorState {
-	/**
+typedef struct DCMotorState
+{
+    /**
 	 * Encoder count.
 	 */
-	uint16_t encCount;
-	/**
+    uint16_t encCount;
+    /**
 	 * Range 0-100
 	 * specifies the % duty cycle, e.g., 50 is 50% duty cycle.
 	 * This value will be applied to the active channel.
@@ -66,41 +68,44 @@ typedef struct DCMotorState {
 	 * channels.
 	 *
 	 */
-	float activeDutyCycle;
+    float activeDutyCycle;
 
-	/**
+    /**
 	 * Torque direction of the motor, valid during DRIVE
 	 * state only,
 	 * 0: forward (startup NEUTRAL mode default)
 	 * 1: reverse
 	 * In other modes, this field is not valid.
 	 */
-	int8_t direction;
+    int8_t direction;
 
-	DCMotorMode mode;
+    DCMotorMode mode;
 } DCMotorState;
 
-
-typedef struct DCMotor {
-	DCMotorConfg config;
-	DCMotorState state;
+typedef struct DCMotor
+{
+    DCMotorConfg config;
+    DCMotorState state;
 } DCMotor;
 
 /**
  *
  */
-bool DCMotor_Init(DCMotor* rm, TIM_HandleTypeDef* pwmHtim, bool flipDirection, TIM_HandleTypeDef* encHtim);
+bool DCMotor_Init(DCMotor *rm,
+                  TIM_HandleTypeDef *pwmHtim,
+                  bool flipDirection,
+                  TIM_HandleTypeDef *encHtim);
 
 /**
  * Forces both PWM to 0 and stars PWM generation.
  */
-bool DCMotor_Enable(DCMotor* rm);
+bool DCMotor_Enable(DCMotor *rm);
 
 /**
  * Stops PWM generation for both channels. For normal motion
  * commands, use DCMotor_SetPWM with 0% duty cycle instead.
  */
-void DCMotor_Disable(DCMotor* rm);
+void DCMotor_Disable(DCMotor *rm);
 
 /**
  * Set PWM to drive the motor.
@@ -111,12 +116,12 @@ void DCMotor_Disable(DCMotor* rm);
 	 * +: Forward;
 	 * -: Reverse
  */
-void DCMotor_SetPWM(DCMotor* rm, float dutyCycle);
+void DCMotor_SetPWM(DCMotor *rm, float dutyCycle);
 
 /**
  * Puts the motor at coast. The wheels can roll freely.
  */
-void DCMotor_Neutral(DCMotor* rm);
+void DCMotor_Neutral(DCMotor *rm);
 
 /**
  * Electrical braking. For the H-bridge driver, this method
@@ -138,9 +143,8 @@ void DCMotor_SetBrakePWM(DCMotor *motor, float brakePercent);
  * Compatibility wrapper for full duty cycle braking.
  * Equivalent to DCMotor_SetBrakePWM with brakePercent=100.
  */
-void DCMotor_Brake(DCMotor* rm);
+void DCMotor_Brake(DCMotor *rm);
 
-int16_t DCMotor_GetEncoderCount(DCMotor* rm);
-
+int16_t DCMotor_GetEncoderCount(DCMotor *rm);
 
 #endif /* INC_RWDRIVER_H_ */
