@@ -26,15 +26,17 @@
 #include "oled.h"
 #include "led3.h"
 
-void InvokeTest() {
-	OLED_Init();
-	OLED_Clear();
+void InvokeTest()
+{
+    OLED_Init();
+    OLED_Clear();
 
-	LED_On();
+    LED_On();
 
-	MotionControllerArcTestRun();
+    MotionControllerArcTestRun();
 
-	while (1) {
-		// Test ended. Loop forever.
-	}
+    while (1)
+    {
+        // Test ended. Loop forever.
+    }
 }

@@ -11,7 +11,8 @@
 #include "MotionController.h"
 #include "MotionControllerConfig.h"
 
-typedef struct {
+typedef struct
+{
     uint32_t timeMs;
     uint32_t state;
 
