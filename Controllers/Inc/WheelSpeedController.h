@@ -17,18 +17,18 @@
 #include "DynamicBrakeMap.h"
 #include <stdint.h>
 
-
 /**
  * Check threshold for stationary wheel. Set this according
  * to the controller update frequency. 100Cps corresponds to 100Hz update.
  */
-#define WHEEL_STATIONARY_THRESHOLD_CPS		100
+#define WHEEL_STATIONARY_THRESHOLD_CPS 100
 
 /**
  * We store all calibration values as positive magnitudes.
  * The sign for DCMotor input will be
  */
-typedef struct {
+typedef struct
+{
     float forwardSlope;
     float forwardOffset;
 
@@ -42,7 +42,6 @@ typedef struct {
     float runReversePWM;
 } WheelSpeedCalibration;
 
-
 typedef enum
 {
     WHEEL_SPEED_ACTUATOR_COAST = 0,
@@ -50,7 +49,6 @@ typedef enum
     WHEEL_SPEED_ACTUATOR_BRAKE
 
 } WheelSpeedActuatorMode;
-
 
 /*
  * Active-braking control policy.
@@ -89,8 +87,8 @@ typedef struct
 
 } WheelSpeedBrakeConfig;
 
-
-typedef struct {
+typedef struct
+{
     DCMotor *motor;
 
     WheelSpeedCalibration calibration;
@@ -135,39 +133,32 @@ typedef struct {
     float currentSlope;
 } WheelSpeedController;
 
+bool WheelSpeedController_Init(WheelSpeedController *controller,
+                               DCMotor *motor,
+                               float kp,
+                               float ki,
+                               float minFeedback,
+                               float maxFeedback,
+                               const WheelSpeedCalibration *calibration);
 
-bool WheelSpeedController_Init(
-    WheelSpeedController *controller,
-    DCMotor *motor,
-	float kp, float ki,
-	float minFeedback, float maxFeedback,
-    const WheelSpeedCalibration *calibration);
+bool WheelSpeedController_ConfigureBrake(WheelSpeedController *controller,
+                                         const WheelSpeedBrakeConfig *config);
 
-bool WheelSpeedController_ConfigureBrake(
-        WheelSpeedController *controller,
-        const WheelSpeedBrakeConfig *config);
+void WheelSpeedController_SetTarget(WheelSpeedController *controller, float speedCps);
 
-void WheelSpeedController_SetTarget(
-    WheelSpeedController *controller,
-    float speedCps);
-
-void WheelSpeedController_Update(
-    WheelSpeedController *controller,
-    float dt);
+void WheelSpeedController_Update(WheelSpeedController *controller, float dt);
 
 /**
  * Returns whether the wheel is stationary
  * based on the measured wheel speed below a
  * set threshold to eliminate noise
  */
-bool WheelSpeedController_IsStationary(
-	const WheelSpeedController *controller);
+bool WheelSpeedController_IsStationary(const WheelSpeedController *controller);
 
 /**
  * Stops commanding torque, this instruction leaves
  * the motor at a coast state.
  */
-void WheelSpeedController_Stop(
-    WheelSpeedController *controller);
+void WheelSpeedController_Stop(WheelSpeedController *controller);
 
 #endif /* INC_WHEELSPEEDCONTROLLER_H_ */

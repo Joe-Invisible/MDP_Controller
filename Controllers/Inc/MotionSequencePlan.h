@@ -46,15 +46,13 @@ typedef struct
 
 extern const MotionSequenceConfig motionSequenceConfig;
 
-bool MotionSequencePlan_Prepare(
-    MotionSequencePlan *plan,
-    const MotionSequenceConfig *config,
-    float mmPerCount,
-    float decelerationMmps2,
-    float rawSlopeBound,
-    float rawRatePerSec);
-bool MotionSequencePlan_Evaluate(
-    const void *context, float progressMm, MotionPathSample *sample);
+bool MotionSequencePlan_Prepare(MotionSequencePlan *plan,
+                                const MotionSequenceConfig *config,
+                                float mmPerCount,
+                                float decelerationMmps2,
+                                float rawSlopeBound,
+                                float rawRatePerSec);
+bool MotionSequencePlan_Evaluate(const void *context, float progressMm, MotionPathSample *sample);
 uint32_t MotionSequencePlan_RunEnd(const MotionSequencePlan *plan, uint32_t first);
 
 #endif

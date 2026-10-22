@@ -61,7 +61,7 @@ extern MotionSequenceFusionTestResult
 extern uint32_t motionSequenceFusionTestResultCount;
 extern bool motionSequenceFusionTestComparisonValid;
 extern int32_t motionSequenceFusionTestSavedTimeMs; /* stopped minus fused */
-extern float motionSequenceFusionTestSavedPercent; /* relative to stopped */
+extern float motionSequenceFusionTestSavedPercent;  /* relative to stopped */
 
 void MotionSequenceFusionTestRun(void);
 /* Debugger breakpoint: result globals and final log sample are ready. */

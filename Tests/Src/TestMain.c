@@ -27,20 +27,22 @@
 #include "oled.h"
 #include "led3.h"
 
-void InvokeTest() {
-	OLED_Init();
-	OLED_Clear();
+void InvokeTest()
+{
+    OLED_Init();
+    OLED_Clear();
 
-	LED_On();
+    LED_On();
 
-	/* Select this separate harness for straight feedforward calibration:
+    /* Select this separate harness for straight feedforward calibration:
 	 * MotionControllerStraightFeedforwardTestRun();
 	 * The original arc harness retains the pending raw +95 setup. */
-	/* Experimental branch: one fused straight/arc/straight run.
+    /* Experimental branch: one fused straight/arc/straight run.
      * Restore MotionControllerSequenceTestRun() for the original harness. */
     MotionSequenceFusionTestRun();
 
-	while (1) {
-		// Test ended. Loop forever.
-	}
+    while (1)
+    {
+        // Test ended. Loop forever.
+    }
 }

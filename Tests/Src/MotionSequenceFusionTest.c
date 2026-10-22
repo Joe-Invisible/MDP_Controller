@@ -84,23 +84,20 @@ static void MotionSequenceFusionTest_LogSample(uint32_t elapsedMs)
     sample->firstSegment = sequence->run.first;
     sample->lastSegment = sequence->run.last;
     sample->runDistanceMm = controller->travelledDistanceMm;
-    bool currentRunIncluded = sequence->state == MOTION_SEQUENCE_COMPLETE ||
-                              sequence->state == MOTION_SEQUENCE_ABORTED;
-    sample->sequenceTravelMm =
-        sequence->completedMeasuredTravelMm +
-        (currentRunIncluded ? 0.0f : fabsf(controller->travelledDistanceMm));
+    bool currentRunIncluded =
+        sequence->state == MOTION_SEQUENCE_COMPLETE || sequence->state == MOTION_SEQUENCE_ABORTED;
+    sample->sequenceTravelMm = sequence->completedMeasuredTravelMm +
+                               (currentRunIncluded ? 0.0f : fabsf(controller->travelledDistanceMm));
     sample->sequenceYawRad =
         sequence->completedMeasuredYawRad +
-        (currentRunIncluded ? 0.0f
-                            : controller->yawDeg * (3.14159265358979323846f / 180.0f));
+        (currentRunIncluded ? 0.0f : controller->yawDeg * (3.14159265358979323846f / 180.0f));
     sample->desiredYawRad = controller->pathSample.desiredYawRad;
     sample->curvaturePerMm = controller->targetCurvaturePerMm;
     sample->commandedCurvaturePerMm = controller->arcCommandedCurvaturePerMm;
     sample->localSpeedLimitCps = controller->pathSample.speedLimitCps;
     sample->targetSpeedCps = controller->targetSpeedCps;
     sample->measuredCentreSpeedMmps = controller->measuredCentreSpeedMmps;
-    sample->filteredMeasuredCentreSpeedMmps =
-        controller->filteredMeasuredCentreSpeedMmps;
+    sample->filteredMeasuredCentreSpeedMmps = controller->filteredMeasuredCentreSpeedMmps;
     sample->yawRateDps = controller->yawRateDps;
     sample->filteredYawRateDps = controller->filteredYawRateDps;
     sample->targetYawRateRadPerSec = controller->arcTargetYawRateRadPerSec;
@@ -123,7 +120,8 @@ __attribute__((noinline)) void MotionSequenceFusionTestFinished(void)
     const MotionSequenceFusionTestResult *fused = &motionSequenceFusionTestResults[0];
     const MotionSequenceFusionTestResult *stopped = &motionSequenceFusionTestResults[1];
     OLED_Clear();
-    OLED_Printf(0, 0, "Pattern A/B %s", motionSequenceFusionTestComparisonValid ? "DONE" : "INVALID");
+    OLED_Printf(
+        0, 0, "Pattern A/B %s", motionSequenceFusionTestComparisonValid ? "DONE" : "INVALID");
     OLED_Printf(0, 1, "A fused: %lu ms", (unsigned long)fused->elapsedMs);
     OLED_Printf(0, 2, "B stopped: %lu ms", (unsigned long)stopped->elapsedMs);
     if (motionSequenceFusionTestComparisonValid)
@@ -133,11 +131,18 @@ __attribute__((noinline)) void MotionSequenceFusionTestFinished(void)
     }
     else
     {
-        OLED_Printf(0, 3, "A:%s B:%s", fused->passed ? "OK" : "INCOMPLETE",
+        OLED_Printf(0,
+                    3,
+                    "A:%s B:%s",
+                    fused->passed ? "OK" : "INCOMPLETE",
                     stopped->passed ? "OK" : "INCOMPLETE");
         OLED_Printf(0, 4, "Status: %u", (unsigned)motionSequenceFusionTestStatus);
-        OLED_Printf(0, 5, "%s", motionSequenceFusionTestTimedOut ? "TIMEOUT" :
-                    motionSequenceFusionTestCancelled ? "CANCELLED" : "NO COMPARISON");
+        OLED_Printf(0,
+                    5,
+                    "%s",
+                    motionSequenceFusionTestTimedOut    ? "TIMEOUT"
+                    : motionSequenceFusionTestCancelled ? "CANCELLED"
+                                                        : "NO COMPARISON");
     }
     OLED_Refresh_Gram();
 }
@@ -145,11 +150,11 @@ __attribute__((noinline)) void MotionSequenceFusionTestFinished(void)
 static MotionControllerStatus MotionSequenceFusionTest_BuildPattern(bool stopAfter)
 {
     MotionSequence *sequence = &motionSequenceFusionTestSequence;
-    MotionControllerStatus status = MotionSequence_Begin(
-        sequence, &fixture.motionController, &motionSequenceConfig);
-    for (size_t stepIndex = 0U;
-         stepIndex < sizeof(fusionTestSteps) / sizeof(fusionTestSteps[0]) &&
-         status == MOTIONCONTROLLER_STATUS_OK; ++stepIndex)
+    MotionControllerStatus status =
+        MotionSequence_Begin(sequence, &fixture.motionController, &motionSequenceConfig);
+    for (size_t stepIndex = 0U; stepIndex < sizeof(fusionTestSteps) / sizeof(fusionTestSteps[0]) &&
+                                status == MOTIONCONTROLLER_STATUS_OK;
+         ++stepIndex)
     {
         const MotionSequenceFusionTestStep *step = &fusionTestSteps[stepIndex];
         if (step->radiusMm == 0.0f)
@@ -168,8 +173,7 @@ static MotionControllerStatus MotionSequenceFusionTest_BuildPattern(bool stopAft
 
 static bool MotionSequenceFusionTest_RunPattern(bool stopAfter)
 {
-    MotionSequenceFusionTestResult *result =
-        &motionSequenceFusionTestResults[comparisonRunIndex];
+    MotionSequenceFusionTestResult *result = &motionSequenceFusionTestResults[comparisonRunIndex];
     result->stopAfterEachSegment = stopAfter;
     runLogTruncated = false;
     motionSequenceFusionTestElapsedMs = 0U;
@@ -214,8 +218,7 @@ static bool MotionSequenceFusionTest_RunPattern(bool stopAfter)
             continue;
         }
 
-        if (!aborting &&
-            ((nowMs - startMs >= FUSION_TIMEOUT_MS) || SW1_ReadState() == SW1_Enabled))
+        if (!aborting && ((nowMs - startMs >= FUSION_TIMEOUT_MS) || SW1_ReadState() == SW1_Enabled))
         {
             motionSequenceFusionTestTimedOut = nowMs - startMs >= FUSION_TIMEOUT_MS;
             motionSequenceFusionTestCancelled = !motionSequenceFusionTestTimedOut;
@@ -247,9 +250,8 @@ static bool MotionSequenceFusionTest_RunPattern(bool stopAfter)
     }
 
     motionSequenceFusionTestElapsedMs = HAL_GetTick() - startMs;
-    result->passed =
-        motionSequenceFusionTestStatus == MOTIONCONTROLLER_STATUS_OK &&
-        sequence->state == MOTION_SEQUENCE_COMPLETE;
+    result->passed = motionSequenceFusionTestStatus == MOTIONCONTROLLER_STATUS_OK &&
+                     sequence->state == MOTION_SEQUENCE_COMPLETE;
 
     /* Reserve/replace the last slot so a truncated log still has a final sample. */
     if (motionSequenceFusionTestLogCount == FUSION_LOG_CAPACITY)
@@ -297,8 +299,8 @@ void MotionSequenceFusionTestRun(void)
         return;
     }
 
-    for (comparisonRunIndex = 0U;
-         comparisonRunIndex < MOTION_SEQUENCE_FUSION_TEST_RUN_COUNT; ++comparisonRunIndex)
+    for (comparisonRunIndex = 0U; comparisonRunIndex < MOTION_SEQUENCE_FUSION_TEST_RUN_COUNT;
+         ++comparisonRunIndex)
     {
         if (!MotionSequenceFusionTest_RunPattern(comparisonRunIndex == 1U))
         {
@@ -308,8 +310,7 @@ void MotionSequenceFusionTestRun(void)
 
     motionSequenceFusionTestComparisonValid =
         motionSequenceFusionTestResultCount == MOTION_SEQUENCE_FUSION_TEST_RUN_COUNT &&
-        motionSequenceFusionTestResults[0].passed &&
-        motionSequenceFusionTestResults[1].passed &&
+        motionSequenceFusionTestResults[0].passed && motionSequenceFusionTestResults[1].passed &&
         motionSequenceFusionTestResults[1].elapsedMs > 0U;
     motionSequenceFusionTestPassed = motionSequenceFusionTestComparisonValid;
     if (motionSequenceFusionTestComparisonValid)
@@ -317,9 +318,8 @@ void MotionSequenceFusionTestRun(void)
         motionSequenceFusionTestSavedTimeMs =
             (int32_t)motionSequenceFusionTestResults[1].elapsedMs -
             (int32_t)motionSequenceFusionTestResults[0].elapsedMs;
-        motionSequenceFusionTestSavedPercent =
-            100.0f * (float)motionSequenceFusionTestSavedTimeMs /
-            (float)motionSequenceFusionTestResults[1].elapsedMs;
+        motionSequenceFusionTestSavedPercent = 100.0f * (float)motionSequenceFusionTestSavedTimeMs /
+                                               (float)motionSequenceFusionTestResults[1].elapsedMs;
     }
     MotionSequenceFusionTestFinished();
 }

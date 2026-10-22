@@ -18,8 +18,7 @@ typedef struct
     float straightTuningWeight;
 } MotionPathSample;
 
-typedef bool (*MotionPathEvaluate)(
-    const void *context, float progressMm, MotionPathSample *sample);
+typedef bool (*MotionPathEvaluate)(const void *context, float progressMm, MotionPathSample *sample);
 
 typedef struct
 {

@@ -5,192 +5,186 @@
  *      Author: Joe
  */
 
-
 #include "rwdriver.h"
 #include "math.h"
 
 #define FULL_BRAKE_PWM_DUTY_CYCLE ((float)100.0f)
 
-bool DCMotor_Init(
-		DCMotor* rm,
-		TIM_HandleTypeDef* pwmHtim,
-		bool flipDirection,
-		TIM_HandleTypeDef* encHtim) {
+bool DCMotor_Init(DCMotor *rm,
+                  TIM_HandleTypeDef *pwmHtim,
+                  bool flipDirection,
+                  TIM_HandleTypeDef *encHtim)
+{
 
-	if (!rm || !pwmHtim || !encHtim) return false;
+    if (!rm || !pwmHtim || !encHtim) return false;
 
-	rm->config.pwmHtim = pwmHtim;
-	/*
+    rm->config.pwmHtim = pwmHtim;
+    /*
 	 * Hardcoded channels.
 	 * No intention of changing it.
 	 */
-	rm->config.pwmChannel1 = TIM_CHANNEL_1;
-	rm->config.pwmChannel2 = TIM_CHANNEL_2;
+    rm->config.pwmChannel1 = TIM_CHANNEL_1;
+    rm->config.pwmChannel2 = TIM_CHANNEL_2;
 
-	rm->config.flipDirection = flipDirection ? 1 : 0;
+    rm->config.flipDirection = flipDirection ? 1 : 0;
 
-	rm->config.encHtim = encHtim;
+    rm->config.encHtim = encHtim;
 
-	rm->state.encCount = 0;
-	rm->state.activeDutyCycle = 0;
-	rm->state.direction = 0;
+    rm->state.encCount = 0;
+    rm->state.activeDutyCycle = 0;
+    rm->state.direction = 0;
 
-	rm->state.mode = DCMOTOR_MODE_NEUTRAL;
+    rm->state.mode = DCMOTOR_MODE_NEUTRAL;
 
-	return true;
+    return true;
 }
 
-bool DCMotor_Enable(DCMotor* rm) {
-	if (!rm) return false;
-
+bool DCMotor_Enable(DCMotor *rm)
+{
+    if (!rm) return false;
 
     // Make sure motor cannot move when PWM outputs are enabled
-	DCMotor_SetPWM(rm, 0);
+    DCMotor_SetPWM(rm, 0);
 
-	if (HAL_TIM_PWM_Start(rm->config.pwmHtim,
-						  rm->config.pwmChannel1) != HAL_OK)
-		return false;
+    if (HAL_TIM_PWM_Start(rm->config.pwmHtim, rm->config.pwmChannel1) != HAL_OK) return false;
 
-	if (HAL_TIM_PWM_Start(rm->config.pwmHtim,
-						  rm->config.pwmChannel2) != HAL_OK)
-		return false;
+    if (HAL_TIM_PWM_Start(rm->config.pwmHtim, rm->config.pwmChannel2) != HAL_OK) return false;
 
+    __HAL_TIM_SET_COUNTER(rm->config.encHtim, 0);
+    if (HAL_TIM_Encoder_Start(rm->config.encHtim, TIM_CHANNEL_ALL) != HAL_OK) return false;
 
-	__HAL_TIM_SET_COUNTER(rm->config.encHtim, 0);
-	if(HAL_TIM_Encoder_Start(rm->config.encHtim,
-			TIM_CHANNEL_ALL) != HAL_OK)
-		return false;
-
-	return true;
+    return true;
 }
 
-void DCMotor_Disable(DCMotor* rm) {
-	if (!rm) return;
+void DCMotor_Disable(DCMotor *rm)
+{
+    if (!rm) return;
 
-	DCMotor_SetPWM(rm, 0);
+    DCMotor_SetPWM(rm, 0);
 
-	rm->state.mode = DCMOTOR_MODE_NEUTRAL;
+    rm->state.mode = DCMOTOR_MODE_NEUTRAL;
 
-	if(HAL_TIM_Encoder_Stop(rm->config.encHtim,
-			TIM_CHANNEL_ALL) != HAL_OK)
-		return;
+    if (HAL_TIM_Encoder_Stop(rm->config.encHtim, TIM_CHANNEL_ALL) != HAL_OK) return;
 
-	HAL_TIM_PWM_Stop(
-			rm->config.pwmHtim,
-			rm->config.pwmChannel1
-	);
+    HAL_TIM_PWM_Stop(rm->config.pwmHtim, rm->config.pwmChannel1);
 
-	HAL_TIM_PWM_Stop(
-			rm->config.pwmHtim,
-			rm->config.pwmChannel2
-	);
+    HAL_TIM_PWM_Stop(rm->config.pwmHtim, rm->config.pwmChannel2);
 }
 
-static uint32_t DCMotor_ComputeCompareValue(DCMotor *rm, float dutyCycle) {
-	// Calculate compare value
-	uint32_t arr = __HAL_TIM_GET_AUTORELOAD(rm->config.pwmHtim);
-	uint32_t compare = (dutyCycle * (arr + 1)) / 100;
-	return compare;
+static uint32_t DCMotor_ComputeCompareValue(DCMotor *rm, float dutyCycle)
+{
+    // Calculate compare value
+    uint32_t arr = __HAL_TIM_GET_AUTORELOAD(rm->config.pwmHtim);
+    uint32_t compare = (dutyCycle * (arr + 1)) / 100;
+    return compare;
 }
 
-void DCMotor_SetPWM(DCMotor* rm, float dutyCycle) {
-	if (!rm) return;
+void DCMotor_SetPWM(DCMotor *rm, float dutyCycle)
+{
+    if (!rm) return;
 
-	// Clamp to defined percentage range
-	if (fabs(dutyCycle) > 100.0) {
-		dutyCycle = dutyCycle < 0.0f ? -100.0f : 100.0f;
-	}
+    // Clamp to defined percentage range
+    if (fabs(dutyCycle) > 100.0)
+    {
+        dutyCycle = dutyCycle < 0.0f ? -100.0f : 100.0f;
+    }
 
-	if (fabs(dutyCycle) > 0.0) {
-		rm->state.mode = DCMOTOR_MODE_DRIVE;
-	} else {
-		rm->state.mode = DCMOTOR_MODE_NEUTRAL;
-	}
+    if (fabs(dutyCycle) > 0.0)
+    {
+        rm->state.mode = DCMOTOR_MODE_DRIVE;
+    }
+    else
+    {
+        rm->state.mode = DCMOTOR_MODE_NEUTRAL;
+    }
 
-	// get dutyCycle sign by convention
-	int8_t direction = rm->config.flipDirection ^ (signbit(dutyCycle) != 0);
-	dutyCycle = dutyCycle < 0 ? -dutyCycle : dutyCycle;
+    // get dutyCycle sign by convention
+    int8_t direction = rm->config.flipDirection ^ (signbit(dutyCycle) != 0);
+    dutyCycle = dutyCycle < 0 ? -dutyCycle : dutyCycle;
 
-	uint32_t compare = DCMotor_ComputeCompareValue(rm, dutyCycle);
+    uint32_t compare = DCMotor_ComputeCompareValue(rm, dutyCycle);
 
-	// Determine active PWM input
-	uint32_t activeChannel = -1;
-	uint32_t inactiveChannel = -1;
-	if (direction == 1) {
-		activeChannel = rm->config.pwmChannel2;
-		inactiveChannel = rm->config.pwmChannel1;
-	} else if (direction == 0) {
-		activeChannel = rm->config.pwmChannel1;
-		inactiveChannel = rm->config.pwmChannel2;
-	} else {
-		return;
-	}
+    // Determine active PWM input
+    uint32_t activeChannel = -1;
+    uint32_t inactiveChannel = -1;
+    if (direction == 1)
+    {
+        activeChannel = rm->config.pwmChannel2;
+        inactiveChannel = rm->config.pwmChannel1;
+    }
+    else if (direction == 0)
+    {
+        activeChannel = rm->config.pwmChannel1;
+        inactiveChannel = rm->config.pwmChannel2;
+    }
+    else
+    {
+        return;
+    }
 
-	rm->state.activeDutyCycle = dutyCycle;
-	/*
+    rm->state.activeDutyCycle = dutyCycle;
+    /*
 	 * For zero-PWM, we choose to deterministically
 	 * retain the previous direction value. This does NOT
 	 * mean the direction is valid in this case.
 	 */
-	rm->state.direction = dutyCycle == 0 ? rm->state.direction : direction;
+    rm->state.direction = dutyCycle == 0 ? rm->state.direction : direction;
 
-	// Set duty cycles
-	__HAL_TIM_SET_COMPARE(
-			rm->config.pwmHtim, activeChannel, compare
-	);
-	// Slow decay PWM, i.e., inactive=1 is also an option
-	__HAL_TIM_SET_COMPARE(
-			rm->config.pwmHtim, inactiveChannel, 0
-	);
+    // Set duty cycles
+    __HAL_TIM_SET_COMPARE(rm->config.pwmHtim, activeChannel, compare);
+    // Slow decay PWM, i.e., inactive=1 is also an option
+    __HAL_TIM_SET_COMPARE(rm->config.pwmHtim, inactiveChannel, 0);
 }
 
-void DCMotor_Neutral(DCMotor* rm) {
-	DCMotor_SetPWM(rm, 0);
+void DCMotor_Neutral(DCMotor *rm)
+{
+    DCMotor_SetPWM(rm, 0);
 }
 
-void DCMotor_SetBrakePWM(DCMotor* rm, float brakePercent) {
-	if (!rm) return;
+void DCMotor_SetBrakePWM(DCMotor *rm, float brakePercent)
+{
+    if (!rm) return;
 
-	if (brakePercent < 0.0f) {
-		brakePercent = 0.0f;
-	}
-	else if (brakePercent > 100.0f) {
-		brakePercent = 100.0f;
-	}
+    if (brakePercent < 0.0f)
+    {
+        brakePercent = 0.0f;
+    }
+    else if (brakePercent > 100.0f)
+    {
+        brakePercent = 100.0f;
+    }
 
-	if (brakePercent == 0.0f) {
-		// Commanding zero-duty cycle brake is effectively
-		// commanding to coast.
-		DCMotor_Neutral(rm);
-		return;
-	} else {
-		rm->state.mode = DCMOTOR_MODE_BRAKE;
-	}
+    if (brakePercent == 0.0f)
+    {
+        // Commanding zero-duty cycle brake is effectively
+        // commanding to coast.
+        DCMotor_Neutral(rm);
+        return;
+    }
+    else
+    {
+        rm->state.mode = DCMOTOR_MODE_BRAKE;
+    }
 
-	rm->state.activeDutyCycle = brakePercent;
+    rm->state.activeDutyCycle = brakePercent;
 
-	uint32_t compare = DCMotor_ComputeCompareValue(rm, brakePercent);
+    uint32_t compare = DCMotor_ComputeCompareValue(rm, brakePercent);
 
-	__HAL_TIM_SET_COMPARE(
-			rm->config.pwmHtim,
-			rm->config.pwmChannel1,
-			compare);
+    __HAL_TIM_SET_COMPARE(rm->config.pwmHtim, rm->config.pwmChannel1, compare);
 
-	__HAL_TIM_SET_COMPARE(
-			rm->config.pwmHtim,
-			rm->config.pwmChannel2,
-			compare);
+    __HAL_TIM_SET_COMPARE(rm->config.pwmHtim, rm->config.pwmChannel2, compare);
 }
 
 void DCMotor_Brake(DCMotor *rm)
 {
-	if (!rm) return;
+    if (!rm) return;
 
-	DCMotor_SetBrakePWM(rm, FULL_BRAKE_PWM_DUTY_CYCLE);
+    DCMotor_SetBrakePWM(rm, FULL_BRAKE_PWM_DUTY_CYCLE);
 }
 
-int16_t DCMotor_GetEncoderCount(DCMotor* rm) {
-	rm->state.encCount = __HAL_TIM_GET_COUNTER(rm->config.encHtim);
-	rm->state.encCount = rm->config.flipDirection ? -rm->state.encCount : rm->state.encCount;
-	return rm->state.encCount;
+int16_t DCMotor_GetEncoderCount(DCMotor *rm)
+{
+    rm->state.encCount = __HAL_TIM_GET_COUNTER(rm->config.encHtim);
+    rm->state.encCount = rm->config.flipDirection ? -rm->state.encCount : rm->state.encCount;
+    return rm->state.encCount;
 }
