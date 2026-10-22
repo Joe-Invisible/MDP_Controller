@@ -1,5 +1,5 @@
 #ifndef __OLED_H
-#define __OLED_H			  	 
+#define __OLED_H
 
 #include "stm32f4xx_hal.h"
 
@@ -12,60 +12,57 @@
 #define OLED_SDA_Pin GPIO_PIN_13
 #define OLED_SCL_Pin GPIO_PIN_14
 
-
 extern u8 OLED_GRAM[128][8];
 
 //Oled port macro definition
-#define OLED_RST_Clr() HAL_GPIO_WritePin(GPIOD,OLED_RES_Pin,GPIO_PIN_RESET)  //RST
-#define OLED_RST_Set() HAL_GPIO_WritePin(GPIOD,OLED_RES_Pin,GPIO_PIN_SET)   //RST
+#define OLED_RST_Clr() HAL_GPIO_WritePin(GPIOD, OLED_RES_Pin, GPIO_PIN_RESET) //RST
+#define OLED_RST_Set() HAL_GPIO_WritePin(GPIOD, OLED_RES_Pin, GPIO_PIN_SET)   //RST
 
-#define OLED_RS_Clr()  HAL_GPIO_WritePin(GPIOD,OLED_DC_Pin,GPIO_PIN_RESET)    //DC
-#define OLED_RS_Set()  HAL_GPIO_WritePin(GPIOD,OLED_DC_Pin,GPIO_PIN_SET)  //DC
+#define OLED_RS_Clr() HAL_GPIO_WritePin(GPIOD, OLED_DC_Pin, GPIO_PIN_RESET) //DC
+#define OLED_RS_Set() HAL_GPIO_WritePin(GPIOD, OLED_DC_Pin, GPIO_PIN_SET)   //DC
 
-#define OLED_SCLK_Clr()  HAL_GPIO_WritePin(GPIOD,OLED_SCL_Pin,GPIO_PIN_RESET)  //SCL
-#define OLED_SCLK_Set()  HAL_GPIO_WritePin(GPIOD,OLED_SCL_Pin,GPIO_PIN_SET)    //SCL
+#define OLED_SCLK_Clr() HAL_GPIO_WritePin(GPIOD, OLED_SCL_Pin, GPIO_PIN_RESET) //SCL
+#define OLED_SCLK_Set() HAL_GPIO_WritePin(GPIOD, OLED_SCL_Pin, GPIO_PIN_SET)   //SCL
 
-#define OLED_SDIN_Clr()  HAL_GPIO_WritePin(GPIOD,OLED_SDA_Pin,GPIO_PIN_RESET)    //SDA
-#define OLED_SDIN_Set()  HAL_GPIO_WritePin(GPIOD,OLED_SDA_Pin,GPIO_PIN_SET)    //SDA
+#define OLED_SDIN_Clr() HAL_GPIO_WritePin(GPIOD, OLED_SDA_Pin, GPIO_PIN_RESET) //SDA
+#define OLED_SDIN_Set() HAL_GPIO_WritePin(GPIOD, OLED_SDA_Pin, GPIO_PIN_SET)   //SDA
 
-#define OLED_CMD  0	//Command
-#define OLED_DATA 1	//Data
+#define OLED_CMD 0  //Command
+#define OLED_DATA 1 //Data
 
-#define OLED_Height         64
-#define OLED_Width          128
+#define OLED_Height 64
+#define OLED_Width 128
 
 /* Compact 5x7 diagnostic font: 5 glyph columns + 1 spacing column,
  * one 8-pixel-high OLED page per text row. */
-#define OLED_5X7_GLYPH_WIDTH    5U
-#define OLED_5X7_CELL_WIDTH     6U
-#define OLED_5X7_CELL_HEIGHT    8U
-#define OLED_5X7_COLS           (OLED_Width / OLED_5X7_CELL_WIDTH)
-#define OLED_5X7_ROWS           (OLED_Height / OLED_5X7_CELL_HEIGHT)
+#define OLED_5X7_GLYPH_WIDTH 5U
+#define OLED_5X7_CELL_WIDTH 6U
+#define OLED_5X7_CELL_HEIGHT 8U
+#define OLED_5X7_COLS (OLED_Width / OLED_5X7_CELL_WIDTH)
+#define OLED_5X7_ROWS (OLED_Height / OLED_5X7_CELL_HEIGHT)
 
 /* Renderer IDs for higher-level code such as the OLED manager.
  * The low-level driver always keeps both implementations available. */
 // We need non-zero definition for unknown renderer names to fail in #if directives
-#define OLED_RENDERER_LEGACY    1U
-#define OLED_RENDERER_5X7       2U
+#define OLED_RENDERER_LEGACY 1U
+#define OLED_RENDERER_5X7 2U
 
 //Oled control function
 
-
-void OLED_WR_Byte(u8 dat,u8 cmd);	    
+void OLED_WR_Byte(u8 dat, u8 cmd);
 void OLED_Display_On(void);
 void OLED_Display_Off(void);
-void OLED_Refresh_Gram(void);		   				   		    
+void OLED_Refresh_Gram(void);
 void OLED_Init(void);
 void OLED_ClearGram(void);
 void OLED_Clear(void);
-void OLED_DrawPoint(u8 x,u8 y,u8 t);
-void OLED_ShowChar(u8 x,u8 y,u8 chr,u8 size,u8 mode);
-void OLED_ShowNumber(u8 x,u8 y,u32 num,u8 len,u8 size);
-void OLED_ShowString(u8 x,u8 y,const u8 *p);
+void OLED_DrawPoint(u8 x, u8 y, u8 t);
+void OLED_ShowChar(u8 x, u8 y, u8 chr, u8 size, u8 mode);
+void OLED_ShowNumber(u8 x, u8 y, u32 num, u8 len, u8 size);
+void OLED_ShowString(u8 x, u8 y, const u8 *p);
 void OLED_ShowChar5x7(u8 x, u8 row, char chr);
 void OLED_ShowString5x7(u8 x, u8 row, const char *p);
-void OLED_ShowString16(u8 x,u8 y,const u8 *p);
+void OLED_ShowString16(u8 x, u8 y, const u8 *p);
 void OLED_Refresh_Line(void);
 
-#endif  
-	 
+#endif

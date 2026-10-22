@@ -17,21 +17,21 @@
 /* Test configuration                                                         */
 /* -------------------------------------------------------------------------- */
 
-#define MOTION_TEST_DISTANCE_MM          (1000.0f)
-#define MOTION_TEST_SPEED_CPS            (5000.0f)
+#define MOTION_TEST_DISTANCE_MM (1000.0f)
+#define MOTION_TEST_SPEED_CPS (5000.0f)
 
-#define MOTION_TEST_CONTROL_PERIOD_MS    (10U)
-#define MOTION_TEST_CONTROL_PERIOD_S     (0.010f)
+#define MOTION_TEST_CONTROL_PERIOD_MS (10U)
+#define MOTION_TEST_CONTROL_PERIOD_S (0.010f)
 
-#define MOTION_TEST_DISPLAY_PERIOD_MS    (100U)
-#define MOTION_TEST_TIMEOUT_MS           (10000U)
+#define MOTION_TEST_DISPLAY_PERIOD_MS (100U)
+#define MOTION_TEST_TIMEOUT_MS (10000U)
 
 /*
  * Largest capacity required for current tests 1000:5000:1000 CPS
  * at distance 1000 mm.
  */
-#define MOTION_TEST_LOG_CAPACITY			(500U)
-#define MOTION_TEST_LOG_INTERVAL_MS		(20U)
+#define MOTION_TEST_LOG_CAPACITY (500U)
+#define MOTION_TEST_LOG_INTERVAL_MS (20U)
 
 /*
  * Current rear-wheel calibration.
@@ -40,35 +40,34 @@
  * logger. Since measured CPS is based on encoder-count change, integrating
  * it gives us an independent left/right distance trace.
  */
-#define MOTION_TEST_ENCODER_CPR          (1560.0f)
-#define MOTION_TEST_WHEEL_DIAMETER_MM    (65.5f)
+#define MOTION_TEST_ENCODER_CPR (1560.0f)
+#define MOTION_TEST_WHEEL_DIAMETER_MM (65.5f)
 
 /*
  * Synchronization controller parameters
  */
-#define MOTION_SYNC_KP_CPS_PER_MM        10.0f
-#define MOTION_SYNC_MAX_CORRECTION_CPS   100.0f
+#define MOTION_SYNC_KP_CPS_PER_MM 10.0f
+#define MOTION_SYNC_MAX_CORRECTION_CPS 100.0f
 
 /*
  * Heading controller parameters
  */
-#define HEADING_CTRL_KP			(0.80f)
-#define HEADING_CTRL_KI			(0.0f)
-#define HEADING_CTRL_LIMIT_RAD	(0.010f)
+#define HEADING_CTRL_KP (0.80f)
+#define HEADING_CTRL_KI (0.0f)
+#define HEADING_CTRL_LIMIT_RAD (0.010f)
 
 /*
  * Motion Profile parameters
  */
-#define MOTION_PROFILE_ACCELERATION_MMPS2    (500.0f)
+#define MOTION_PROFILE_ACCELERATION_MMPS2 (500.0f)
 // Experimentally derived, based on how the actual
 // measured wheel speeds decreased near the end of
 // motion; In other words, this is a physically
 // achievable deceleration under the current controller
 // configuration.
-#define MOTION_PROFILE_DECELERATION_MMPS2    (250.0f)
+#define MOTION_PROFILE_DECELERATION_MMPS2 (250.0f)
 
-static const MotionControllerConfig straightTestMotionConfig =
-{
+static const MotionControllerConfig straightTestMotionConfig = {
     .kinematics = &kinematics,
     .arcConfig = &arcMotionConfig,
 
@@ -98,11 +97,9 @@ static const MotionControllerConfig straightTestMotionConfig =
 
 #define DEBUGLOG 1
 
-
-#define MOTION_PI				(3.14159265358979323846f)
-#define MOTION_TEST_MM_PER_COUNT \
-    (MOTION_PI * MOTION_TEST_WHEEL_DIAMETER_MM \
-     / MOTION_TEST_ENCODER_CPR)
+#define MOTION_PI (3.14159265358979323846f)
+#define MOTION_TEST_MM_PER_COUNT                                                                   \
+    (MOTION_PI * MOTION_TEST_WHEEL_DIAMETER_MM / MOTION_TEST_ENCODER_CPR)
 
 /* -------------------------------------------------------------------------- */
 /* Local diagnostic state                                                     */
@@ -116,7 +113,6 @@ static float motionControllerTestRightDistanceMm = 0.0f;
 /* Debugger log                                                               */
 /* -------------------------------------------------------------------------- */
 
-
 /*
  * Global so that CubeIDE/GDB can export it directly.
  *
@@ -128,13 +124,13 @@ static float motionControllerTestRightDistanceMm = 0.0f;
  *
  * motionControllerTestLogCount tells you how many entries are valid.
  */
-volatile MotionControllerTestLogSample
-motionControllerTestLog[MOTION_TEST_LOG_CAPACITY];
+volatile MotionControllerTestLogSample motionControllerTestLog[MOTION_TEST_LOG_CAPACITY];
 
 volatile uint32_t motionControllerTestLogCount = 0U;
 volatile uint32_t lastLogTick = 0U;
 
-volatile const char* experimentInfo = "With deterministic centering; heading Kp=0.8, maxCmdRate=60, Ksync=10";
+volatile const char *experimentInfo =
+    "With deterministic centering; heading Kp=0.8, maxCmdRate=60, Ksync=10";
 
 /* -------------------------------------------------------------------------- */
 /* Logging helpers                                                            */
@@ -162,26 +158,21 @@ static void MotionControllerTest_UpdateMeasurements(RobotTestFixture *fixture)
      * encoder counts * mm/count = mm
      */
     motionControllerTestLeftDistanceMm +=
-        leftWheel->measuredSpeedCps *
-        MOTION_TEST_CONTROL_PERIOD_S *
-        MOTION_TEST_MM_PER_COUNT;
+        leftWheel->measuredSpeedCps * MOTION_TEST_CONTROL_PERIOD_S * MOTION_TEST_MM_PER_COUNT;
 
     motionControllerTestRightDistanceMm +=
-        rightWheel->measuredSpeedCps *
-        MOTION_TEST_CONTROL_PERIOD_S *
-        MOTION_TEST_MM_PER_COUNT;
+        rightWheel->measuredSpeedCps * MOTION_TEST_CONTROL_PERIOD_S * MOTION_TEST_MM_PER_COUNT;
 }
 
-static void MotionControllerTest_LogSample(
-    RobotTestFixture *fixture,
-    uint32_t elapsedMs)
+static void MotionControllerTest_LogSample(RobotTestFixture *fixture, uint32_t elapsedMs)
 {
     MotionController *motionController = &fixture->motionController;
 
     WheelSpeedController *leftWheel = motionController->leftWheel;
     WheelSpeedController *rightWheel = motionController->rightWheel;
 
-    if (motionControllerTestLogCount >= MOTION_TEST_LOG_CAPACITY) {
+    if (motionControllerTestLogCount >= MOTION_TEST_LOG_CAPACITY)
+    {
         return;
     }
 
@@ -190,29 +181,21 @@ static void MotionControllerTest_LogSample(
     motionControllerTestLog[i].timeMs = elapsedMs;
     motionControllerTestLog[i].state = (uint32_t)motionController->mode;
 
-    motionControllerTestLog[i].profileTargetSpeedCps =
-    		motionController->targetSpeedCps;
+    motionControllerTestLog[i].profileTargetSpeedCps = motionController->targetSpeedCps;
 
-    motionControllerTestLog[i].travelledDistanceMm =
-        motionController->travelledDistanceMm;
+    motionControllerTestLog[i].travelledDistanceMm = motionController->travelledDistanceMm;
 
-    motionControllerTestLog[i].leftTargetCps =
-        leftWheel->targetSpeedCps;
+    motionControllerTestLog[i].leftTargetCps = leftWheel->targetSpeedCps;
 
-    motionControllerTestLog[i].rightTargetCps =
-        rightWheel->targetSpeedCps;
+    motionControllerTestLog[i].rightTargetCps = rightWheel->targetSpeedCps;
 
-    motionControllerTestLog[i].leftMeasuredCps =
-        leftWheel->measuredSpeedCps;
+    motionControllerTestLog[i].leftMeasuredCps = leftWheel->measuredSpeedCps;
 
-    motionControllerTestLog[i].rightMeasuredCps =
-        rightWheel->measuredSpeedCps;
+    motionControllerTestLog[i].rightMeasuredCps = rightWheel->measuredSpeedCps;
 
-    motionControllerTestLog[i].leftPwm =
-        leftWheel->outputPWM;
+    motionControllerTestLog[i].leftPwm = leftWheel->outputPWM;
 
-    motionControllerTestLog[i].rightPwm =
-        rightWheel->outputPWM;
+    motionControllerTestLog[i].rightPwm = rightWheel->outputPWM;
 
     /*
      * MotionController's integrated heading estimate.
@@ -221,48 +204,37 @@ static void MotionControllerTest_LogSample(
      * MotionController struct, this should be the only line that needs
      * changing.
      */
-    motionControllerTestLog[i].yawDeg =
-        motionController->yawDeg;
+    motionControllerTestLog[i].yawDeg = motionController->yawDeg;
 
-    motionControllerTestLog[i].wheelSyncErrorMm =
-        motionController->wheelSyncErrorMm;
+    motionControllerTestLog[i].wheelSyncErrorMm = motionController->wheelSyncErrorMm;
 
-    motionControllerTestLog[i].wheelSyncCorrectionCps =
-        motionController->wheelSyncCorrectionCps;
+    motionControllerTestLog[i].wheelSyncCorrectionCps = motionController->wheelSyncCorrectionCps;
 
     motionControllerTestLog[i].effectiveSteeringAngleRad =
-        SteeringController_GetEffectiveAngleRad(
-        		motionController->steering);
+        SteeringController_GetEffectiveAngleRad(motionController->steering);
 
     motionControllerTestLog[i].desiredWheelTravelDifferenceMm =
         motionController->desiredWheelTravelDifferenceMm;
 
     motionControllerTestLog[i].targetSteeringAngleRad =
-        SteeringController_GetTargetEffectiveAngleRad(
-            motionController->steering);
+        SteeringController_GetTargetEffectiveAngleRad(motionController->steering);
 
-    motionControllerTestLog[i].leftActuatorMode =
-    		leftWheel->actuatorMode;
+    motionControllerTestLog[i].leftActuatorMode = leftWheel->actuatorMode;
 
-    motionControllerTestLog[i].rightActuatorMode =
-		rightWheel->actuatorMode;
+    motionControllerTestLog[i].rightActuatorMode = rightWheel->actuatorMode;
 
-    motionControllerTestLog[i].leftBrakeDemand =
-		leftWheel->brakeDemand;
+    motionControllerTestLog[i].leftBrakeDemand = leftWheel->brakeDemand;
 
-    motionControllerTestLog[i].rightBrakeDemand =
-		rightWheel->brakeDemand;
+    motionControllerTestLog[i].rightBrakeDemand = rightWheel->brakeDemand;
 
-    motionControllerTestLog[i].leftBrakePWM =
-		leftWheel->brakePWM;
+    motionControllerTestLog[i].leftBrakePWM = leftWheel->brakePWM;
 
-    motionControllerTestLog[i].rightBrakePWM =
-		rightWheel->brakePWM;
+    motionControllerTestLog[i].rightBrakePWM = rightWheel->brakePWM;
 
     motionControllerTestLogCount++;
 }
 
-#endif	/* DEBUGLOG */
+#endif /* DEBUGLOG */
 
 /* -------------------------------------------------------------------------- */
 /* Initialisation                                                             */
@@ -280,16 +252,13 @@ bool MotionControllerTest_Init(RobotTestFixture *fixture)
      *
      * maxSteeringCorrection must still be a valid non-zero percentage.
      */
-    if (!RobotTestFixture_InitMotionController(
-    		fixture,
-		&straightTestMotionConfig))
+    if (!RobotTestFixture_InitMotionController(fixture, &straightTestMotionConfig))
     {
-    	return false;
+        return false;
     }
 
     return true;
 }
-
 
 /* -------------------------------------------------------------------------- */
 /* Test                                                                       */
@@ -297,9 +266,10 @@ bool MotionControllerTest_Init(RobotTestFixture *fixture)
 
 void MotionControllerTestRun(void)
 {
-    RobotTestFixture fixture = { 0 };
+    RobotTestFixture fixture = {0};
 
-    if (!MotionControllerTest_Init(&fixture)) {
+    if (!MotionControllerTest_Init(&fixture))
+    {
         OLED_Printf(0, 0, "Motion Ctrl Init Failed");
         OLED_Refresh_Gram();
 
@@ -311,11 +281,7 @@ void MotionControllerTestRun(void)
     OLED_Printf(0, 1, "Start: SW1");
     OLED_Printf(0, 2, "%.1f mm @ %.1fCPS", MOTION_TEST_DISTANCE_MM, MOTION_TEST_SPEED_CPS);
     OLED_Printf(0, 3, "Heading Kp = %.2f", fixture.motionController.headingPID.kp);
-    OLED_Printf(
-        0,
-        4,
-        "Sync Kp = %.2f",
-        fixture.motionController.config->wheelSyncKpCpsPerMm);
+    OLED_Printf(0, 4, "Sync Kp = %.2f", fixture.motionController.config->wheelSyncKpCpsPerMm);
 
     OLED_Refresh_Gram();
 
@@ -344,17 +310,13 @@ void MotionControllerTestRun(void)
 #endif
 
     MotionController_MoveStraight(
-        &fixture.motionController,
-        MOTION_TEST_DISTANCE_MM,
-        MOTION_TEST_SPEED_CPS);
+        &fixture.motionController, MOTION_TEST_DISTANCE_MM, MOTION_TEST_SPEED_CPS);
 
     /*
      * Capture state immediately after MoveStraight(), before
      * the first periodic control update.
      */
-    MotionControllerTest_LogSample(
-        &fixture,
-        0U);
+    MotionControllerTest_LogSample(&fixture, 0U);
 
     uint32_t startTick = HAL_GetTick();
     uint32_t lastControlTick = startTick;
@@ -362,18 +324,20 @@ void MotionControllerTestRun(void)
     lastLogTick = startTick;
 #elif DEBUGLOG == 0
     uint32_t lastDisplayTick = startTick;
-#endif	/* DEBUGLOG, to avoid unused variable warning */
+#endif /* DEBUGLOG, to avoid unused variable warning */
 
     bool timedOut = false;
 
-    while (fixture.motionController.mode != MOTIONCONTROLLER_IDLE) {
+    while (fixture.motionController.mode != MOTIONCONTROLLER_IDLE)
+    {
 
         uint32_t now = HAL_GetTick();
 
         /*
          * Hard test timeout.
          */
-        if ((now - startTick) >= MOTION_TEST_TIMEOUT_MS) {
+        if ((now - startTick) >= MOTION_TEST_TIMEOUT_MS)
+        {
             timedOut = true;
 
             MotionController_Brake(&fixture.motionController);
@@ -383,86 +347,74 @@ void MotionControllerTestRun(void)
         /*
          * 100 Hz controller + diagnostic logger.
          */
-        if ((now - lastControlTick) >= MOTION_TEST_CONTROL_PERIOD_MS) {
+        if ((now - lastControlTick) >= MOTION_TEST_CONTROL_PERIOD_MS)
+        {
             lastControlTick += MOTION_TEST_CONTROL_PERIOD_MS;
 
-            MotionController_Update(
-                &fixture.motionController,
-                MOTION_TEST_CONTROL_PERIOD_S);
+            MotionController_Update(&fixture.motionController, MOTION_TEST_CONTROL_PERIOD_S);
 
             // 10 ms distance accumulation independent of logging period
             MotionControllerTest_UpdateMeasurements(&fixture);
         }
 
 #if DEBUGLOG == 1
-		if ((now - lastLogTick) >= MOTION_TEST_LOG_INTERVAL_MS) {
-			lastLogTick += MOTION_TEST_LOG_INTERVAL_MS;
+        if ((now - lastLogTick) >= MOTION_TEST_LOG_INTERVAL_MS)
+        {
+            lastLogTick += MOTION_TEST_LOG_INTERVAL_MS;
             /*
              * Log immediately after the controller update so all values
              * correspond to the same completed control iteration.
              */
-            MotionControllerTest_LogSample(
-                &fixture,
-                now - startTick);
-		}
-#endif	/* DEBUGLOG */
+            MotionControllerTest_LogSample(&fixture, now - startTick);
+        }
+#endif /* DEBUGLOG */
 
 #if DEBUGLOG == 0
         /*
          * OLED is intentionally updated much more slowly than the controller.
          */
-        if ((now - lastDisplayTick) >= MOTION_TEST_DISPLAY_PERIOD_MS) {
+        if ((now - lastDisplayTick) >= MOTION_TEST_DISPLAY_PERIOD_MS)
+        {
             lastDisplayTick = now;
 
-            OLED_Printf(
-                0, 0,
-                "L:%4.0f R:%4.0f",
-                fixture.motionController.leftWheel->measuredSpeedCps,
-                fixture.motionController.rightWheel->measuredSpeedCps);
+            OLED_Printf(0,
+                        0,
+                        "L:%4.0f R:%4.0f",
+                        fixture.motionController.leftWheel->measuredSpeedCps,
+                        fixture.motionController.rightWheel->measuredSpeedCps);
 
-            OLED_Printf(
-                0, 1,
-                "Ld:%6.1f",
-                motionControllerTestLeftDistanceMm);
+            OLED_Printf(0, 1, "Ld:%6.1f", motionControllerTestLeftDistanceMm);
 
-            OLED_Printf(
-                0, 2,
-                "Rd:%6.1f",
-                motionControllerTestRightDistanceMm);
+            OLED_Printf(0, 2, "Rd:%6.1f", motionControllerTestRightDistanceMm);
 
-            OLED_Printf(
-                0, 3,
-                "Yaw:%6.2f",
-                fixture.motionController.yawDeg);
+            OLED_Printf(0, 3, "Yaw:%6.2f", fixture.motionController.yawDeg);
 
             OLED_Refresh_Gram();
         }
 #endif /* DEBBUGLOG */
     }
 
-
     /*
      * If timeout occurred, continue running the MotionController while it
      * brakes instead of immediately stopping control.
      */
-    if (timedOut) {
+    if (timedOut)
+    {
         uint32_t brakeStartTick = HAL_GetTick();
 
         while ((fixture.motionController.mode != MOTIONCONTROLLER_IDLE) &&
-               ((HAL_GetTick() - brakeStartTick) < 3000U)) {
+               ((HAL_GetTick() - brakeStartTick) < 3000U))
+        {
 
             uint32_t now = HAL_GetTick();
 
-            if ((now - lastControlTick) >= MOTION_TEST_CONTROL_PERIOD_MS) {
+            if ((now - lastControlTick) >= MOTION_TEST_CONTROL_PERIOD_MS)
+            {
                 lastControlTick += MOTION_TEST_CONTROL_PERIOD_MS;
 
-                MotionController_Update(
-                    &fixture.motionController,
-                    MOTION_TEST_CONTROL_PERIOD_S);
+                MotionController_Update(&fixture.motionController, MOTION_TEST_CONTROL_PERIOD_S);
 #if DEBUGLOG == 1
-                MotionControllerTest_LogSample(
-                    &fixture,
-                    now - startTick);
+                MotionControllerTest_LogSample(&fixture, now - startTick);
 #endif
             }
         }
@@ -470,34 +422,21 @@ void MotionControllerTestRun(void)
         /*
          * Last resort if braking never reaches IDLE.
          */
-        if (fixture.motionController.mode != MOTIONCONTROLLER_IDLE) {
+        if (fixture.motionController.mode != MOTIONCONTROLLER_IDLE)
+        {
             MotionController_Stop(&fixture.motionController);
         }
     }
 
-
     OLED_Clear();
 
-    OLED_Printf(
-        0, 0,
-        "L:%6.1f",
-        motionControllerTestLeftDistanceMm);
+    OLED_Printf(0, 0, "L:%6.1f", motionControllerTestLeftDistanceMm);
 
-    OLED_Printf(
-        0, 1,
-        "R:%6.1f",
-        motionControllerTestRightDistanceMm);
+    OLED_Printf(0, 1, "R:%6.1f", motionControllerTestRightDistanceMm);
 
-    OLED_Printf(
-        0, 2,
-        "Yaw:%6.2f",
-        fixture.motionController.yawDeg);
+    OLED_Printf(0, 2, "Yaw:%6.2f", fixture.motionController.yawDeg);
 #if DEBUGLOG == 1
-    OLED_Printf(
-        0, 3,
-        "N:%lu%s",
-        motionControllerTestLogCount,
-        timedOut ? " TIMEOUT" : "");
+    OLED_Printf(0, 3, "N:%lu%s", motionControllerTestLogCount, timedOut ? " TIMEOUT" : "");
 #endif /* DEBUGLOG */
     OLED_Refresh_Gram();
 

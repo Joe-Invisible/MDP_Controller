@@ -12,15 +12,13 @@
 
 #include <math.h>
 
-
-#define ICM20948_TEST_SAMPLE_COUNT       500U
-#define ICM20948_TEST_SAMPLE_DELAY_MS    10U
-
+#define ICM20948_TEST_SAMPLE_COUNT 500U
+#define ICM20948_TEST_SAMPLE_DELAY_MS 10U
 
 void ICM20948TestRun()
 {
-    ICM20948 imu = { 0 };
-    ICM20948Measurement meas = { 0 };
+    ICM20948 imu = {0};
+    ICM20948Measurement meas = {0};
 
     float mean = 0.0f;
     float m2 = 0.0f;
@@ -32,7 +30,8 @@ void ICM20948TestRun()
     /* Give the user time to leave the robot stationary. */
     HAL_Delay(1000U);
 
-    if (!ICM20948_Init(&imu, &hi2c2)) {
+    if (!ICM20948_Init(&imu, &hi2c2))
+    {
         OLED_Clear();
         OLED_Printf(0, 0, "IMU Init Failed.");
         OLED_Refresh_Gram();
@@ -51,8 +50,10 @@ void ICM20948TestRun()
      * This avoids storing all samples and is numerically more stable
      * than calculating sum(x^2) - mean^2.
      */
-    for (uint32_t i = 0; i < ICM20948_TEST_SAMPLE_COUNT; i++) {
-        if (!ICM20948_ReadMeasurement(&imu, &meas)) {
+    for (uint32_t i = 0; i < ICM20948_TEST_SAMPLE_COUNT; i++)
+    {
+        if (!ICM20948_ReadMeasurement(&imu, &meas))
+        {
             OLED_Clear();
             OLED_Printf(0, 0, "IMU Read Failed.");
             OLED_Printf(0, 1, "Sample: %lu", i);
@@ -75,8 +76,7 @@ void ICM20948TestRun()
         HAL_Delay(ICM20948_TEST_SAMPLE_DELAY_MS);
     }
 
-    float variance =
-        m2 / (float)(ICM20948_TEST_SAMPLE_COUNT - 1U);
+    float variance = m2 / (float)(ICM20948_TEST_SAMPLE_COUNT - 1U);
 
     float standardDeviation = sqrtf(variance);
 

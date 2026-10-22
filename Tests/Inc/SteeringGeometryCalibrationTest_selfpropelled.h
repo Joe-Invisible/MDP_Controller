@@ -24,16 +24,13 @@
 
 #include <stdint.h>
 
+#define STEERING_GEOMETRY_CAL_POINT_COUNT (13U)
+#define STEERING_GEOMETRY_CAL_SWEEP_COUNT (2U)
+#define STEERING_GEOMETRY_CAL_PHASE_COUNT (2U)
 
-#define STEERING_GEOMETRY_CAL_POINT_COUNT      (13U)
-#define STEERING_GEOMETRY_CAL_SWEEP_COUNT      (2U)
-#define STEERING_GEOMETRY_CAL_PHASE_COUNT      (2U)
-
-#define STEERING_GEOMETRY_CAL_RESULT_COUNT \
-    (STEERING_GEOMETRY_CAL_POINT_COUNT * \
-     STEERING_GEOMETRY_CAL_SWEEP_COUNT * \
+#define STEERING_GEOMETRY_CAL_RESULT_COUNT                                                         \
+    (STEERING_GEOMETRY_CAL_POINT_COUNT * STEERING_GEOMETRY_CAL_SWEEP_COUNT *                       \
      STEERING_GEOMETRY_CAL_PHASE_COUNT)
-
 
 typedef enum
 {
@@ -42,14 +39,12 @@ typedef enum
 
 } SteeringGeometryCalibrationPhase;
 
-
 typedef enum
 {
     STEERING_GEOMETRY_CAL_INCREASING = 1,
     STEERING_GEOMETRY_CAL_DECREASING = -1
 
 } SteeringGeometryCalibrationSweepDirection;
-
 
 typedef struct
 {
@@ -63,7 +58,6 @@ typedef struct
     uint8_t commandIndex;
     uint8_t valid;
 
-
     /*
      * Rear-wheel curvature reference used for propulsion.
      *
@@ -76,14 +70,12 @@ typedef struct
      */
     float propulsionCurvaturePerMm;
 
-
     /*
      * Timing.
      */
     uint32_t startTickMs;
     uint32_t durationMs;
     uint32_t sampleCount;
-
 
     /*
      * State captured at the end of the measurement phase,
@@ -100,7 +92,6 @@ typedef struct
     float wheelSyncErrorMm;
     float maxAbsWheelSyncErrorMm;
 
-
     /*
      * Gyro trajectory measurement.
      */
@@ -108,7 +99,6 @@ typedef struct
 
     float curvatureGyroPerMm;
     float effectiveAngleGyroRad;
-
 
     /*
      * Rear-wheel differential diagnostic.
@@ -120,7 +110,6 @@ typedef struct
     float curvatureEncoderPerMm;
     float effectiveAngleEncoderRad;
 
-
     /*
      * Final stationary state after braking.
      *
@@ -128,7 +117,6 @@ typedef struct
      */
     float finalDistanceMm;
     float finalYawDeg;
-
 
     /*
      * Diagnostics.
@@ -139,7 +127,6 @@ typedef struct
     uint8_t profileFailed;
 
 } SteeringGeometryCalibrationResult;
-
 
 /*
  * Results in chronological run order.
@@ -152,12 +139,9 @@ typedef struct
  *   = 52 runs
  */
 extern volatile SteeringGeometryCalibrationResult
-    g_steeringGeometryCalibrationResults[
-        STEERING_GEOMETRY_CAL_RESULT_COUNT];
+    g_steeringGeometryCalibrationResults[STEERING_GEOMETRY_CAL_RESULT_COUNT];
 
-extern volatile uint32_t
-    g_steeringGeometryCalibrationResultCount;
-
+extern volatile uint32_t g_steeringGeometryCalibrationResultCount;
 
 /*
  * Convenience tables indexed as:
@@ -177,24 +161,18 @@ extern volatile uint32_t
  * the replacement SteeringController calibration table.
  */
 extern volatile float
-    g_steeringGeometryCalibrationScoutCurvaturePerMm[
-        STEERING_GEOMETRY_CAL_SWEEP_COUNT]
-        [STEERING_GEOMETRY_CAL_POINT_COUNT];
+    g_steeringGeometryCalibrationScoutCurvaturePerMm[STEERING_GEOMETRY_CAL_SWEEP_COUNT]
+                                                    [STEERING_GEOMETRY_CAL_POINT_COUNT];
 
 extern volatile float
-    g_steeringGeometryCalibrationRefinedAngleRad[
-        STEERING_GEOMETRY_CAL_SWEEP_COUNT]
-        [STEERING_GEOMETRY_CAL_POINT_COUNT];
-
+    g_steeringGeometryCalibrationRefinedAngleRad[STEERING_GEOMETRY_CAL_SWEEP_COUNT]
+                                                [STEERING_GEOMETRY_CAL_POINT_COUNT];
 
 /*
  * Human-readable description retained for debugger inspection.
  */
-extern volatile char
-    g_steeringGeometryCalibrationInfo[];
-
+extern volatile char g_steeringGeometryCalibrationInfo[];
 
 void SteeringGeometryCalibrationTestRun(void);
-
 
 #endif /* INC_STEERINGGEOMETRYCALIBRATIONTEST_H_ */
