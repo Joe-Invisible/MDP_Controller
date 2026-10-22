@@ -19,10 +19,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-
-#define STEERING_PRECOND_ARC_REPEAT_COUNT        (3U)
-#define STEERING_PRECOND_ARC_LOG_CAPACITY        (384U)
-
+#define STEERING_PRECOND_ARC_REPEAT_COUNT (3U)
+#define STEERING_PRECOND_ARC_LOG_CAPACITY (384U)
 
 typedef struct
 {
@@ -55,7 +53,6 @@ typedef struct
     float wheelSyncCorrectionCps;
 
 } SteeringPreconditioningArcRepeatLogSample;
-
 
 typedef struct
 {
@@ -101,25 +98,16 @@ typedef struct
 
 } SteeringPreconditioningArcRepeatSummary;
 
-
 extern volatile SteeringPreconditioningArcRepeatLogSample
-    g_steeringPreconditioningArcRepeatLog[
-        STEERING_PRECOND_ARC_LOG_CAPACITY];
+    g_steeringPreconditioningArcRepeatLog[STEERING_PRECOND_ARC_LOG_CAPACITY];
 
-extern volatile uint32_t
-    g_steeringPreconditioningArcRepeatLogCount;
-
+extern volatile uint32_t g_steeringPreconditioningArcRepeatLogCount;
 
 extern volatile SteeringPreconditioningArcRepeatSummary
-    g_steeringPreconditioningArcRepeatSummary[
-        STEERING_PRECOND_ARC_REPEAT_COUNT];
+    g_steeringPreconditioningArcRepeatSummary[STEERING_PRECOND_ARC_REPEAT_COUNT];
 
-
-extern volatile char
-    g_steeringPreconditioningArcRepeatInfo[];
-
+extern volatile char g_steeringPreconditioningArcRepeatInfo[];
 
 void SteeringPreconditioningArcRepeatTestRun(void);
-
 
 #endif /* INC_STEERINGPRECONDITIONINGARCREPEATTEST_H_ */

@@ -131,88 +131,66 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-
 /* -------------------------------------------------------------------------- */
 /* Constants                                                                  */
 /* -------------------------------------------------------------------------- */
 
-#define ITER_PI_F                          (3.14159265358979323846f)
-#define ITER_DEG_TO_RAD_F                  (ITER_PI_F / 180.0f)
-#define ITER_RAD_TO_DEG_F                  (180.0f / ITER_PI_F)
+#define ITER_PI_F (3.14159265358979323846f)
+#define ITER_DEG_TO_RAD_F (ITER_PI_F / 180.0f)
+#define ITER_RAD_TO_DEG_F (180.0f / ITER_PI_F)
 
-#define ITER_CONTROL_PERIOD_MS             (10U)
-#define ITER_CONTROL_PERIOD_S              (0.010f)
+#define ITER_CONTROL_PERIOD_MS (10U)
+#define ITER_CONTROL_PERIOD_S (0.010f)
 
-#define ITER_COMMAND_RATE_PER_SEC          (60.0f)
+#define ITER_COMMAND_RATE_PER_SEC (60.0f)
 
-#define ITER_COMMAND_SETTLE_MS             (500U)
-#define ITER_EXTREME_PRELOAD_HOLD_MS       (500U)
-#define ITER_HANDS_OFF_MS                  (400U)
+#define ITER_COMMAND_SETTLE_MS (500U)
+#define ITER_EXTREME_PRELOAD_HOLD_MS (500U)
+#define ITER_HANDS_OFF_MS (400U)
 
-#define ITER_TARGET_TRAVEL_MM              (1000.0f)
-#define ITER_MAX_CENTRE_SPEED_CPS          (2000.0f)
+#define ITER_TARGET_TRAVEL_MM (1000.0f)
+#define ITER_MAX_CENTRE_SPEED_CPS (2000.0f)
 
-#define ITER_ACCELERATION_MMPS2            (500.0f)
-#define ITER_DECELERATION_MMPS2            (250.0f)
+#define ITER_ACCELERATION_MMPS2 (500.0f)
+#define ITER_DECELERATION_MMPS2 (250.0f)
 
-#define ITER_SYNC_KP_CPS_PER_MM            (10.0f)
-#define ITER_SYNC_MAX_CORRECTION_CPS       (100.0f)
+#define ITER_SYNC_KP_CPS_PER_MM (10.0f)
+#define ITER_SYNC_MAX_CORRECTION_CPS (100.0f)
 
-#define ITER_RUN_TIMEOUT_MS                (12000U)
-#define ITER_BRAKE_TIMEOUT_MS              (3000U)
-#define ITER_STOP_STABLE_SAMPLES           (3U)
+#define ITER_RUN_TIMEOUT_MS (12000U)
+#define ITER_BRAKE_TIMEOUT_MS (3000U)
+#define ITER_STOP_STABLE_SAMPLES (3U)
 
-#define ITER_MIN_VALID_TRAVEL_MM           (900.0f)
-
+#define ITER_MIN_VALID_TRAVEL_MM (900.0f)
 
 /*
  * Fixed-point convergence.
  */
-#define ITER_CURVATURE_ABS_TOL_PER_MM      (1.0e-5f)
-#define ITER_CURVATURE_REL_TOL             (0.10f)
-
+#define ITER_CURVATURE_ABS_TOL_PER_MM (1.0e-5f)
+#define ITER_CURVATURE_REL_TOL (0.10f)
 
 /*
  * Bracketed solver.
  */
-#define ITER_BRACKET_EDGE_FRACTION         (0.10f)
-#define ITER_SECANT_DENOM_EPS              (1.0e-9f)
-
+#define ITER_BRACKET_EDGE_FRACTION (0.10f)
+#define ITER_SECANT_DENOM_EPS (1.0e-9f)
 
 /*
  * Unbracketed exploration.
  */
-#define ITER_UNBRACKETED_MAX_STEP_PER_MM   (7.5e-5f)
+#define ITER_UNBRACKETED_MAX_STEP_PER_MM (7.5e-5f)
 
-#define ITER_MAX_ABS_CURVATURE_PER_MM      (3.0e-4f)
-
+#define ITER_MAX_ABS_CURVATURE_PER_MM (3.0e-4f)
 
 /*
  * Rounds 1 and 2 have already been completed.
  *
  * localRoundIndex = 0 therefore corresponds to experimental Round 3.
  */
-#define ITER_BASE_ROUND_INDEX              (2U)
+#define ITER_BASE_ROUND_INDEX (2U)
 
-
-static const float iterCommands[
-    STEERING_GEOMETRY_ITER_POINT_COUNT] =
-{
-    -12.0f,
-    -10.0f,
-     -8.0f,
-     -6.0f,
-     -4.0f,
-     -2.0f,
-      0.0f,
-      2.0f,
-      4.0f,
-      6.0f,
-      8.0f,
-     10.0f,
-     12.0f
-};
-
+static const float iterCommands[STEERING_GEOMETRY_ITER_POINT_COUNT] = {
+    -12.0f, -10.0f, -8.0f, -6.0f, -4.0f, -2.0f, 0.0f, 2.0f, 4.0f, 6.0f, 8.0f, 10.0f, 12.0f};
 
 /*
  * State after completed Round 2.
@@ -231,134 +209,76 @@ static const float iterCommands[
  * For the five unresolved points this is simply the latest measured
  * curvature and remains provisional until convergence.
  */
-static const float iterSeedFinalCurvaturePerMm[
-    STEERING_GEOMETRY_ITER_SWEEP_COUNT]
-    [STEERING_GEOMETRY_ITER_POINT_COUNT] =
-{
-    {
-         1.1382051200e-04f,
-         1.2114202400e-04f,
-         1.1709809000e-04f,
-         1.0106927900e-04f,
-         9.5048737400e-05f,
-         9.2171794700e-05f,
-         7.7178374300e-05f,
-         6.0395435900e-05f,
-         4.0091137600e-05f,
-        -5.6800981800e-05f,
-        -1.5815632700e-04f,
-        -2.2088270600e-04f,
-        -2.5384547200e-04f
-    },
+static const float iterSeedFinalCurvaturePerMm[STEERING_GEOMETRY_ITER_SWEEP_COUNT]
+                                              [STEERING_GEOMETRY_ITER_POINT_COUNT] = {
+                                                  {1.1382051200e-04f,
+                                                   1.2114202400e-04f,
+                                                   1.1709809000e-04f,
+                                                   1.0106927900e-04f,
+                                                   9.5048737400e-05f,
+                                                   9.2171794700e-05f,
+                                                   7.7178374300e-05f,
+                                                   6.0395435900e-05f,
+                                                   4.0091137600e-05f,
+                                                   -5.6800981800e-05f,
+                                                   -1.5815632700e-04f,
+                                                   -2.2088270600e-04f,
+                                                   -2.5384547200e-04f},
 
-    {
-         1.0937401400e-04f,
-         3.1824984000e-05f,
-        -4.3640830000e-05f,
-        -1.0631712900e-04f,
-        -1.6247868200e-04f,
-        -2.0257076500e-04f,
-        -2.3045034300e-04f,
-        -2.6653669200e-04f,
-        -2.6470673000e-04f,
-        -2.6124599400e-04f,
-        -2.8161623000e-04f,
-        -3.0828072300e-04f,
-        -3.0603102600e-04f
-    }
-};
+                                                  {1.0937401400e-04f,
+                                                   3.1824984000e-05f,
+                                                   -4.3640830000e-05f,
+                                                   -1.0631712900e-04f,
+                                                   -1.6247868200e-04f,
+                                                   -2.0257076500e-04f,
+                                                   -2.3045034300e-04f,
+                                                   -2.6653669200e-04f,
+                                                   -2.6470673000e-04f,
+                                                   -2.6124599400e-04f,
+                                                   -2.8161623000e-04f,
+                                                   -3.0828072300e-04f,
+                                                   -3.0603102600e-04f}};
 
+static const uint8_t iterSeedConverged[STEERING_GEOMETRY_ITER_SWEEP_COUNT]
+                                      [STEERING_GEOMETRY_ITER_POINT_COUNT] = {
+                                          {1U, 1U, 1U, 1U, 1U, 1U, 1U, 1U, 1U, 0U, 0U, 1U, 1U},
 
-static const uint8_t iterSeedConverged[
-    STEERING_GEOMETRY_ITER_SWEEP_COUNT]
-    [STEERING_GEOMETRY_ITER_POINT_COUNT] =
-{
-    {
-        1U, 1U, 1U, 1U, 1U, 1U, 1U,
-        1U, 1U,
-        0U, 0U,
-        1U, 1U
-    },
+                                          {0U, 0U, 0U, 1U, 1U, 1U, 1U, 1U, 1U, 1U, 1U, 1U, 1U}};
 
-    {
-        0U, 0U, 0U,
-        1U, 1U, 1U, 1U, 1U, 1U,
-        1U, 1U, 1U, 1U
-    }
-};
+static const uint8_t
+    iterSeedIterationCount[STEERING_GEOMETRY_ITER_SWEEP_COUNT][STEERING_GEOMETRY_ITER_POINT_COUNT] =
+        {{0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 2U, 2U, 1U, 1U},
 
-
-static const uint8_t iterSeedIterationCount[
-    STEERING_GEOMETRY_ITER_SWEEP_COUNT]
-    [STEERING_GEOMETRY_ITER_POINT_COUNT] =
-{
-    {
-        0U, 0U, 0U, 0U, 0U, 0U, 0U,
-        0U, 0U,
-        2U, 2U,
-        1U, 1U
-    },
-
-    {
-        2U, 2U, 2U,
-        1U, 1U, 1U, 1U,
-        2U, 2U,
-        1U, 1U,
-        2U, 2U
-    }
-};
-
+         {2U, 2U, 2U, 1U, 1U, 1U, 1U, 2U, 2U, 1U, 1U, 2U, 2U}};
 
 /* -------------------------------------------------------------------------- */
 /* Debugger-visible exports                                                   */
 /* -------------------------------------------------------------------------- */
 
 volatile SteeringGeometryIterationPointState
-    g_steeringGeometryIterationPointState[
-        STEERING_GEOMETRY_ITER_SWEEP_COUNT]
-        [STEERING_GEOMETRY_ITER_POINT_COUNT];
+    g_steeringGeometryIterationPointState[STEERING_GEOMETRY_ITER_SWEEP_COUNT]
+                                         [STEERING_GEOMETRY_ITER_POINT_COUNT];
 
+volatile float g_steeringGeometryIterationCurvaturePerMm[STEERING_GEOMETRY_ITER_SWEEP_COUNT]
+                                                        [STEERING_GEOMETRY_ITER_POINT_COUNT];
 
-volatile float
-    g_steeringGeometryIterationCurvaturePerMm[
-        STEERING_GEOMETRY_ITER_SWEEP_COUNT]
-        [STEERING_GEOMETRY_ITER_POINT_COUNT];
+volatile float g_steeringGeometryIterationAngleRad[STEERING_GEOMETRY_ITER_SWEEP_COUNT]
+                                                  [STEERING_GEOMETRY_ITER_POINT_COUNT];
 
+volatile uint8_t g_steeringGeometryIterationConverged[STEERING_GEOMETRY_ITER_SWEEP_COUNT]
+                                                     [STEERING_GEOMETRY_ITER_POINT_COUNT];
 
-volatile float
-    g_steeringGeometryIterationAngleRad[
-        STEERING_GEOMETRY_ITER_SWEEP_COUNT]
-        [STEERING_GEOMETRY_ITER_POINT_COUNT];
-
-
-volatile uint8_t
-    g_steeringGeometryIterationConverged[
-        STEERING_GEOMETRY_ITER_SWEEP_COUNT]
-        [STEERING_GEOMETRY_ITER_POINT_COUNT];
-
-
-volatile uint8_t
-    g_steeringGeometryIterationCount[
-        STEERING_GEOMETRY_ITER_SWEEP_COUNT]
-        [STEERING_GEOMETRY_ITER_POINT_COUNT];
-
+volatile uint8_t g_steeringGeometryIterationCount[STEERING_GEOMETRY_ITER_SWEEP_COUNT]
+                                                 [STEERING_GEOMETRY_ITER_POINT_COUNT];
 
 volatile SteeringGeometryIterationResult
-    g_steeringGeometryIterationResults[
-        STEERING_GEOMETRY_ITER_MAX_RESULT_COUNT];
+    g_steeringGeometryIterationResults[STEERING_GEOMETRY_ITER_MAX_RESULT_COUNT];
 
+volatile uint32_t g_steeringGeometryIterationResultCount = 0U;
 
-volatile uint32_t
-    g_steeringGeometryIterationResultCount = 0U;
+volatile uint32_t g_steeringGeometryIterationUnresolvedCount = 0U;
 
-
-volatile uint32_t
-    g_steeringGeometryIterationUnresolvedCount = 0U;
-
-
-volatile uint32_t
-    g_steeringGeometryIterationCompletedRounds = 0U;
-
+volatile uint32_t g_steeringGeometryIterationCompletedRounds = 0U;
 
 volatile char g_steeringGeometryIterationInfo[] =
     "Round-3 steering fixed-point continuation; "
@@ -368,15 +288,11 @@ volatile char g_steeringGeometryIterationInfo[] =
     "persistent bracketed secant/bisection once sign change exists; "
     "cautious capped secant exploration while unbracketed";
 
-
 /* -------------------------------------------------------------------------- */
 /* Generic helpers                                                            */
 /* -------------------------------------------------------------------------- */
 
-static float SteeringIter_Clamp(
-    float value,
-    float minValue,
-    float maxValue)
+static float SteeringIter_Clamp(float value, float minValue, float maxValue)
 {
     if (value > maxValue)
     {
@@ -391,126 +307,75 @@ static float SteeringIter_Clamp(
     return value;
 }
 
-
-static uint8_t SteeringIter_GetSweepSlot(
-    int8_t sweepDirection)
+static uint8_t SteeringIter_GetSweepSlot(int8_t sweepDirection)
 {
-    return
-        (sweepDirection ==
-         STEERING_GEOMETRY_ITER_INCREASING)
-            ? 0U
-            : 1U;
+    return (sweepDirection == STEERING_GEOMETRY_ITER_INCREASING) ? 0U : 1U;
 }
 
-
-static const char *SteeringIter_GetSweepName(
-    int8_t sweepDirection)
+static const char *SteeringIter_GetSweepName(int8_t sweepDirection)
 {
-    return
-        (sweepDirection ==
-         STEERING_GEOMETRY_ITER_INCREASING)
-            ? "INC"
-            : "DEC";
+    return (sweepDirection == STEERING_GEOMETRY_ITER_INCREASING) ? "INC" : "DEC";
 }
 
-
-static float SteeringIter_GetMmPerCount(
-    const RobotTestFixture *fixture)
+static float SteeringIter_GetMmPerCount(const RobotTestFixture *fixture)
 {
-    const RobotKinematics *kinematics =
-        fixture->motionController.kinematics;
+    const RobotKinematics *kinematics = fixture->motionController.kinematics;
 
-    return
-        ITER_PI_F *
-        kinematics->rearWheelDiameterMm /
-        (float)kinematics->rearEncoderCountsPerRev;
+    return ITER_PI_F * kinematics->rearWheelDiameterMm / (float)kinematics->rearEncoderCountsPerRev;
 }
-
 
 /* -------------------------------------------------------------------------- */
 /* Fixed-point convergence / update                                           */
 /* -------------------------------------------------------------------------- */
 
-static float SteeringIter_GetTolerance(
-    float referenceCurvaturePerMm)
+static float SteeringIter_GetTolerance(float referenceCurvaturePerMm)
 {
-    float relativeTolerance =
-        ITER_CURVATURE_REL_TOL *
-        fabsf(referenceCurvaturePerMm);
+    float relativeTolerance = ITER_CURVATURE_REL_TOL * fabsf(referenceCurvaturePerMm);
 
-    return
-        fmaxf(
-            ITER_CURVATURE_ABS_TOL_PER_MM,
-            relativeTolerance);
+    return fmaxf(ITER_CURVATURE_ABS_TOL_PER_MM, relativeTolerance);
 }
 
-
-static bool SteeringIter_IsConverged(
-    float referenceCurvaturePerMm,
-    float measuredCurvaturePerMm)
+static bool SteeringIter_IsConverged(float referenceCurvaturePerMm, float measuredCurvaturePerMm)
 {
-    float error =
-        measuredCurvaturePerMm -
-        referenceCurvaturePerMm;
+    float error = measuredCurvaturePerMm - referenceCurvaturePerMm;
 
-    return
-        fabsf(error) <=
-        SteeringIter_GetTolerance(
-            referenceCurvaturePerMm);
+    return fabsf(error) <= SteeringIter_GetTolerance(referenceCurvaturePerMm);
 }
 
-
-static bool SteeringIter_HaveOppositeSigns(
-    float a,
-    float b)
+static bool SteeringIter_HaveOppositeSigns(float a, float b)
 {
-    return
-        ((a < 0.0f) && (b > 0.0f)) ||
-        ((a > 0.0f) && (b < 0.0f));
+    return ((a < 0.0f) && (b > 0.0f)) || ((a > 0.0f) && (b < 0.0f));
 }
 
-
-static void SteeringIter_SetBracket(
-    SteeringGeometryIterationPointState *state,
-    float referenceA,
-    float errorA,
-    float referenceB,
-    float errorB)
+static void SteeringIter_SetBracket(SteeringGeometryIterationPointState *state,
+                                    float referenceA,
+                                    float errorA,
+                                    float referenceB,
+                                    float errorB)
 {
     if (referenceA <= referenceB)
     {
-        state->bracketLowReferencePerMm =
-            referenceA;
+        state->bracketLowReferencePerMm = referenceA;
 
-        state->bracketLowErrorPerMm =
-            errorA;
+        state->bracketLowErrorPerMm = errorA;
 
-        state->bracketHighReferencePerMm =
-            referenceB;
+        state->bracketHighReferencePerMm = referenceB;
 
-        state->bracketHighErrorPerMm =
-            errorB;
+        state->bracketHighErrorPerMm = errorB;
     }
     else
     {
-        state->bracketLowReferencePerMm =
-            referenceB;
+        state->bracketLowReferencePerMm = referenceB;
 
-        state->bracketLowErrorPerMm =
-            errorB;
+        state->bracketLowErrorPerMm = errorB;
 
-        state->bracketHighReferencePerMm =
-            referenceA;
+        state->bracketHighReferencePerMm = referenceA;
 
-        state->bracketHighErrorPerMm =
-            errorA;
+        state->bracketHighErrorPerMm = errorA;
     }
 
-
-    state->hasBracket =
-        1U;
+    state->hasBracket = 1U;
 }
-
 
 /*
  * Tighten an existing sign-changing bracket using a newly sampled
@@ -520,57 +385,41 @@ static void SteeringIter_SetBracket(
  * bracket, so the new point should replace whichever endpoint has the
  * same error sign.
  */
-static void SteeringIter_UpdateBracket(
-    SteeringGeometryIterationPointState *state,
-    float reference,
-    float error)
+static void
+SteeringIter_UpdateBracket(SteeringGeometryIterationPointState *state, float reference, float error)
 {
     if (!state->hasBracket)
     {
         return;
     }
 
-
     if (error == 0.0f)
     {
-        state->bracketLowReferencePerMm =
-            reference;
+        state->bracketLowReferencePerMm = reference;
 
-        state->bracketLowErrorPerMm =
-            0.0f;
+        state->bracketLowErrorPerMm = 0.0f;
 
-        state->bracketHighReferencePerMm =
-            reference;
+        state->bracketHighReferencePerMm = reference;
 
-        state->bracketHighErrorPerMm =
-            0.0f;
+        state->bracketHighErrorPerMm = 0.0f;
 
         return;
     }
 
-
-    if (((error > 0.0f) &&
-         (state->bracketLowErrorPerMm > 0.0f)) ||
-        ((error < 0.0f) &&
-         (state->bracketLowErrorPerMm < 0.0f)))
+    if (((error > 0.0f) && (state->bracketLowErrorPerMm > 0.0f)) ||
+        ((error < 0.0f) && (state->bracketLowErrorPerMm < 0.0f)))
     {
-        state->bracketLowReferencePerMm =
-            reference;
+        state->bracketLowReferencePerMm = reference;
 
-        state->bracketLowErrorPerMm =
-            error;
+        state->bracketLowErrorPerMm = error;
 
         return;
     }
 
+    state->bracketHighReferencePerMm = reference;
 
-    state->bracketHighReferencePerMm =
-        reference;
-
-    state->bracketHighErrorPerMm =
-        error;
+    state->bracketHighErrorPerMm = error;
 }
-
 
 /*
  * Compute the next reference while strictly remaining inside an
@@ -579,87 +428,48 @@ static void SteeringIter_UpdateBracket(
  * First attempt a regula-falsi / bracketed-secant estimate. If that
  * estimate is invalid or too near either endpoint, use the midpoint.
  */
-static float SteeringIter_ComputeBracketedReference(
-    const SteeringGeometryIterationPointState *state,
-    uint8_t *updateMethod)
+static float
+SteeringIter_ComputeBracketedReference(const SteeringGeometryIterationPointState *state,
+                                       uint8_t *updateMethod)
 {
-    float lowReference =
-        state->bracketLowReferencePerMm;
+    float lowReference = state->bracketLowReferencePerMm;
 
-    float lowError =
-        state->bracketLowErrorPerMm;
+    float lowError = state->bracketLowErrorPerMm;
 
-    float highReference =
-        state->bracketHighReferencePerMm;
+    float highReference = state->bracketHighReferencePerMm;
 
-    float highError =
-        state->bracketHighErrorPerMm;
+    float highError = state->bracketHighErrorPerMm;
 
+    float midpoint = 0.5f * (lowReference + highReference);
 
-    float midpoint =
-        0.5f *
-        (lowReference +
-         highReference);
+    float denominator = highError - lowError;
 
-
-    float denominator =
-        highError -
-        lowError;
-
-
-    if (fabsf(denominator) <=
-        ITER_SECANT_DENOM_EPS)
+    if (fabsf(denominator) <= ITER_SECANT_DENOM_EPS)
     {
-        *updateMethod =
-            STEERING_GEOMETRY_ITER_UPDATE_BISECTION;
+        *updateMethod = STEERING_GEOMETRY_ITER_UPDATE_BISECTION;
 
         return midpoint;
     }
 
+    float candidate = highReference - highError * (highReference - lowReference) / denominator;
 
-    float candidate =
-        highReference -
-        highError *
-        (highReference -
-         lowReference) /
-        denominator;
+    float width = highReference - lowReference;
 
+    float innerLow = lowReference + ITER_BRACKET_EDGE_FRACTION * width;
 
-    float width =
-        highReference -
-        lowReference;
+    float innerHigh = highReference - ITER_BRACKET_EDGE_FRACTION * width;
 
-
-    float innerLow =
-        lowReference +
-        ITER_BRACKET_EDGE_FRACTION *
-        width;
-
-
-    float innerHigh =
-        highReference -
-        ITER_BRACKET_EDGE_FRACTION *
-        width;
-
-
-    if (!isfinite(candidate) ||
-        candidate <= innerLow ||
-        candidate >= innerHigh)
+    if (!isfinite(candidate) || candidate <= innerLow || candidate >= innerHigh)
     {
-        *updateMethod =
-            STEERING_GEOMETRY_ITER_UPDATE_BISECTION;
+        *updateMethod = STEERING_GEOMETRY_ITER_UPDATE_BISECTION;
 
         return midpoint;
     }
 
-
-    *updateMethod =
-        STEERING_GEOMETRY_ITER_UPDATE_BRACKET_SECANT;
-
+    *updateMethod = STEERING_GEOMETRY_ITER_UPDATE_BRACKET_SECANT;
 
     return candidate;
 }
-
 
 /*
  * Unbracketed exploration.
@@ -671,402 +481,231 @@ static float SteeringIter_ComputeBracketedReference(
  *
  * Every unbracketed step is limited.
  */
-static float SteeringIter_ComputeUnbracketedReference(
-    float previousReferenceCurvaturePerMm,
-    float previousErrorCurvaturePerMm,
-    float currentReferenceCurvaturePerMm,
-    float currentErrorCurvaturePerMm,
-    uint8_t *updateMethod)
+static float SteeringIter_ComputeUnbracketedReference(float previousReferenceCurvaturePerMm,
+                                                      float previousErrorCurvaturePerMm,
+                                                      float currentReferenceCurvaturePerMm,
+                                                      float currentErrorCurvaturePerMm,
+                                                      uint8_t *updateMethod)
 {
-    float candidate =
-        currentReferenceCurvaturePerMm +
-        currentErrorCurvaturePerMm;
+    float candidate = currentReferenceCurvaturePerMm + currentErrorCurvaturePerMm;
 
+    uint8_t method = STEERING_GEOMETRY_ITER_UPDATE_UNBRACKETED_FIXED_POINT;
 
-    uint8_t method =
-        STEERING_GEOMETRY_ITER_UPDATE_UNBRACKETED_FIXED_POINT;
+    float denominator = currentErrorCurvaturePerMm - previousErrorCurvaturePerMm;
 
-
-    float denominator =
-        currentErrorCurvaturePerMm -
-        previousErrorCurvaturePerMm;
-
-
-    if ((fabsf(denominator) >
-         ITER_SECANT_DENOM_EPS) &&
-        (fabsf(
-            currentReferenceCurvaturePerMm -
-            previousReferenceCurvaturePerMm) >
-         1.0e-12f))
+    if ((fabsf(denominator) > ITER_SECANT_DENOM_EPS) &&
+        (fabsf(currentReferenceCurvaturePerMm - previousReferenceCurvaturePerMm) > 1.0e-12f))
     {
         float secantCandidate =
             currentReferenceCurvaturePerMm -
             currentErrorCurvaturePerMm *
-            (currentReferenceCurvaturePerMm -
-             previousReferenceCurvaturePerMm) /
-            denominator;
-
+                (currentReferenceCurvaturePerMm - previousReferenceCurvaturePerMm) / denominator;
 
         if (isfinite(secantCandidate))
         {
-            candidate =
-                secantCandidate;
+            candidate = secantCandidate;
 
-            method =
-                STEERING_GEOMETRY_ITER_UPDATE_UNBRACKETED_SECANT;
+            method = STEERING_GEOMETRY_ITER_UPDATE_UNBRACKETED_SECANT;
         }
     }
 
+    float requestedStep = candidate - currentReferenceCurvaturePerMm;
 
-    float requestedStep =
-        candidate -
-        currentReferenceCurvaturePerMm;
-
-
-    if (fabsf(requestedStep) >
-        ITER_UNBRACKETED_MAX_STEP_PER_MM)
+    if (fabsf(requestedStep) > ITER_UNBRACKETED_MAX_STEP_PER_MM)
     {
-        candidate =
-            currentReferenceCurvaturePerMm +
-            copysignf(
-                ITER_UNBRACKETED_MAX_STEP_PER_MM,
-                requestedStep);
+        candidate = currentReferenceCurvaturePerMm +
+                    copysignf(ITER_UNBRACKETED_MAX_STEP_PER_MM, requestedStep);
 
-
-        if (method ==
-            STEERING_GEOMETRY_ITER_UPDATE_UNBRACKETED_SECANT)
+        if (method == STEERING_GEOMETRY_ITER_UPDATE_UNBRACKETED_SECANT)
         {
-            method =
-                STEERING_GEOMETRY_ITER_UPDATE_UNBRACKETED_SECANT_CAPPED;
+            method = STEERING_GEOMETRY_ITER_UPDATE_UNBRACKETED_SECANT_CAPPED;
         }
         else
         {
-            method =
-                STEERING_GEOMETRY_ITER_UPDATE_UNBRACKETED_FIXED_POINT_CAPPED;
+            method = STEERING_GEOMETRY_ITER_UPDATE_UNBRACKETED_FIXED_POINT_CAPPED;
         }
     }
 
+    candidate = SteeringIter_Clamp(
+        candidate, -ITER_MAX_ABS_CURVATURE_PER_MM, +ITER_MAX_ABS_CURVATURE_PER_MM);
 
-    candidate =
-        SteeringIter_Clamp(
-            candidate,
-            -ITER_MAX_ABS_CURVATURE_PER_MM,
-            +ITER_MAX_ABS_CURVATURE_PER_MM);
-
-
-    *updateMethod =
-        method;
-
+    *updateMethod = method;
 
     return candidate;
 }
 
-
-static float SteeringIter_ComputeNextReference(
-    const SteeringGeometryIterationPointState *state,
-    uint8_t *updateMethod)
+static float SteeringIter_ComputeNextReference(const SteeringGeometryIterationPointState *state,
+                                               uint8_t *updateMethod)
 {
     if (state->hasBracket)
     {
-        return
-            SteeringIter_ComputeBracketedReference(
-                state,
-                updateMethod);
+        return SteeringIter_ComputeBracketedReference(state, updateMethod);
     }
 
-
-    return
-        SteeringIter_ComputeUnbracketedReference(
-            state->previousReferenceCurvaturePerMm,
-            state->previousErrorCurvaturePerMm,
-            state->currentReferenceCurvaturePerMm,
-            state->currentErrorCurvaturePerMm,
-            updateMethod);
+    return SteeringIter_ComputeUnbracketedReference(state->previousReferenceCurvaturePerMm,
+                                                    state->previousErrorCurvaturePerMm,
+                                                    state->currentReferenceCurvaturePerMm,
+                                                    state->currentErrorCurvaturePerMm,
+                                                    updateMethod);
 }
-
 
 /* -------------------------------------------------------------------------- */
 /* Export-state initialisation                                                */
 /* -------------------------------------------------------------------------- */
 
-static void SteeringIter_SeedBracketedPoint(
-    uint8_t sweep,
-    uint8_t point,
+static void SteeringIter_SeedBracketedPoint(uint8_t sweep,
+                                            uint8_t point,
 
-    float previousReference,
-    float previousError,
+                                            float previousReference,
+                                            float previousError,
 
-    float currentReference,
-    float currentMeasured,
+                                            float currentReference,
+                                            float currentMeasured,
 
-    float bracketReferenceA,
-    float bracketErrorA,
+                                            float bracketReferenceA,
+                                            float bracketErrorA,
 
-    float bracketReferenceB,
-    float bracketErrorB)
+                                            float bracketReferenceB,
+                                            float bracketErrorB)
 {
-    SteeringGeometryIterationPointState state =
-        g_steeringGeometryIterationPointState[
-            sweep][point];
+    SteeringGeometryIterationPointState state = g_steeringGeometryIterationPointState[sweep][point];
 
+    state.previousReferenceCurvaturePerMm = previousReference;
 
-    state.previousReferenceCurvaturePerMm =
-        previousReference;
+    state.previousErrorCurvaturePerMm = previousError;
 
-    state.previousErrorCurvaturePerMm =
-        previousError;
+    state.currentReferenceCurvaturePerMm = currentReference;
 
+    state.currentMeasuredCurvaturePerMm = currentMeasured;
 
-    state.currentReferenceCurvaturePerMm =
-        currentReference;
-
-    state.currentMeasuredCurvaturePerMm =
-        currentMeasured;
-
-    state.currentErrorCurvaturePerMm =
-        currentMeasured -
-        currentReference;
-
+    state.currentErrorCurvaturePerMm = currentMeasured - currentReference;
 
     SteeringIter_SetBracket(
-        &state,
-        bracketReferenceA,
-        bracketErrorA,
-        bracketReferenceB,
-        bracketErrorB);
+        &state, bracketReferenceA, bracketErrorA, bracketReferenceB, bracketErrorB);
 
+    state.tolerancePerMm = SteeringIter_GetTolerance(currentReference);
 
-    state.tolerancePerMm =
-        SteeringIter_GetTolerance(
-            currentReference);
+    state.converged = 0U;
 
+    state.unbracketedAttemptCount = 0U;
 
-    state.converged =
-        0U;
+    uint8_t method = STEERING_GEOMETRY_ITER_UPDATE_NONE;
 
+    state.nextReferenceCurvaturePerMm = SteeringIter_ComputeNextReference(&state, &method);
 
-    state.unbracketedAttemptCount =
-        0U;
+    state.lastUpdateMethod = method;
 
-
-    uint8_t method =
-        STEERING_GEOMETRY_ITER_UPDATE_NONE;
-
-
-    state.nextReferenceCurvaturePerMm =
-        SteeringIter_ComputeNextReference(
-            &state,
-            &method);
-
-
-    state.lastUpdateMethod =
-        method;
-
-
-    g_steeringGeometryIterationPointState[
-        sweep][point] =
-            state;
+    g_steeringGeometryIterationPointState[sweep][point] = state;
 }
 
+static void SteeringIter_SeedUnbracketedPoint(uint8_t sweep,
+                                              uint8_t point,
 
-static void SteeringIter_SeedUnbracketedPoint(
-    uint8_t sweep,
-    uint8_t point,
+                                              float previousReference,
+                                              float previousError,
 
-    float previousReference,
-    float previousError,
-
-    float currentReference,
-    float currentMeasured)
+                                              float currentReference,
+                                              float currentMeasured)
 {
-    SteeringGeometryIterationPointState state =
-        g_steeringGeometryIterationPointState[
-            sweep][point];
+    SteeringGeometryIterationPointState state = g_steeringGeometryIterationPointState[sweep][point];
 
+    state.previousReferenceCurvaturePerMm = previousReference;
 
-    state.previousReferenceCurvaturePerMm =
-        previousReference;
+    state.previousErrorCurvaturePerMm = previousError;
 
-    state.previousErrorCurvaturePerMm =
-        previousError;
+    state.currentReferenceCurvaturePerMm = currentReference;
 
+    state.currentMeasuredCurvaturePerMm = currentMeasured;
 
-    state.currentReferenceCurvaturePerMm =
-        currentReference;
+    state.currentErrorCurvaturePerMm = currentMeasured - currentReference;
 
-    state.currentMeasuredCurvaturePerMm =
-        currentMeasured;
+    state.hasBracket = 0U;
 
-    state.currentErrorCurvaturePerMm =
-        currentMeasured -
-        currentReference;
+    state.tolerancePerMm = SteeringIter_GetTolerance(currentReference);
 
-
-    state.hasBracket =
-        0U;
-
-
-    state.tolerancePerMm =
-        SteeringIter_GetTolerance(
-            currentReference);
-
-
-    state.converged =
-        0U;
-
+    state.converged = 0U;
 
     /*
      * Two continuation probes have already been performed at this
      * endpoint in Rounds 1 and 2.
      */
-    state.unbracketedAttemptCount =
-        2U;
+    state.unbracketedAttemptCount = 2U;
 
+    uint8_t method = STEERING_GEOMETRY_ITER_UPDATE_NONE;
 
-    uint8_t method =
-        STEERING_GEOMETRY_ITER_UPDATE_NONE;
+    state.nextReferenceCurvaturePerMm = SteeringIter_ComputeNextReference(&state, &method);
 
+    state.lastUpdateMethod = method;
 
-    state.nextReferenceCurvaturePerMm =
-        SteeringIter_ComputeNextReference(
-            &state,
-            &method);
-
-
-    state.lastUpdateMethod =
-        method;
-
-
-    g_steeringGeometryIterationPointState[
-        sweep][point] =
-            state;
+    g_steeringGeometryIterationPointState[sweep][point] = state;
 }
-
 
 static void SteeringIter_ResetExports(void)
 {
-    g_steeringGeometryIterationResultCount =
-        0U;
-
+    g_steeringGeometryIterationResultCount = 0U;
 
     /*
      * Experimental Rounds 1 and 2 are already complete.
      */
-    g_steeringGeometryIterationCompletedRounds =
-        2U;
+    g_steeringGeometryIterationCompletedRounds = 2U;
 
+    g_steeringGeometryIterationUnresolvedCount = 0U;
 
-    g_steeringGeometryIterationUnresolvedCount =
-        0U;
-
-
-    for (uint32_t i = 0U;
-         i <
-            STEERING_GEOMETRY_ITER_MAX_RESULT_COUNT;
-         i++)
+    for (uint32_t i = 0U; i < STEERING_GEOMETRY_ITER_MAX_RESULT_COUNT; i++)
     {
-        g_steeringGeometryIterationResults[i] =
-            (SteeringGeometryIterationResult){0};
+        g_steeringGeometryIterationResults[i] = (SteeringGeometryIterationResult){0};
     }
-
 
     /*
      * Baseline state for all 26 points from the completed Round-2
      * candidate table.
      */
-    for (uint32_t sweep = 0U;
-         sweep <
-            STEERING_GEOMETRY_ITER_SWEEP_COUNT;
-         sweep++)
+    for (uint32_t sweep = 0U; sweep < STEERING_GEOMETRY_ITER_SWEEP_COUNT; sweep++)
     {
         int8_t direction =
-            (sweep == 0U)
-                ? STEERING_GEOMETRY_ITER_INCREASING
-                : STEERING_GEOMETRY_ITER_DECREASING;
+            (sweep == 0U) ? STEERING_GEOMETRY_ITER_INCREASING : STEERING_GEOMETRY_ITER_DECREASING;
 
-
-        for (uint32_t point = 0U;
-             point <
-                STEERING_GEOMETRY_ITER_POINT_COUNT;
-             point++)
+        for (uint32_t point = 0U; point < STEERING_GEOMETRY_ITER_POINT_COUNT; point++)
         {
-            SteeringGeometryIterationPointState state =
-                {0};
+            SteeringGeometryIterationPointState state = {0};
 
+            float finalCurvature = iterSeedFinalCurvaturePerMm[sweep][point];
 
-            float finalCurvature =
-                iterSeedFinalCurvaturePerMm[
-                    sweep][point];
+            state.steeringCommand = iterCommands[point];
 
+            state.sweepDirection = direction;
 
-            state.steeringCommand =
-                iterCommands[point];
+            state.commandIndex = (uint8_t)point;
 
-
-            state.sweepDirection =
-                direction;
-
-
-            state.commandIndex =
-                (uint8_t)point;
-
-
-            state.finalCurvaturePerMm =
-                finalCurvature;
-
+            state.finalCurvaturePerMm = finalCurvature;
 
             /*
              * Updated after fixture initialisation, when wheelbase is
              * available from the current RobotKinematics object.
              */
-            state.finalEffectiveAngleRad =
-                0.0f;
+            state.finalEffectiveAngleRad = 0.0f;
 
+            state.converged = iterSeedConverged[sweep][point];
 
-            state.converged =
-                iterSeedConverged[
-                    sweep][point];
+            state.continuationIterationCount = iterSeedIterationCount[sweep][point];
 
+            state.previousReferenceCurvaturePerMm = finalCurvature;
 
-            state.continuationIterationCount =
-                iterSeedIterationCount[
-                    sweep][point];
+            state.previousErrorCurvaturePerMm = 0.0f;
 
+            state.currentReferenceCurvaturePerMm = finalCurvature;
 
-            state.previousReferenceCurvaturePerMm =
-                finalCurvature;
+            state.currentMeasuredCurvaturePerMm = finalCurvature;
 
-            state.previousErrorCurvaturePerMm =
-                0.0f;
+            state.currentErrorCurvaturePerMm = 0.0f;
 
+            state.nextReferenceCurvaturePerMm = finalCurvature;
 
-            state.currentReferenceCurvaturePerMm =
-                finalCurvature;
+            state.tolerancePerMm = SteeringIter_GetTolerance(finalCurvature);
 
-            state.currentMeasuredCurvaturePerMm =
-                finalCurvature;
+            state.lastUpdateMethod = STEERING_GEOMETRY_ITER_UPDATE_NONE;
 
-            state.currentErrorCurvaturePerMm =
-                0.0f;
-
-
-            state.nextReferenceCurvaturePerMm =
-                finalCurvature;
-
-
-            state.tolerancePerMm =
-                SteeringIter_GetTolerance(
-                    finalCurvature);
-
-
-            state.lastUpdateMethod =
-                STEERING_GEOMETRY_ITER_UPDATE_NONE;
-
-
-            g_steeringGeometryIterationPointState[
-                sweep][point] =
-                    state;
-
+            g_steeringGeometryIterationPointState[sweep][point] = state;
 
             if (!state.converged)
             {
@@ -1074,7 +713,6 @@ static void SteeringIter_ResetExports(void)
             }
         }
     }
-
 
     /*
      * --------------------------------------------------------------
@@ -1084,22 +722,20 @@ static void SteeringIter_ResetExports(void)
      * g(-3.80802339e-5) = -1.87207479e-5
      * --------------------------------------------------------------
      */
-    SteeringIter_SeedBracketedPoint(
-        0U,
-        9U,
+    SteeringIter_SeedBracketedPoint(0U,
+                                    9U,
 
-        -5.95317142e-5f,
-        +2.51623751e-5f,
+                                    -5.95317142e-5f,
+                                    +2.51623751e-5f,
 
-        -3.80802339e-5f,
-        -5.68009818e-5f,
+                                    -3.80802339e-5f,
+                                    -5.68009818e-5f,
 
-        -5.95317142e-5f,
-        +2.51623751e-5f,
+                                    -5.95317142e-5f,
+                                    +2.51623751e-5f,
 
-        -3.80802339e-5f,
-        -1.87207479e-5f);
-
+                                    -3.80802339e-5f,
+                                    -1.87207479e-5f);
 
     /*
      * --------------------------------------------------------------
@@ -1109,22 +745,20 @@ static void SteeringIter_ResetExports(void)
      * g(-1.11741152e-4) = -4.64151744e-5
      * --------------------------------------------------------------
      */
-    SteeringIter_SeedBracketedPoint(
-        0U,
-        10U,
+    SteeringIter_SeedBracketedPoint(0U,
+                                    10U,
 
-        -1.34227972e-4f,
-        +1.65043457e-5f,
+                                    -1.34227972e-4f,
+                                    +1.65043457e-5f,
 
-        -1.11741152e-4f,
-        -1.58156327e-4f,
+                                    -1.11741152e-4f,
+                                    -1.58156327e-4f,
 
-        -1.34227972e-4f,
-        +1.65043457e-5f,
+                                    -1.34227972e-4f,
+                                    +1.65043457e-5f,
 
-        -1.11741152e-4f,
-        -4.64151744e-5f);
-
+                                    -1.11741152e-4f,
+                                    -4.64151744e-5f);
 
     /*
      * --------------------------------------------------------------
@@ -1141,22 +775,20 @@ static void SteeringIter_ResetExports(void)
      *     g   = +2.33231640e-5
      * --------------------------------------------------------------
      */
-    SteeringIter_SeedBracketedPoint(
-        1U,
-        1U,
+    SteeringIter_SeedBracketedPoint(1U,
+                                    1U,
 
-        +1.23456248e-5f,
-        -1.47297069e-5f,
+                                    +1.23456248e-5f,
+                                    -1.47297069e-5f,
 
-        +8.50182005e-6f,
-        +3.18249840e-5f,
+                                    +8.50182005e-6f,
+                                    +3.18249840e-5f,
 
-        +8.50182005e-6f,
-        +2.33231640e-5f,
+                                    +8.50182005e-6f,
+                                    +2.33231640e-5f,
 
-        +1.23456248e-5f,
-        -1.47297069e-5f);
-
+                                    +1.23456248e-5f,
+                                    -1.47297069e-5f);
 
     /*
      * --------------------------------------------------------------
@@ -1173,22 +805,20 @@ static void SteeringIter_ResetExports(void)
      *     g   = +1.73763619e-5
      * --------------------------------------------------------------
      */
-    SteeringIter_SeedBracketedPoint(
-        1U,
-        2U,
+    SteeringIter_SeedBracketedPoint(1U,
+                                    2U,
 
-        -4.26169972e-5f,
-        -2.16327790e-5f,
+                                    -4.26169972e-5f,
+                                    -2.16327790e-5f,
 
-        -6.10171919e-5f,
-        -4.36408300e-5f,
+                                    -6.10171919e-5f,
+                                    -4.36408300e-5f,
 
-        -6.10171919e-5f,
-        +1.73763619e-5f,
+                                    -6.10171919e-5f,
+                                    +1.73763619e-5f,
 
-        -4.26169972e-5f,
-        -2.16327790e-5f);
-
+                                    -4.26169972e-5f,
+                                    -2.16327790e-5f);
 
     /*
      * --------------------------------------------------------------
@@ -1209,305 +839,174 @@ static void SteeringIter_ResetExports(void)
      * Both errors are positive.
      * --------------------------------------------------------------
      */
-    SteeringIter_SeedUnbracketedPoint(
-        1U,
-        0U,
+    SteeringIter_SeedUnbracketedPoint(1U,
+                                      0U,
 
-        +1.06706095e-4f,
-        +2.20616057e-5f,
+                                      +1.06706095e-4f,
+                                      +2.20616057e-5f,
 
-        +6.25828834e-5f,
-        +1.09374014e-4f);
+                                      +6.25828834e-5f,
+                                      +1.09374014e-4f);
 }
-
 
 /*
  * Must be called after fixture initialisation because effective steering
  * angle uses the current physical wheelbase.
  */
-static void SteeringIter_RefreshFinalTables(
-    const RobotTestFixture *fixture)
+static void SteeringIter_RefreshFinalTables(const RobotTestFixture *fixture)
 {
-    const RobotKinematics *kinematics =
-        fixture->motionController.kinematics;
+    const RobotKinematics *kinematics = fixture->motionController.kinematics;
 
-
-    for (uint32_t sweep = 0U;
-         sweep <
-            STEERING_GEOMETRY_ITER_SWEEP_COUNT;
-         sweep++)
+    for (uint32_t sweep = 0U; sweep < STEERING_GEOMETRY_ITER_SWEEP_COUNT; sweep++)
     {
-        for (uint32_t point = 0U;
-             point <
-                STEERING_GEOMETRY_ITER_POINT_COUNT;
-             point++)
+        for (uint32_t point = 0U; point < STEERING_GEOMETRY_ITER_POINT_COUNT; point++)
         {
             SteeringGeometryIterationPointState state =
-                g_steeringGeometryIterationPointState[
-                    sweep][point];
-
+                g_steeringGeometryIterationPointState[sweep][point];
 
             state.finalEffectiveAngleRad =
-                atanf(
-                    kinematics->wheelbaseMm *
-                    state.finalCurvaturePerMm);
+                atanf(kinematics->wheelbaseMm * state.finalCurvaturePerMm);
 
+            g_steeringGeometryIterationPointState[sweep][point] = state;
 
-            g_steeringGeometryIterationPointState[
-                sweep][point] =
-                    state;
+            g_steeringGeometryIterationCurvaturePerMm[sweep][point] = state.finalCurvaturePerMm;
 
+            g_steeringGeometryIterationAngleRad[sweep][point] = state.finalEffectiveAngleRad;
 
-            g_steeringGeometryIterationCurvaturePerMm[
-                sweep][point] =
-                    state.finalCurvaturePerMm;
+            g_steeringGeometryIterationConverged[sweep][point] = state.converged;
 
-
-            g_steeringGeometryIterationAngleRad[
-                sweep][point] =
-                    state.finalEffectiveAngleRad;
-
-
-            g_steeringGeometryIterationConverged[
-                sweep][point] =
-                    state.converged;
-
-
-            g_steeringGeometryIterationCount[
-                sweep][point] =
-                    state.continuationIterationCount;
+            g_steeringGeometryIterationCount[sweep][point] = state.continuationIterationCount;
         }
     }
 }
-
 
 /* -------------------------------------------------------------------------- */
 /* OLED                                                                       */
 /* -------------------------------------------------------------------------- */
 
-static void SteeringIter_ShowMessage(
-    const char *line1,
-    const char *line2)
+static void SteeringIter_ShowMessage(const char *line1, const char *line2)
 {
     OLED_Clear();
 
-    OLED_Printf(
-        0, 0,
-        "STEER ITER CAL");
+    OLED_Printf(0, 0, "STEER ITER CAL");
 
     if (line1 != NULL)
     {
-        OLED_Printf(
-            0, 2,
-            "%s",
-            line1);
+        OLED_Printf(0, 2, "%s", line1);
     }
 
     if (line2 != NULL)
     {
-        OLED_Printf(
-            0, 3,
-            "%s",
-            line2);
+        OLED_Printf(0, 3, "%s", line2);
     }
 
     OLED_Refresh_Gram();
 }
 
-
-static void SteeringIter_ShowReady(
-    uint32_t roundIndex,
-    int8_t sweepDirection,
-    uint32_t commandIndex)
+static void
+SteeringIter_ShowReady(uint32_t roundIndex, int8_t sweepDirection, uint32_t commandIndex)
 {
     OLED_Clear();
 
-    OLED_Printf(
-        0, 0,
-        "ITER R%lu %s",
-        (unsigned long)(roundIndex + 1U),
-        SteeringIter_GetSweepName(
-            sweepDirection));
+    OLED_Printf(0,
+                0,
+                "ITER R%lu %s",
+                (unsigned long)(roundIndex + 1U),
+                SteeringIter_GetSweepName(sweepDirection));
 
-    OLED_Printf(
-        0, 1,
-        "CMD %+.1f",
-        iterCommands[commandIndex]);
+    OLED_Printf(0, 1, "CMD %+.1f", iterCommands[commandIndex]);
 
-    OLED_Printf(
-        0, 2,
-        "LEFT:%lu",
-        (unsigned long)
-            g_steeringGeometryIterationUnresolvedCount);
+    OLED_Printf(0, 2, "LEFT:%lu", (unsigned long)g_steeringGeometryIterationUnresolvedCount);
 
-    OLED_Printf(
-        0, 3,
-        "LIFT+REPOSITION");
+    OLED_Printf(0, 3, "LIFT+REPOSITION");
 
-    OLED_Printf(
-        0, 4,
-        "DO NOT PUSH BACK");
+    OLED_Printf(0, 4, "DO NOT PUSH BACK");
 
-    OLED_Printf(
-        0, 5,
-        "SW1 = RUN");
+    OLED_Printf(0, 5, "SW1 = RUN");
 
     OLED_Refresh_Gram();
 }
 
-
-static void SteeringIter_ShowResult(
-    const SteeringGeometryIterationResult *result)
+static void SteeringIter_ShowResult(const SteeringGeometryIterationResult *result)
 {
     OLED_Clear();
 
-    OLED_Printf(
-        0, 0,
-        "R%u %s U%+.0f",
-        (unsigned int)(result->roundIndex + 1U),
-        SteeringIter_GetSweepName(
-            result->sweepDirection),
-        result->steeringCommand);
+    OLED_Printf(0,
+                0,
+                "R%u %s U%+.0f",
+                (unsigned int)(result->roundIndex + 1U),
+                SteeringIter_GetSweepName(result->sweepDirection),
+                result->steeringCommand);
 
-    OLED_Printf(
-        0, 1,
-        "ref:%+.2e",
-        result->referenceCurvaturePerMm);
+    OLED_Printf(0, 1, "ref:%+.2e", result->referenceCurvaturePerMm);
 
-    OLED_Printf(
-        0, 2,
-        "act:%+.2e",
-        result->measuredCurvaturePerMm);
+    OLED_Printf(0, 2, "act:%+.2e", result->measuredCurvaturePerMm);
 
-    OLED_Printf(
-        0, 3,
-        "err:%+.2e",
-        result->curvatureErrorPerMm);
+    OLED_Printf(0, 3, "err:%+.2e", result->curvatureErrorPerMm);
 
-    OLED_Printf(
-        0, 4,
-        "yaw:%+.2f",
-        result->yawGyroDeg);
+    OLED_Printf(0, 4, "yaw:%+.2f", result->yawGyroDeg);
 
-    OLED_Printf(
-        0, 5,
-        "%s",
-        result->converged ?
-            "CONVERGED" :
-            "CONTINUE");
+    OLED_Printf(0, 5, "%s", result->converged ? "CONVERGED" : "CONTINUE");
 
     OLED_Refresh_Gram();
 }
-
 
 /* -------------------------------------------------------------------------- */
 /* Steering branch preparation                                               */
 /* -------------------------------------------------------------------------- */
 
-static void SteeringIter_SlewRawCommand(
-    RobotTestFixture *fixture,
-    float targetCommand)
+static void SteeringIter_SlewRawCommand(RobotTestFixture *fixture, float targetCommand)
 {
-    float currentCommand =
-        SteeringController_GetCommand(
-            &fixture->steeringController);
+    float currentCommand = SteeringController_GetCommand(&fixture->steeringController);
 
+    const float maxDelta = ITER_COMMAND_RATE_PER_SEC * ITER_CONTROL_PERIOD_S;
 
-    const float maxDelta =
-        ITER_COMMAND_RATE_PER_SEC *
-        ITER_CONTROL_PERIOD_S;
-
-
-    while (fabsf(
-        targetCommand -
-        currentCommand) > 0.0001f)
+    while (fabsf(targetCommand - currentCommand) > 0.0001f)
     {
-        float delta =
-            targetCommand -
-            currentCommand;
+        float delta = targetCommand - currentCommand;
 
+        delta = SteeringIter_Clamp(delta, -maxDelta, +maxDelta);
 
-        delta =
-            SteeringIter_Clamp(
-                delta,
-                -maxDelta,
-                +maxDelta);
+        currentCommand += delta;
 
+        SteeringController_SetCommand(&fixture->steeringController, currentCommand);
 
-        currentCommand +=
-            delta;
-
-
-        SteeringController_SetCommand(
-            &fixture->steeringController,
-            currentCommand);
-
-
-        HAL_Delay(
-            ITER_CONTROL_PERIOD_MS);
+        HAL_Delay(ITER_CONTROL_PERIOD_MS);
     }
 
-
-    SteeringController_SetCommand(
-        &fixture->steeringController,
-        targetCommand);
+    SteeringController_SetCommand(&fixture->steeringController, targetCommand);
 }
 
-
-static void SteeringIter_PreconditionSweep(
-    RobotTestFixture *fixture,
-    int8_t sweepDirection)
+static void SteeringIter_PreconditionSweep(RobotTestFixture *fixture, int8_t sweepDirection)
 {
-    if (sweepDirection ==
-        STEERING_GEOMETRY_ITER_INCREASING)
+    if (sweepDirection == STEERING_GEOMETRY_ITER_INCREASING)
     {
-        SteeringIter_SlewRawCommand(
-            fixture,
-            +12.0f);
+        SteeringIter_SlewRawCommand(fixture, +12.0f);
 
-        HAL_Delay(
-            ITER_EXTREME_PRELOAD_HOLD_MS);
+        HAL_Delay(ITER_EXTREME_PRELOAD_HOLD_MS);
 
+        SteeringIter_SlewRawCommand(fixture, -12.0f);
 
-        SteeringIter_SlewRawCommand(
-            fixture,
-            -12.0f);
-
-        HAL_Delay(
-            ITER_EXTREME_PRELOAD_HOLD_MS);
+        HAL_Delay(ITER_EXTREME_PRELOAD_HOLD_MS);
     }
     else
     {
-        SteeringIter_SlewRawCommand(
-            fixture,
-            -12.0f);
+        SteeringIter_SlewRawCommand(fixture, -12.0f);
 
-        HAL_Delay(
-            ITER_EXTREME_PRELOAD_HOLD_MS);
+        HAL_Delay(ITER_EXTREME_PRELOAD_HOLD_MS);
 
+        SteeringIter_SlewRawCommand(fixture, +12.0f);
 
-        SteeringIter_SlewRawCommand(
-            fixture,
-            +12.0f);
-
-        HAL_Delay(
-            ITER_EXTREME_PRELOAD_HOLD_MS);
+        HAL_Delay(ITER_EXTREME_PRELOAD_HOLD_MS);
     }
 }
 
-
-static void SteeringIter_ApproachAndSettle(
-    RobotTestFixture *fixture,
-    float targetCommand)
+static void SteeringIter_ApproachAndSettle(RobotTestFixture *fixture, float targetCommand)
 {
-    SteeringIter_SlewRawCommand(
-        fixture,
-        targetCommand);
+    SteeringIter_SlewRawCommand(fixture, targetCommand);
 
-    HAL_Delay(
-        ITER_COMMAND_SETTLE_MS);
+    HAL_Delay(ITER_COMMAND_SETTLE_MS);
 }
-
 
 /* -------------------------------------------------------------------------- */
 /* Odometry + IMU                                                             */
@@ -1526,883 +1025,477 @@ typedef struct
 
 } SteeringIterMeasurementState;
 
-
-static void SteeringIter_ResetMeasurement(
-    RobotTestFixture *fixture,
-    SteeringIterMeasurementState *state)
+static void SteeringIter_ResetMeasurement(RobotTestFixture *fixture,
+                                          SteeringIterMeasurementState *state)
 {
-    *state =
-        (SteeringIterMeasurementState){0};
-
+    *state = (SteeringIterMeasurementState){0};
 
     state->previousLeftEncoder =
-        DCMotor_GetEncoderCount(
-            fixture->motionController.leftWheel->motor);
-
+        DCMotor_GetEncoderCount(fixture->motionController.leftWheel->motor);
 
     state->previousRightEncoder =
-        DCMotor_GetEncoderCount(
-            fixture->motionController.rightWheel->motor);
+        DCMotor_GetEncoderCount(fixture->motionController.rightWheel->motor);
 }
 
-
-static void SteeringIter_UpdateOdometry(
-    RobotTestFixture *fixture,
-    SteeringIterMeasurementState *state,
-    float mmPerCount)
+static void SteeringIter_UpdateOdometry(RobotTestFixture *fixture,
+                                        SteeringIterMeasurementState *state,
+                                        float mmPerCount)
 {
-    int16_t currentLeft =
-        DCMotor_GetEncoderCount(
-            fixture->motionController.leftWheel->motor);
+    int16_t currentLeft = DCMotor_GetEncoderCount(fixture->motionController.leftWheel->motor);
 
+    int16_t currentRight = DCMotor_GetEncoderCount(fixture->motionController.rightWheel->motor);
 
-    int16_t currentRight =
-        DCMotor_GetEncoderCount(
-            fixture->motionController.rightWheel->motor);
+    int16_t deltaLeft = (int16_t)((uint16_t)currentLeft - (uint16_t)state->previousLeftEncoder);
 
+    int16_t deltaRight = (int16_t)((uint16_t)currentRight - (uint16_t)state->previousRightEncoder);
 
-    int16_t deltaLeft =
-        (int16_t)(
-            (uint16_t)currentLeft -
-            (uint16_t)state->previousLeftEncoder);
+    state->previousLeftEncoder = currentLeft;
 
+    state->previousRightEncoder = currentRight;
 
-    int16_t deltaRight =
-        (int16_t)(
-            (uint16_t)currentRight -
-            (uint16_t)state->previousRightEncoder);
+    state->leftTravelMm += (float)deltaLeft * mmPerCount;
 
+    state->rightTravelMm += (float)deltaRight * mmPerCount;
 
-    state->previousLeftEncoder =
-        currentLeft;
-
-
-    state->previousRightEncoder =
-        currentRight;
-
-
-    state->leftTravelMm +=
-        (float)deltaLeft *
-        mmPerCount;
-
-
-    state->rightTravelMm +=
-        (float)deltaRight *
-        mmPerCount;
-
-
-    state->centreTravelMm =
-        0.5f *
-        (state->leftTravelMm +
-         state->rightTravelMm);
+    state->centreTravelMm = 0.5f * (state->leftTravelMm + state->rightTravelMm);
 }
 
-
-static bool SteeringIter_UpdateYaw(
-    RobotTestFixture *fixture,
-    SteeringIterMeasurementState *state,
-    float dt)
+static bool
+SteeringIter_UpdateYaw(RobotTestFixture *fixture, SteeringIterMeasurementState *state, float dt)
 {
     ICM20948Measurement measurement = {0};
 
-
-    if (!ICM20948_ReadMeasurement(
-            fixture->motionController.imu,
-            &measurement))
+    if (!ICM20948_ReadMeasurement(fixture->motionController.imu, &measurement))
     {
         return false;
     }
 
-
-    state->yawDeg +=
-        measurement.gyroDps.z *
-        dt;
-
+    state->yawDeg += measurement.gyroDps.z * dt;
 
     return true;
 }
-
 
 /* -------------------------------------------------------------------------- */
 /* Local rear-wheel relationship controller                                   */
 /* -------------------------------------------------------------------------- */
 
-static void SteeringIter_SetRearWheelTargets(
-    RobotTestFixture *fixture,
-    float centreSpeedCps,
-    float referenceCurvaturePerMm,
-    float desiredWheelTravelDifferenceMm,
-    float actualWheelTravelDifferenceMm,
-    float *wheelSyncErrorMm)
+static void SteeringIter_SetRearWheelTargets(RobotTestFixture *fixture,
+                                             float centreSpeedCps,
+                                             float referenceCurvaturePerMm,
+                                             float desiredWheelTravelDifferenceMm,
+                                             float actualWheelTravelDifferenceMm,
+                                             float *wheelSyncErrorMm)
 {
-    const RobotKinematics *kinematics =
-        fixture->motionController.kinematics;
+    const RobotKinematics *kinematics = fixture->motionController.kinematics;
 
+    WheelSpeedController *leftWheel = fixture->motionController.leftWheel;
 
-    WheelSpeedController *leftWheel =
-        fixture->motionController.leftWheel;
-
-
-    WheelSpeedController *rightWheel =
-        fixture->motionController.rightWheel;
-
+    WheelSpeedController *rightWheel = fixture->motionController.rightWheel;
 
     float leftBaseTargetCps;
     float rightBaseTargetCps;
 
+    RobotKinematics_GetRearWheelSpeedTargets(kinematics,
+                                             centreSpeedCps,
+                                             referenceCurvaturePerMm,
+                                             &leftBaseTargetCps,
+                                             &rightBaseTargetCps);
 
-    RobotKinematics_GetRearWheelSpeedTargets(
-        kinematics,
-        centreSpeedCps,
-        referenceCurvaturePerMm,
-        &leftBaseTargetCps,
-        &rightBaseTargetCps);
+    float errorMm = actualWheelTravelDifferenceMm - desiredWheelTravelDifferenceMm;
 
+    float correctionCps = ITER_SYNC_KP_CPS_PER_MM * errorMm;
 
-    float errorMm =
-        actualWheelTravelDifferenceMm -
-        desiredWheelTravelDifferenceMm;
+    float smallestBaseMagnitudeCps = fminf(fabsf(leftBaseTargetCps), fabsf(rightBaseTargetCps));
 
+    float correctionLimitCps = fminf(ITER_SYNC_MAX_CORRECTION_CPS, smallestBaseMagnitudeCps);
 
-    float correctionCps =
-        ITER_SYNC_KP_CPS_PER_MM *
-        errorMm;
+    correctionCps = SteeringIter_Clamp(correctionCps, -correctionLimitCps, +correctionLimitCps);
 
+    WheelSpeedController_SetTarget(leftWheel, leftBaseTargetCps + correctionCps);
 
-    float smallestBaseMagnitudeCps =
-        fminf(
-            fabsf(leftBaseTargetCps),
-            fabsf(rightBaseTargetCps));
+    WheelSpeedController_SetTarget(rightWheel, rightBaseTargetCps - correctionCps);
 
-
-    float correctionLimitCps =
-        fminf(
-            ITER_SYNC_MAX_CORRECTION_CPS,
-            smallestBaseMagnitudeCps);
-
-
-    correctionCps =
-        SteeringIter_Clamp(
-            correctionCps,
-            -correctionLimitCps,
-            +correctionLimitCps);
-
-
-    WheelSpeedController_SetTarget(
-        leftWheel,
-        leftBaseTargetCps +
-        correctionCps);
-
-
-    WheelSpeedController_SetTarget(
-        rightWheel,
-        rightBaseTargetCps -
-        correctionCps);
-
-
-    *wheelSyncErrorMm =
-        errorMm;
+    *wheelSyncErrorMm = errorMm;
 }
-
 
 /* -------------------------------------------------------------------------- */
 /* Geometry result                                                            */
 /* -------------------------------------------------------------------------- */
 
-static void SteeringIter_ComputeGeometry(
-    RobotTestFixture *fixture,
-    SteeringGeometryIterationResult *result)
+static void SteeringIter_ComputeGeometry(RobotTestFixture *fixture,
+                                         SteeringGeometryIterationResult *result)
 {
-    const RobotKinematics *kinematics =
-        fixture->motionController.kinematics;
+    const RobotKinematics *kinematics = fixture->motionController.kinematics;
 
+    result->wheelTravelDifferenceMm = result->rightTravelMm - result->leftTravelMm;
 
-    result->wheelTravelDifferenceMm =
-        result->rightTravelMm -
-        result->leftTravelMm;
-
-
-    if (fabsf(
-        result->travelledDistanceMm) <
-        ITER_MIN_VALID_TRAVEL_MM)
+    if (fabsf(result->travelledDistanceMm) < ITER_MIN_VALID_TRAVEL_MM)
     {
         return;
     }
 
+    float yawGyroRad = result->yawGyroDeg * ITER_DEG_TO_RAD_F;
 
-    float yawGyroRad =
-        result->yawGyroDeg *
-        ITER_DEG_TO_RAD_F;
+    result->measuredCurvaturePerMm = yawGyroRad / result->travelledDistanceMm;
 
+    result->effectiveAngleGyroRad = atanf(kinematics->wheelbaseMm * result->measuredCurvaturePerMm);
 
-    result->measuredCurvaturePerMm =
-        yawGyroRad /
-        result->travelledDistanceMm;
+    float yawEncoderRad = result->wheelTravelDifferenceMm / kinematics->rearTrackWidthMm;
 
+    result->yawEncoderDeg = yawEncoderRad * ITER_RAD_TO_DEG_F;
 
-    result->effectiveAngleGyroRad =
-        atanf(
-            kinematics->wheelbaseMm *
-            result->measuredCurvaturePerMm);
-
-
-    float yawEncoderRad =
-        result->wheelTravelDifferenceMm /
-        kinematics->rearTrackWidthMm;
-
-
-    result->yawEncoderDeg =
-        yawEncoderRad *
-        ITER_RAD_TO_DEG_F;
-
-
-    result->curvatureEncoderPerMm =
-        yawEncoderRad /
-        result->travelledDistanceMm;
-
+    result->curvatureEncoderPerMm = yawEncoderRad / result->travelledDistanceMm;
 
     result->effectiveAngleEncoderRad =
-        atanf(
-            kinematics->wheelbaseMm *
-            result->curvatureEncoderPerMm);
+        atanf(kinematics->wheelbaseMm * result->curvatureEncoderPerMm);
 }
-
 
 /* -------------------------------------------------------------------------- */
 /* One autonomous continuation run                                            */
 /* -------------------------------------------------------------------------- */
 
-static void SteeringIter_RunOne(
-    RobotTestFixture *fixture,
-    uint32_t roundIndex,
-    int8_t sweepDirection,
-    uint32_t commandIndex,
-    float referenceCurvaturePerMm,
-    SteeringGeometryIterationResult *result)
+static void SteeringIter_RunOne(RobotTestFixture *fixture,
+                                uint32_t roundIndex,
+                                int8_t sweepDirection,
+                                uint32_t commandIndex,
+                                float referenceCurvaturePerMm,
+                                SteeringGeometryIterationResult *result)
 {
-    *result =
-        (SteeringGeometryIterationResult){0};
+    *result = (SteeringGeometryIterationResult){0};
 
+    result->steeringCommand = iterCommands[commandIndex];
 
-    result->steeringCommand =
-        iterCommands[commandIndex];
+    result->sweepDirection = sweepDirection;
 
+    result->commandIndex = (uint8_t)commandIndex;
 
-    result->sweepDirection =
-        sweepDirection;
+    result->roundIndex = (uint8_t)roundIndex;
 
+    result->referenceCurvaturePerMm = referenceCurvaturePerMm;
 
-    result->commandIndex =
-        (uint8_t)commandIndex;
+    SteeringIter_ApproachAndSettle(fixture, result->steeringCommand);
 
+    WheelSpeedController_Stop(fixture->motionController.leftWheel);
 
-    result->roundIndex =
-        (uint8_t)roundIndex;
+    WheelSpeedController_Stop(fixture->motionController.rightWheel);
 
+    HAL_Delay(ITER_HANDS_OFF_MS);
 
-    result->referenceCurvaturePerMm =
-        referenceCurvaturePerMm;
+    SteeringIterMeasurementState measurement = {0};
 
-
-    SteeringIter_ApproachAndSettle(
-        fixture,
-        result->steeringCommand);
-
-
-    WheelSpeedController_Stop(
-        fixture->motionController.leftWheel);
-
-
-    WheelSpeedController_Stop(
-        fixture->motionController.rightWheel);
-
-
-    HAL_Delay(
-        ITER_HANDS_OFF_MS);
-
-
-    SteeringIterMeasurementState measurement =
-        {0};
-
-
-    SteeringIter_ResetMeasurement(
-        fixture,
-        &measurement);
-
+    SteeringIter_ResetMeasurement(fixture, &measurement);
 
     /*
      * Prime the IMU transaction before t = 0.
      */
-    ICM20948Measurement prime =
-        {0};
+    ICM20948Measurement prime = {0};
 
-
-    if (!ICM20948_ReadMeasurement(
-            fixture->motionController.imu,
-            &prime))
+    if (!ICM20948_ReadMeasurement(fixture->motionController.imu, &prime))
     {
-        result->imuReadFailed =
-            1U;
+        result->imuReadFailed = 1U;
 
         return;
     }
 
+    MotionProfile profile = {0};
 
-    MotionProfile profile =
-        {0};
-
-
-    if (!MotionProfile_Init(
-            &profile,
-            ITER_ACCELERATION_MMPS2,
-            ITER_DECELERATION_MMPS2))
+    if (!MotionProfile_Init(&profile, ITER_ACCELERATION_MMPS2, ITER_DECELERATION_MMPS2))
     {
-        result->profileFailed =
-            1U;
+        result->profileFailed = 1U;
 
         return;
     }
 
+    const float mmPerCount = SteeringIter_GetMmPerCount(fixture);
 
-    const float mmPerCount =
-        SteeringIter_GetMmPerCount(
-            fixture);
+    const float maxSpeedMmps = ITER_MAX_CENTRE_SPEED_CPS * mmPerCount;
 
-
-    const float maxSpeedMmps =
-        ITER_MAX_CENTRE_SPEED_CPS *
-        mmPerCount;
-
-
-    if (!MotionProfile_Start(
-            &profile,
-            ITER_TARGET_TRAVEL_MM,
-            maxSpeedMmps))
+    if (!MotionProfile_Start(&profile, ITER_TARGET_TRAVEL_MM, maxSpeedMmps))
     {
-        result->profileFailed =
-            1U;
+        result->profileFailed = 1U;
 
         return;
     }
 
+    uint32_t startTick = HAL_GetTick();
 
-    uint32_t startTick =
-        HAL_GetTick();
+    uint32_t lastControlTick = startTick;
 
+    result->startTickMs = startTick;
 
-    uint32_t lastControlTick =
-        startTick;
+    float desiredWheelTravelDifferenceMm = 0.0f;
 
+    float wheelSyncErrorMm = 0.0f;
 
-    result->startTickMs =
-        startTick;
+    float maxAbsWheelSyncErrorMm = 0.0f;
 
+    bool measurementCaptured = false;
 
-    float desiredWheelTravelDifferenceMm =
-        0.0f;
+    bool braking = false;
 
+    uint32_t stationarySamples = 0U;
 
-    float wheelSyncErrorMm =
-        0.0f;
-
-
-    float maxAbsWheelSyncErrorMm =
-        0.0f;
-
-
-    bool measurementCaptured =
-        false;
-
-
-    bool braking =
-        false;
-
-
-    uint32_t stationarySamples =
-        0U;
-
-
-    uint32_t brakeStartTick =
-        0U;
-
+    uint32_t brakeStartTick = 0U;
 
     while (true)
     {
-        uint32_t now =
-            HAL_GetTick();
+        uint32_t now = HAL_GetTick();
 
-
-        if (!braking &&
-            ((now - startTick) >=
-             ITER_RUN_TIMEOUT_MS))
+        if (!braking && ((now - startTick) >= ITER_RUN_TIMEOUT_MS))
         {
-            result->timedOut =
-                1U;
+            result->timedOut = 1U;
 
+            braking = true;
 
-            braking =
-                true;
+            brakeStartTick = now;
 
+            WheelSpeedController_SetTarget(fixture->motionController.leftWheel, 0.0f);
 
-            brakeStartTick =
-                now;
-
-
-            WheelSpeedController_SetTarget(
-                fixture->motionController.leftWheel,
-                0.0f);
-
-
-            WheelSpeedController_SetTarget(
-                fixture->motionController.rightWheel,
-                0.0f);
+            WheelSpeedController_SetTarget(fixture->motionController.rightWheel, 0.0f);
         }
 
-
-        if (braking &&
-            ((now - brakeStartTick) >=
-             ITER_BRAKE_TIMEOUT_MS))
+        if (braking && ((now - brakeStartTick) >= ITER_BRAKE_TIMEOUT_MS))
         {
             break;
         }
 
-
-        if (!braking &&
-            SW1_ReadState() ==
-                SW1_Enabled)
+        if (!braking && SW1_ReadState() == SW1_Enabled)
         {
-            result->aborted =
-                1U;
+            result->aborted = 1U;
 
+            braking = true;
 
-            braking =
-                true;
+            brakeStartTick = now;
 
+            WheelSpeedController_SetTarget(fixture->motionController.leftWheel, 0.0f);
 
-            brakeStartTick =
-                now;
-
-
-            WheelSpeedController_SetTarget(
-                fixture->motionController.leftWheel,
-                0.0f);
-
-
-            WheelSpeedController_SetTarget(
-                fixture->motionController.rightWheel,
-                0.0f);
+            WheelSpeedController_SetTarget(fixture->motionController.rightWheel, 0.0f);
         }
 
-
-        if ((now - lastControlTick) <
-            ITER_CONTROL_PERIOD_MS)
+        if ((now - lastControlTick) < ITER_CONTROL_PERIOD_MS)
         {
             continue;
         }
 
+        lastControlTick += ITER_CONTROL_PERIOD_MS;
 
-        lastControlTick +=
-            ITER_CONTROL_PERIOD_MS;
+        float previousCentreTravelMm = measurement.centreTravelMm;
 
+        SteeringIter_UpdateOdometry(fixture, &measurement, mmPerCount);
 
-        float previousCentreTravelMm =
-            measurement.centreTravelMm;
+        float deltaCentreMm = measurement.centreTravelMm - previousCentreTravelMm;
 
-
-        SteeringIter_UpdateOdometry(
-            fixture,
-            &measurement,
-            mmPerCount);
-
-
-        float deltaCentreMm =
-            measurement.centreTravelMm -
-            previousCentreTravelMm;
-
-
-        if (!SteeringIter_UpdateYaw(
-                fixture,
-                &measurement,
-                ITER_CONTROL_PERIOD_S))
+        if (!SteeringIter_UpdateYaw(fixture, &measurement, ITER_CONTROL_PERIOD_S))
         {
-            result->imuReadFailed =
-                1U;
-
+            result->imuReadFailed = 1U;
 
             if (!braking)
             {
-                braking =
-                    true;
+                braking = true;
 
+                brakeStartTick = now;
 
-                brakeStartTick =
-                    now;
+                WheelSpeedController_SetTarget(fixture->motionController.leftWheel, 0.0f);
 
-
-                WheelSpeedController_SetTarget(
-                    fixture->motionController.leftWheel,
-                    0.0f);
-
-
-                WheelSpeedController_SetTarget(
-                    fixture->motionController.rightWheel,
-                    0.0f);
+                WheelSpeedController_SetTarget(fixture->motionController.rightWheel, 0.0f);
             }
         }
 
-
         result->sampleCount++;
 
+        desiredWheelTravelDifferenceMm += fixture->motionController.kinematics->rearTrackWidthMm *
+                                          referenceCurvaturePerMm * deltaCentreMm;
 
-        desiredWheelTravelDifferenceMm +=
-            fixture->motionController.kinematics->
-                rearTrackWidthMm *
-            referenceCurvaturePerMm *
-            deltaCentreMm;
-
-
-        float actualWheelTravelDifferenceMm =
-            measurement.rightTravelMm -
-            measurement.leftTravelMm;
-
+        float actualWheelTravelDifferenceMm = measurement.rightTravelMm - measurement.leftTravelMm;
 
         if (!braking)
         {
-            float targetSpeedMmps =
-                MotionProfile_Update(
-                    &profile,
-                    fabsf(
-                        measurement.centreTravelMm),
-                    ITER_CONTROL_PERIOD_S);
+            float targetSpeedMmps = MotionProfile_Update(
+                &profile, fabsf(measurement.centreTravelMm), ITER_CONTROL_PERIOD_S);
 
-
-            if (!MotionProfile_IsActive(
-                    &profile))
+            if (!MotionProfile_IsActive(&profile))
             {
-                result->travelledDistanceMm =
-                    measurement.centreTravelMm;
+                result->travelledDistanceMm = measurement.centreTravelMm;
 
+                result->leftTravelMm = measurement.leftTravelMm;
 
-                result->leftTravelMm =
-                    measurement.leftTravelMm;
+                result->rightTravelMm = measurement.rightTravelMm;
 
+                result->yawGyroDeg = measurement.yawDeg;
 
-                result->rightTravelMm =
-                    measurement.rightTravelMm;
-
-
-                result->yawGyroDeg =
-                    measurement.yawDeg;
-
-
-                result->desiredWheelTravelDifferenceMm =
-                    desiredWheelTravelDifferenceMm;
-
+                result->desiredWheelTravelDifferenceMm = desiredWheelTravelDifferenceMm;
 
                 result->wheelSyncErrorMm =
-                    actualWheelTravelDifferenceMm -
-                    desiredWheelTravelDifferenceMm;
+                    actualWheelTravelDifferenceMm - desiredWheelTravelDifferenceMm;
 
+                result->maxAbsWheelSyncErrorMm = maxAbsWheelSyncErrorMm;
 
-                result->maxAbsWheelSyncErrorMm =
-                    maxAbsWheelSyncErrorMm;
+                SteeringIter_ComputeGeometry(fixture, result);
 
+                measurementCaptured = true;
 
-                SteeringIter_ComputeGeometry(
-                    fixture,
-                    result);
+                braking = true;
 
+                brakeStartTick = now;
 
-                measurementCaptured =
-                    true;
+                WheelSpeedController_SetTarget(fixture->motionController.leftWheel, 0.0f);
 
-
-                braking =
-                    true;
-
-
-                brakeStartTick =
-                    now;
-
-
-                WheelSpeedController_SetTarget(
-                    fixture->motionController.leftWheel,
-                    0.0f);
-
-
-                WheelSpeedController_SetTarget(
-                    fixture->motionController.rightWheel,
-                    0.0f);
+                WheelSpeedController_SetTarget(fixture->motionController.rightWheel, 0.0f);
             }
             else
             {
-                float centreSpeedCps =
-                    targetSpeedMmps /
-                    mmPerCount;
+                float centreSpeedCps = targetSpeedMmps / mmPerCount;
 
+                SteeringIter_SetRearWheelTargets(fixture,
+                                                 centreSpeedCps,
+                                                 referenceCurvaturePerMm,
+                                                 desiredWheelTravelDifferenceMm,
+                                                 actualWheelTravelDifferenceMm,
+                                                 &wheelSyncErrorMm);
 
-                SteeringIter_SetRearWheelTargets(
-                    fixture,
-                    centreSpeedCps,
-                    referenceCurvaturePerMm,
-                    desiredWheelTravelDifferenceMm,
-                    actualWheelTravelDifferenceMm,
-                    &wheelSyncErrorMm);
+                float absSyncErrorMm = fabsf(wheelSyncErrorMm);
 
-
-                float absSyncErrorMm =
-                    fabsf(
-                        wheelSyncErrorMm);
-
-
-                if (absSyncErrorMm >
-                    maxAbsWheelSyncErrorMm)
+                if (absSyncErrorMm > maxAbsWheelSyncErrorMm)
                 {
-                    maxAbsWheelSyncErrorMm =
-                        absSyncErrorMm;
+                    maxAbsWheelSyncErrorMm = absSyncErrorMm;
                 }
             }
         }
 
+        WheelSpeedController_Update(fixture->motionController.leftWheel, ITER_CONTROL_PERIOD_S);
 
-        WheelSpeedController_Update(
-            fixture->motionController.leftWheel,
-            ITER_CONTROL_PERIOD_S);
-
-
-        WheelSpeedController_Update(
-            fixture->motionController.rightWheel,
-            ITER_CONTROL_PERIOD_S);
-
+        WheelSpeedController_Update(fixture->motionController.rightWheel, ITER_CONTROL_PERIOD_S);
 
         if (braking)
         {
             bool leftStationary =
-                WheelSpeedController_IsStationary(
-                    fixture->motionController.leftWheel);
-
+                WheelSpeedController_IsStationary(fixture->motionController.leftWheel);
 
             bool rightStationary =
-                WheelSpeedController_IsStationary(
-                    fixture->motionController.rightWheel);
+                WheelSpeedController_IsStationary(fixture->motionController.rightWheel);
 
-
-            if (leftStationary &&
-                rightStationary)
+            if (leftStationary && rightStationary)
             {
                 stationarySamples++;
 
-
-                if (stationarySamples >=
-                    ITER_STOP_STABLE_SAMPLES)
+                if (stationarySamples >= ITER_STOP_STABLE_SAMPLES)
                 {
                     break;
                 }
             }
             else
             {
-                stationarySamples =
-                    0U;
+                stationarySamples = 0U;
             }
         }
     }
 
+    WheelSpeedController_Stop(fixture->motionController.leftWheel);
 
-    WheelSpeedController_Stop(
-        fixture->motionController.leftWheel);
+    WheelSpeedController_Stop(fixture->motionController.rightWheel);
 
+    result->durationMs = HAL_GetTick() - startTick;
 
-    WheelSpeedController_Stop(
-        fixture->motionController.rightWheel);
+    result->finalDistanceMm = measurement.centreTravelMm;
 
-
-    result->durationMs =
-        HAL_GetTick() -
-        startTick;
-
-
-    result->finalDistanceMm =
-        measurement.centreTravelMm;
-
-
-    result->finalYawDeg =
-        measurement.yawDeg;
-
+    result->finalYawDeg = measurement.yawDeg;
 
     if (!measurementCaptured)
     {
-        result->travelledDistanceMm =
-            measurement.centreTravelMm;
+        result->travelledDistanceMm = measurement.centreTravelMm;
 
+        result->leftTravelMm = measurement.leftTravelMm;
 
-        result->leftTravelMm =
-            measurement.leftTravelMm;
+        result->rightTravelMm = measurement.rightTravelMm;
 
+        result->yawGyroDeg = measurement.yawDeg;
 
-        result->rightTravelMm =
-            measurement.rightTravelMm;
-
-
-        result->yawGyroDeg =
-            measurement.yawDeg;
-
-
-        result->desiredWheelTravelDifferenceMm =
-            desiredWheelTravelDifferenceMm;
-
+        result->desiredWheelTravelDifferenceMm = desiredWheelTravelDifferenceMm;
 
         result->wheelSyncErrorMm =
-            (measurement.rightTravelMm -
-             measurement.leftTravelMm) -
-            desiredWheelTravelDifferenceMm;
+            (measurement.rightTravelMm - measurement.leftTravelMm) - desiredWheelTravelDifferenceMm;
 
+        result->maxAbsWheelSyncErrorMm = maxAbsWheelSyncErrorMm;
 
-        result->maxAbsWheelSyncErrorMm =
-            maxAbsWheelSyncErrorMm;
-
-
-        SteeringIter_ComputeGeometry(
-            fixture,
-            result);
+        SteeringIter_ComputeGeometry(fixture, result);
     }
 
-
-    if (measurementCaptured &&
-        !result->timedOut &&
-        !result->aborted &&
-        !result->imuReadFailed &&
-        !result->profileFailed &&
-        (fabsf(
-            result->travelledDistanceMm) >=
-         ITER_MIN_VALID_TRAVEL_MM))
+    if (measurementCaptured && !result->timedOut && !result->aborted && !result->imuReadFailed &&
+        !result->profileFailed && (fabsf(result->travelledDistanceMm) >= ITER_MIN_VALID_TRAVEL_MM))
     {
-        result->valid =
-            1U;
+        result->valid = 1U;
     }
 }
-
 
 /* -------------------------------------------------------------------------- */
 /* Apply one run to its point-state fixed-point solver                        */
 /* -------------------------------------------------------------------------- */
 
-static void SteeringIter_UpdatePointState(
-    RobotTestFixture *fixture,
-    SteeringGeometryIterationResult *result)
+static void SteeringIter_UpdatePointState(RobotTestFixture *fixture,
+                                          SteeringGeometryIterationResult *result)
 {
-    uint8_t sweepSlot =
-        SteeringIter_GetSweepSlot(
-            result->sweepDirection);
+    uint8_t sweepSlot = SteeringIter_GetSweepSlot(result->sweepDirection);
 
-
-    uint32_t point =
-        result->commandIndex;
-
+    uint32_t point = result->commandIndex;
 
     SteeringGeometryIterationPointState state =
-        g_steeringGeometryIterationPointState[
-            sweepSlot][point];
-
+        g_steeringGeometryIterationPointState[sweepSlot][point];
 
     /*
      * Preserve the current observation before installing the new one.
      */
-    float oldReference =
-        state.currentReferenceCurvaturePerMm;
+    float oldReference = state.currentReferenceCurvaturePerMm;
 
-
-    float oldError =
-        state.currentErrorCurvaturePerMm;
-
+    float oldError = state.currentErrorCurvaturePerMm;
 
     /*
      * Shift history.
      */
-    state.previousReferenceCurvaturePerMm =
-        oldReference;
+    state.previousReferenceCurvaturePerMm = oldReference;
 
-
-    state.previousErrorCurvaturePerMm =
-        oldError;
-
+    state.previousErrorCurvaturePerMm = oldError;
 
     /*
      * Install the new physical observation.
      */
-    state.currentReferenceCurvaturePerMm =
-        result->referenceCurvaturePerMm;
+    state.currentReferenceCurvaturePerMm = result->referenceCurvaturePerMm;
 
-
-    state.currentMeasuredCurvaturePerMm =
-        result->measuredCurvaturePerMm;
-
+    state.currentMeasuredCurvaturePerMm = result->measuredCurvaturePerMm;
 
     state.currentErrorCurvaturePerMm =
-        result->measuredCurvaturePerMm -
-        result->referenceCurvaturePerMm;
+        result->measuredCurvaturePerMm - result->referenceCurvaturePerMm;
 
-
-    state.tolerancePerMm =
-        SteeringIter_GetTolerance(
-            result->referenceCurvaturePerMm);
-
+    state.tolerancePerMm = SteeringIter_GetTolerance(result->referenceCurvaturePerMm);
 
     state.continuationIterationCount++;
 
+    result->curvatureErrorPerMm = state.currentErrorCurvaturePerMm;
 
-    result->curvatureErrorPerMm =
-        state.currentErrorCurvaturePerMm;
-
-
-    result->tolerancePerMm =
-        state.tolerancePerMm;
-
+    result->tolerancePerMm = state.tolerancePerMm;
 
     bool converged =
-        SteeringIter_IsConverged(
-            result->referenceCurvaturePerMm,
-            result->measuredCurvaturePerMm);
-
+        SteeringIter_IsConverged(result->referenceCurvaturePerMm, result->measuredCurvaturePerMm);
 
     if (converged)
     {
-        state.converged =
-            1U;
+        state.converged = 1U;
 
-
-        state.finalCurvaturePerMm =
-            result->measuredCurvaturePerMm;
-
+        state.finalCurvaturePerMm = result->measuredCurvaturePerMm;
 
         state.finalEffectiveAngleRad =
-            atanf(
-                fixture->motionController.kinematics->
-                    wheelbaseMm *
-                state.finalCurvaturePerMm);
+            atanf(fixture->motionController.kinematics->wheelbaseMm * state.finalCurvaturePerMm);
 
+        state.nextReferenceCurvaturePerMm = state.finalCurvaturePerMm;
 
-        state.nextReferenceCurvaturePerMm =
-            state.finalCurvaturePerMm;
+        state.lastUpdateMethod = STEERING_GEOMETRY_ITER_UPDATE_NONE;
 
+        result->converged = 1U;
 
-        state.lastUpdateMethod =
-            STEERING_GEOMETRY_ITER_UPDATE_NONE;
+        result->nextReferenceCurvaturePerMm = state.nextReferenceCurvaturePerMm;
 
+        result->updateMethod = STEERING_GEOMETRY_ITER_UPDATE_NONE;
 
-        result->converged =
-            1U;
-
-
-        result->nextReferenceCurvaturePerMm =
-            state.nextReferenceCurvaturePerMm;
-
-
-        result->updateMethod =
-            STEERING_GEOMETRY_ITER_UPDATE_NONE;
-
-
-        if (g_steeringGeometryIterationUnresolvedCount >
-            0U)
+        if (g_steeringGeometryIterationUnresolvedCount > 0U)
         {
             g_steeringGeometryIterationUnresolvedCount--;
         }
@@ -2415,24 +1508,19 @@ static void SteeringIter_UpdatePointState(
         if (state.hasBracket)
         {
             SteeringIter_UpdateBracket(
-                &state,
-                state.currentReferenceCurvaturePerMm,
-                state.currentErrorCurvaturePerMm);
+                &state, state.currentReferenceCurvaturePerMm, state.currentErrorCurvaturePerMm);
         }
         else
         {
-            if (SteeringIter_HaveOppositeSigns(
-                    oldError,
-                    state.currentErrorCurvaturePerMm))
+            if (SteeringIter_HaveOppositeSigns(oldError, state.currentErrorCurvaturePerMm))
             {
-                SteeringIter_SetBracket(
-                    &state,
+                SteeringIter_SetBracket(&state,
 
-                    oldReference,
-                    oldError,
+                                        oldReference,
+                                        oldError,
 
-                    state.currentReferenceCurvaturePerMm,
-                    state.currentErrorCurvaturePerMm);
+                                        state.currentReferenceCurvaturePerMm,
+                                        state.currentErrorCurvaturePerMm);
             }
             else
             {
@@ -2440,234 +1528,139 @@ static void SteeringIter_UpdatePointState(
             }
         }
 
-
         /*
          * Latest measurement remains provisional until convergence.
          */
-        state.finalCurvaturePerMm =
-            result->measuredCurvaturePerMm;
-
+        state.finalCurvaturePerMm = result->measuredCurvaturePerMm;
 
         state.finalEffectiveAngleRad =
-            atanf(
-                fixture->motionController.kinematics->
-                    wheelbaseMm *
-                state.finalCurvaturePerMm);
+            atanf(fixture->motionController.kinematics->wheelbaseMm * state.finalCurvaturePerMm);
 
+        uint8_t method = STEERING_GEOMETRY_ITER_UPDATE_NONE;
 
-        uint8_t method =
-            STEERING_GEOMETRY_ITER_UPDATE_NONE;
+        state.nextReferenceCurvaturePerMm = SteeringIter_ComputeNextReference(&state, &method);
 
+        state.lastUpdateMethod = method;
 
-        state.nextReferenceCurvaturePerMm =
-            SteeringIter_ComputeNextReference(
-                &state,
-                &method);
+        result->converged = 0U;
 
+        result->nextReferenceCurvaturePerMm = state.nextReferenceCurvaturePerMm;
 
-        state.lastUpdateMethod =
-            method;
-
-
-        result->converged =
-            0U;
-
-
-        result->nextReferenceCurvaturePerMm =
-            state.nextReferenceCurvaturePerMm;
-
-
-        result->updateMethod =
-            method;
+        result->updateMethod = method;
     }
 
+    g_steeringGeometryIterationPointState[sweepSlot][point] = state;
 
-    g_steeringGeometryIterationPointState[
-        sweepSlot][point] =
-            state;
-
-
-    SteeringIter_RefreshFinalTables(
-        fixture);
+    SteeringIter_RefreshFinalTables(fixture);
 }
-
 
 /* -------------------------------------------------------------------------- */
 /* Branch / round execution                                                   */
 /* -------------------------------------------------------------------------- */
 
-static bool SteeringIter_BranchHasUnresolved(
-    int8_t sweepDirection)
+static bool SteeringIter_BranchHasUnresolved(int8_t sweepDirection)
 {
-    uint8_t sweepSlot =
-        SteeringIter_GetSweepSlot(
-            sweepDirection);
+    uint8_t sweepSlot = SteeringIter_GetSweepSlot(sweepDirection);
 
-
-    for (uint32_t point = 0U;
-         point <
-            STEERING_GEOMETRY_ITER_POINT_COUNT;
-         point++)
+    for (uint32_t point = 0U; point < STEERING_GEOMETRY_ITER_POINT_COUNT; point++)
     {
-        if (!g_steeringGeometryIterationPointState[
-                sweepSlot][point].converged)
+        if (!g_steeringGeometryIterationPointState[sweepSlot][point].converged)
         {
             return true;
         }
     }
 
-
     return false;
 }
 
-
-static bool SteeringIter_RunBranch(
-    RobotTestFixture *fixture,
-    uint32_t roundIndex,
-    int8_t sweepDirection)
+static bool
+SteeringIter_RunBranch(RobotTestFixture *fixture, uint32_t roundIndex, int8_t sweepDirection)
 {
-    if (!SteeringIter_BranchHasUnresolved(
-            sweepDirection))
+    if (!SteeringIter_BranchHasUnresolved(sweepDirection))
     {
         return true;
     }
 
+    SteeringIter_ShowMessage(SteeringIter_GetSweepName(sweepDirection), "PRECONDITION");
 
-    SteeringIter_ShowMessage(
-        SteeringIter_GetSweepName(
-            sweepDirection),
-        "PRECONDITION");
+    SteeringIter_PreconditionSweep(fixture, sweepDirection);
 
-
-    SteeringIter_PreconditionSweep(
-        fixture,
-        sweepDirection);
-
-
-    for (uint32_t ordinal = 0U;
-         ordinal <
-            STEERING_GEOMETRY_ITER_POINT_COUNT;
-         ordinal++)
+    for (uint32_t ordinal = 0U; ordinal < STEERING_GEOMETRY_ITER_POINT_COUNT; ordinal++)
     {
         uint32_t commandIndex;
 
-
-        if (sweepDirection ==
-            STEERING_GEOMETRY_ITER_INCREASING)
+        if (sweepDirection == STEERING_GEOMETRY_ITER_INCREASING)
         {
-            commandIndex =
-                ordinal;
+            commandIndex = ordinal;
         }
         else
         {
-            commandIndex =
-                (STEERING_GEOMETRY_ITER_POINT_COUNT -
-                 1U) -
-                ordinal;
+            commandIndex = (STEERING_GEOMETRY_ITER_POINT_COUNT - 1U) - ordinal;
         }
 
-
-        uint8_t sweepSlot =
-            SteeringIter_GetSweepSlot(
-                sweepDirection);
-
+        uint8_t sweepSlot = SteeringIter_GetSweepSlot(sweepDirection);
 
         SteeringGeometryIterationPointState state =
-            g_steeringGeometryIterationPointState[
-                sweepSlot][commandIndex];
-
+            g_steeringGeometryIterationPointState[sweepSlot][commandIndex];
 
         if (state.converged)
         {
             continue;
         }
 
-
-        SteeringIter_ShowReady(
-            roundIndex,
-            sweepDirection,
-            commandIndex);
-
+        SteeringIter_ShowReady(roundIndex, sweepDirection, commandIndex);
 
         SW1_WaitForPressAndRelease();
 
-
-        if (g_steeringGeometryIterationResultCount >=
-            STEERING_GEOMETRY_ITER_MAX_RESULT_COUNT)
+        if (g_steeringGeometryIterationResultCount >= STEERING_GEOMETRY_ITER_MAX_RESULT_COUNT)
         {
             return false;
         }
 
+        SteeringGeometryIterationResult result = {0};
 
-        SteeringGeometryIterationResult result =
-            {0};
-
-
-        SteeringIter_RunOne(
-            fixture,
-            roundIndex,
-            sweepDirection,
-            commandIndex,
-            state.nextReferenceCurvaturePerMm,
-            &result);
-
+        SteeringIter_RunOne(fixture,
+                            roundIndex,
+                            sweepDirection,
+                            commandIndex,
+                            state.nextReferenceCurvaturePerMm,
+                            &result);
 
         if (!result.valid)
         {
-            g_steeringGeometryIterationResults[
-                g_steeringGeometryIterationResultCount] =
-                    result;
-
+            g_steeringGeometryIterationResults[g_steeringGeometryIterationResultCount] = result;
 
             g_steeringGeometryIterationResultCount++;
 
-
-            SteeringIter_ShowResult(
-                &result);
-
+            SteeringIter_ShowResult(&result);
 
             return false;
         }
 
+        SteeringIter_UpdatePointState(fixture, &result);
 
-        SteeringIter_UpdatePointState(
-            fixture,
-            &result);
-
-
-        g_steeringGeometryIterationResults[
-            g_steeringGeometryIterationResultCount] =
-                result;
-
+        g_steeringGeometryIterationResults[g_steeringGeometryIterationResultCount] = result;
 
         g_steeringGeometryIterationResultCount++;
 
+        SteeringIter_ShowResult(&result);
 
-        SteeringIter_ShowResult(
-            &result);
-
-
-        HAL_Delay(
-            500U);
+        HAL_Delay(500U);
     }
-
 
     return true;
 }
-
 
 /* -------------------------------------------------------------------------- */
 /* Hardware / fixture init                                                    */
 /* -------------------------------------------------------------------------- */
 
-static bool SteeringIter_Init(
-    RobotTestFixture *fixture)
+static bool SteeringIter_Init(RobotTestFixture *fixture)
 {
     OLED_Init();
 
     OLED_Clear();
     OLED_Refresh_Gram();
-
 
     /*
      * Heading controller is not used.
@@ -2675,35 +1668,28 @@ static bool SteeringIter_Init(
      * MotionController itself does not execute the calibration motion;
      * the fixture is reused for the tested peripheral/controller objects.
      */
-    if (!RobotTestFixture_InitMotionController(
-            fixture,
+    if (!RobotTestFixture_InitMotionController(fixture,
 
-            0.0f,
-            0.0f,
-            0.0f,
-            0.010f,
+                                               0.0f,
+                                               0.0f,
+                                               0.0f,
+                                               0.010f,
 
-            ITER_SYNC_KP_CPS_PER_MM,
-            ITER_SYNC_MAX_CORRECTION_CPS,
+                                               ITER_SYNC_KP_CPS_PER_MM,
+                                               ITER_SYNC_MAX_CORRECTION_CPS,
 
-            ITER_ACCELERATION_MMPS2,
-            ITER_DECELERATION_MMPS2))
+                                               ITER_ACCELERATION_MMPS2,
+                                               ITER_DECELERATION_MMPS2))
     {
         return false;
     }
 
+    WheelSpeedController_Stop(fixture->motionController.leftWheel);
 
-    WheelSpeedController_Stop(
-        fixture->motionController.leftWheel);
-
-
-    WheelSpeedController_Stop(
-        fixture->motionController.rightWheel);
-
+    WheelSpeedController_Stop(fixture->motionController.rightWheel);
 
     return true;
 }
-
 
 /* -------------------------------------------------------------------------- */
 /* Public test                                                                */
@@ -2711,240 +1697,131 @@ static bool SteeringIter_Init(
 
 void SteeringGeometryCalibrationIterationTestRun(void)
 {
-    RobotTestFixture fixture =
-        {0};
+    RobotTestFixture fixture = {0};
 
-
-    volatile char infoKeepAlive =
-        g_steeringGeometryIterationInfo[0];
-
+    volatile char infoKeepAlive = g_steeringGeometryIterationInfo[0];
 
     (void)infoKeepAlive;
 
-
     SteeringIter_ResetExports();
 
+    SteeringIter_ShowMessage("KEEP ROBOT STILL", "INITIALISING");
 
-    SteeringIter_ShowMessage(
-        "KEEP ROBOT STILL",
-        "INITIALISING");
+    HAL_Delay(1000U);
 
-
-    HAL_Delay(
-        1000U);
-
-
-    if (!SteeringIter_Init(
-            &fixture))
+    if (!SteeringIter_Init(&fixture))
     {
-        SteeringIter_ShowMessage(
-            "INIT FAILED",
-            NULL);
-
+        SteeringIter_ShowMessage("INIT FAILED", NULL);
 
         SW1_WhileNotPressed();
 
         return;
     }
 
-
-    SteeringIter_RefreshFinalTables(
-        &fixture);
-
+    SteeringIter_RefreshFinalTables(&fixture);
 
     OLED_Clear();
 
-    OLED_Printf(
-        0, 0,
-        "ITER CAL READY");
+    OLED_Printf(0, 0, "ITER CAL READY");
 
-    OLED_Printf(
-        0, 1,
-        "UNRES:%lu",
-        (unsigned long)
-            g_steeringGeometryIterationUnresolvedCount);
+    OLED_Printf(0, 1, "UNRES:%lu", (unsigned long)g_steeringGeometryIterationUnresolvedCount);
 
-    OLED_Printf(
-        0, 3,
-        "MAX ROUNDS:%u",
-        (unsigned int)
-            STEERING_GEOMETRY_ITER_MAX_ROUNDS);
+    OLED_Printf(0, 3, "MAX ROUNDS:%u", (unsigned int)STEERING_GEOMETRY_ITER_MAX_ROUNDS);
 
-    OLED_Printf(
-        0, 5,
-        "SW1 = BEGIN");
+    OLED_Printf(0, 5, "SW1 = BEGIN");
 
     OLED_Refresh_Gram();
 
-
     SW1_WaitForPressAndRelease();
 
-
-    for (uint32_t localRoundIndex = 0U;
-         localRoundIndex <
-            STEERING_GEOMETRY_ITER_MAX_ROUNDS;
+    for (uint32_t localRoundIndex = 0U; localRoundIndex < STEERING_GEOMETRY_ITER_MAX_ROUNDS;
          localRoundIndex++)
     {
-        uint32_t roundIndex =
-            ITER_BASE_ROUND_INDEX +
-            localRoundIndex;
-        if (g_steeringGeometryIterationUnresolvedCount ==
-            0U)
+        uint32_t roundIndex = ITER_BASE_ROUND_INDEX + localRoundIndex;
+        if (g_steeringGeometryIterationUnresolvedCount == 0U)
         {
             break;
         }
 
-
-        if (!SteeringIter_RunBranch(
-                &fixture,
-                roundIndex,
-                STEERING_GEOMETRY_ITER_INCREASING))
+        if (!SteeringIter_RunBranch(&fixture, roundIndex, STEERING_GEOMETRY_ITER_INCREASING))
         {
             goto iteration_failed;
         }
 
-
-        if (!SteeringIter_RunBranch(
-                &fixture,
-                roundIndex,
-                STEERING_GEOMETRY_ITER_DECREASING))
+        if (!SteeringIter_RunBranch(&fixture, roundIndex, STEERING_GEOMETRY_ITER_DECREASING))
         {
             goto iteration_failed;
         }
 
+        g_steeringGeometryIterationCompletedRounds = roundIndex + 1U;
 
-        g_steeringGeometryIterationCompletedRounds =
-            roundIndex +
-            1U;
-
-
-        if (g_steeringGeometryIterationUnresolvedCount ==
-            0U)
+        if (g_steeringGeometryIterationUnresolvedCount == 0U)
         {
             break;
         }
-
 
         OLED_Clear();
 
-        OLED_Printf(
-            0, 0,
-            "ROUND %lu DONE",
-            (unsigned long)(roundIndex + 1U));
+        OLED_Printf(0, 0, "ROUND %lu DONE", (unsigned long)(roundIndex + 1U));
 
-        OLED_Printf(
-            0, 1,
-            "UNRES:%lu",
-            (unsigned long)
-                g_steeringGeometryIterationUnresolvedCount);
+        OLED_Printf(0, 1, "UNRES:%lu", (unsigned long)g_steeringGeometryIterationUnresolvedCount);
 
-        OLED_Printf(
-            0, 3,
-            "EXPORT IF WANTED");
+        OLED_Printf(0, 3, "EXPORT IF WANTED");
 
-        OLED_Printf(
-            0, 5,
-            "SW1 NEXT ROUND");
+        OLED_Printf(0, 5, "SW1 NEXT ROUND");
 
         OLED_Refresh_Gram();
-
 
         SW1_WaitForPressAndRelease();
     }
 
+    WheelSpeedController_Stop(fixture.motionController.leftWheel);
 
-    WheelSpeedController_Stop(
-        fixture.motionController.leftWheel);
+    WheelSpeedController_Stop(fixture.motionController.rightWheel);
 
+    SteeringController_Centre(&fixture.steeringController);
 
-    WheelSpeedController_Stop(
-        fixture.motionController.rightWheel);
-
-
-    SteeringController_Centre(
-        &fixture.steeringController);
-
-
-    SteeringIter_RefreshFinalTables(
-        &fixture);
-
+    SteeringIter_RefreshFinalTables(&fixture);
 
     OLED_Clear();
 
-    OLED_Printf(
-        0, 0,
-        "ITER CAL DONE");
+    OLED_Printf(0, 0, "ITER CAL DONE");
 
-    OLED_Printf(
-        0, 1,
-        "RUNS:%lu",
-        (unsigned long)
-            g_steeringGeometryIterationResultCount);
+    OLED_Printf(0, 1, "RUNS:%lu", (unsigned long)g_steeringGeometryIterationResultCount);
 
-    OLED_Printf(
-        0, 2,
-        "UNRES:%lu",
-        (unsigned long)
-            g_steeringGeometryIterationUnresolvedCount);
+    OLED_Printf(0, 2, "UNRES:%lu", (unsigned long)g_steeringGeometryIterationUnresolvedCount);
 
-    OLED_Printf(
-        0, 4,
-        "EXPORT RESULTS");
+    OLED_Printf(0, 4, "EXPORT RESULTS");
 
-    OLED_Printf(
-        0, 5,
-        "CHECK CONVERGED");
+    OLED_Printf(0, 5, "CHECK CONVERGED");
 
     OLED_Refresh_Gram();
-
 
     SW1_WhileNotPressed();
 
     return;
 
-
 iteration_failed:
 
-    WheelSpeedController_Stop(
-        fixture.motionController.leftWheel);
+    WheelSpeedController_Stop(fixture.motionController.leftWheel);
 
+    WheelSpeedController_Stop(fixture.motionController.rightWheel);
 
-    WheelSpeedController_Stop(
-        fixture.motionController.rightWheel);
+    SteeringController_Centre(&fixture.steeringController);
 
-
-    SteeringController_Centre(
-        &fixture.steeringController);
-
-
-    SteeringIter_RefreshFinalTables(
-        &fixture);
-
+    SteeringIter_RefreshFinalTables(&fixture);
 
     OLED_Clear();
 
-    OLED_Printf(
-        0, 0,
-        "ITER CAL STOP");
+    OLED_Printf(0, 0, "ITER CAL STOP");
 
-    OLED_Printf(
-        0, 1,
-        "RUNS:%lu",
-        (unsigned long)
-            g_steeringGeometryIterationResultCount);
+    OLED_Printf(0, 1, "RUNS:%lu", (unsigned long)g_steeringGeometryIterationResultCount);
 
-    OLED_Printf(
-        0, 2,
-        "UNRES:%lu",
-        (unsigned long)
-            g_steeringGeometryIterationUnresolvedCount);
+    OLED_Printf(0, 2, "UNRES:%lu", (unsigned long)g_steeringGeometryIterationUnresolvedCount);
 
-    OLED_Printf(
-        0, 4,
-        "EXPORT PARTIAL");
+    OLED_Printf(0, 4, "EXPORT PARTIAL");
 
     OLED_Refresh_Gram();
-
 
     SW1_WhileNotPressed();
 }
