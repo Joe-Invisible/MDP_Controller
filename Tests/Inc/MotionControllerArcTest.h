@@ -88,7 +88,6 @@ typedef struct
 
 } MotionControllerArcTestLogSample;
 
-
 void MotionControllerArcTestRun(void);
 
 #endif /* INC_MOTIONCONTROLLERARCTEST_H_ */

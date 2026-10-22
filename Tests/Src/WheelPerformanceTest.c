@@ -21,25 +21,24 @@ static const float accelerationTable[] = {
 };
 static const float decelerationTable[] = {1000.0f, 2000.0f, 3000.0f};
 
-volatile WheelPerformanceConfig wheelPerformanceConfig = {
-    .experiment = WHEEL_PERFORMANCE_DECELERATION,
-    .repetitions = 1U,
-    .waitBetweenTrials = true,
-    .batteryVoltage = 0.0f,
-    .steeringRawCommand = 0.0f,
-    .maxDriveDistanceMm = 2000.0f,
-    .speedDriveMs = 1500U,
-    .steadyWindowMs = 500U,
-    .accelerationTargetCps = 7800.0f,
-    .accelerationHoldMs = 200U,
-    .brakeTimeoutMs = 1000U,
-    .decelerationStartCps = 7800.0f,
-    .preparationAccelerationMmps2 = 3000.0f,
-    .preparationHoldMs = 500U,
-    .preparationTimeoutMs = 1500U,
-    .wheelKp = WHEELSPEEDCONTROLLER_KP,
-    .wheelKi = WHEELSPEEDCONTROLLER_KI
-};
+volatile WheelPerformanceConfig wheelPerformanceConfig = {.experiment =
+                                                              WHEEL_PERFORMANCE_DECELERATION,
+                                                          .repetitions = 1U,
+                                                          .waitBetweenTrials = true,
+                                                          .batteryVoltage = 0.0f,
+                                                          .steeringRawCommand = 0.0f,
+                                                          .maxDriveDistanceMm = 2000.0f,
+                                                          .speedDriveMs = 1500U,
+                                                          .steadyWindowMs = 500U,
+                                                          .accelerationTargetCps = 7800.0f,
+                                                          .accelerationHoldMs = 200U,
+                                                          .brakeTimeoutMs = 1000U,
+                                                          .decelerationStartCps = 7800.0f,
+                                                          .preparationAccelerationMmps2 = 3000.0f,
+                                                          .preparationHoldMs = 500U,
+                                                          .preparationTimeoutMs = 1500U,
+                                                          .wheelKp = WHEELSPEEDCONTROLLER_KP,
+                                                          .wheelKi = WHEELSPEEDCONTROLLER_KI};
 
 WheelPerformanceConfig wheelPerformanceRunConfig;
 /* Startup does not initialize .ccmram: explicitly cleared in TestRun().
@@ -84,24 +83,28 @@ static uint32_t TableCount(void)
     if (wheelPerformanceRunConfig.experiment == WHEEL_PERFORMANCE_DECELERATION)
         return sizeof(decelerationTable) / sizeof(decelerationTable[0]);
     return wheelPerformanceRunConfig.experiment == WHEEL_PERFORMANCE_TOP_SPEED
-        ? sizeof(speedPwmTable) / sizeof(speedPwmTable[0])
-        : sizeof(accelerationTable) / sizeof(accelerationTable[0]);
+               ? sizeof(speedPwmTable) / sizeof(speedPwmTable[0])
+               : sizeof(accelerationTable) / sizeof(accelerationTable[0]);
 }
 
 static float TableValue(uint32_t index)
 {
-    switch (wheelPerformanceRunConfig.experiment) {
-    case WHEEL_PERFORMANCE_TOP_SPEED: return speedPwmTable[index];
-    case WHEEL_PERFORMANCE_DECELERATION: return decelerationTable[index];
-    default: return accelerationTable[index];
+    switch (wheelPerformanceRunConfig.experiment)
+    {
+    case WHEEL_PERFORMANCE_TOP_SPEED:
+        return speedPwmTable[index];
+    case WHEEL_PERFORMANCE_DECELERATION:
+        return decelerationTable[index];
+    default:
+        return accelerationTable[index];
     }
 }
 
 static uint32_t DriveLogPeriodMs(void)
 {
     /* Fast ramps need every control sample; speed plateaus and braking use 50 Hz. */
-    return wheelPerformanceRunConfig.experiment == WHEEL_PERFORMANCE_TOP_SPEED
-        ? LOG_PERIOD_MS : CONTROL_PERIOD_MS;
+    return wheelPerformanceRunConfig.experiment == WHEEL_PERFORMANCE_TOP_SPEED ? LOG_PERIOD_MS
+                                                                               : CONTROL_PERIOD_MS;
 }
 
 static uint32_t DriveDurationMs(float accelerationMmps2)
@@ -109,18 +112,18 @@ static uint32_t DriveDurationMs(float accelerationMmps2)
     if (wheelPerformanceRunConfig.experiment == WHEEL_PERFORMANCE_TOP_SPEED)
         return wheelPerformanceRunConfig.speedDriveMs;
 
-    if (wheelPerformanceRunConfig.experiment == WHEEL_PERFORMANCE_DECELERATION) {
+    if (wheelPerformanceRunConfig.experiment == WHEEL_PERFORMANCE_DECELERATION)
+    {
         const WheelPerformanceConfig *c = &wheelPerformanceRunConfig;
         float speed = c->decelerationStartCps * wheelPerformanceMmPerCount;
         return (uint32_t)ceilf(1000.0f * speed / c->preparationAccelerationMmps2) +
-            c->preparationTimeoutMs + (uint32_t)ceilf(1000.0f * speed / accelerationMmps2) +
-            c->brakeTimeoutMs + 4U * CONTROL_PERIOD_MS;
+               c->preparationTimeoutMs + (uint32_t)ceilf(1000.0f * speed / accelerationMmps2) +
+               c->brakeTimeoutMs + 4U * CONTROL_PERIOD_MS;
     }
 
-    return (uint32_t)ceilf(1000.0f *
-        wheelPerformanceRunConfig.accelerationTargetCps *
-        wheelPerformanceMmPerCount / accelerationMmps2) +
-        wheelPerformanceRunConfig.accelerationHoldMs;
+    return (uint32_t)ceilf(1000.0f * wheelPerformanceRunConfig.accelerationTargetCps *
+                           wheelPerformanceMmPerCount / accelerationMmps2) +
+           wheelPerformanceRunConfig.accelerationHoldMs;
 }
 
 static bool ValidateConfiguration(void)
@@ -129,48 +132,43 @@ static bool ValidateConfiguration(void)
     if ((c->experiment != WHEEL_PERFORMANCE_TOP_SPEED &&
          c->experiment != WHEEL_PERFORMANCE_ACCELERATION &&
          c->experiment != WHEEL_PERFORMANCE_DECELERATION) ||
-        c->repetitions == 0U || c->repetitions > 4U ||
-        !isfinite(c->batteryVoltage) || c->batteryVoltage < 0.0f ||
-        !isfinite(c->steeringRawCommand) || fabsf(c->steeringRawCommand) > 100.0f ||
-        !isfinite(c->maxDriveDistanceMm) || c->maxDriveDistanceMm <= 0.0f ||
-        !isfinite(c->accelerationTargetCps) || c->accelerationTargetCps <= 0.0f ||
-        c->accelerationTargetCps > 30000.0f ||
+        c->repetitions == 0U || c->repetitions > 4U || !isfinite(c->batteryVoltage) ||
+        c->batteryVoltage < 0.0f || !isfinite(c->steeringRawCommand) ||
+        fabsf(c->steeringRawCommand) > 100.0f || !isfinite(c->maxDriveDistanceMm) ||
+        c->maxDriveDistanceMm <= 0.0f || !isfinite(c->accelerationTargetCps) ||
+        c->accelerationTargetCps <= 0.0f || c->accelerationTargetCps > 30000.0f ||
         c->speedDriveMs < c->steadyWindowMs || c->steadyWindowMs < 200U ||
-        c->speedDriveMs > 10000U || c->brakeTimeoutMs < 100U ||
-        c->brakeTimeoutMs > 5000U || c->accelerationHoldMs > 2000U ||
-        !isfinite(wheelPerformanceMmPerCount) || wheelPerformanceMmPerCount <= 0.0f)
+        c->speedDriveMs > 10000U || c->brakeTimeoutMs < 100U || c->brakeTimeoutMs > 5000U ||
+        c->accelerationHoldMs > 2000U || !isfinite(wheelPerformanceMmPerCount) ||
+        wheelPerformanceMmPerCount <= 0.0f)
         return false;
 
-    if (!isfinite(c->wheelKp) || c->wheelKp < 0.0f ||
-        !isfinite(c->wheelKi) || c->wheelKi < 0.0f)
+    if (!isfinite(c->wheelKp) || c->wheelKp < 0.0f || !isfinite(c->wheelKi) || c->wheelKi < 0.0f)
         return false;
     if (c->experiment == WHEEL_PERFORMANCE_DECELERATION &&
         (!isfinite(c->decelerationStartCps) || c->decelerationStartCps <= 0.0f ||
-         c->decelerationStartCps > 30000.0f ||
-         !isfinite(c->preparationAccelerationMmps2) ||
+         c->decelerationStartCps > 30000.0f || !isfinite(c->preparationAccelerationMmps2) ||
          c->preparationAccelerationMmps2 < 100.0f ||
          c->preparationHoldMs < SETTLE_WINDOW_SAMPLES * CONTROL_PERIOD_MS ||
-         c->preparationTimeoutMs < c->preparationHoldMs ||
-         c->preparationTimeoutMs > 5000U))
+         c->preparationTimeoutMs < c->preparationHoldMs || c->preparationTimeoutMs > 5000U))
         return false;
 
     uint32_t trialCount = 2U * c->repetitions * TableCount();
-    if (trialCount > WHEEL_PERFORMANCE_TRIAL_CAPACITY)
-        return false;
+    if (trialCount > WHEEL_PERFORMANCE_TRIAL_CAPACITY) return false;
 
     /* Reserve worst-case traces INCLUDING stopping and phase-boundary samples.
      * Refuse a sweep that cannot fit instead of silently truncating it.
      */
     uint32_t samplesPerDirection = 0U;
-    for (uint32_t i = 0; i < TableCount(); ++i) {
+    for (uint32_t i = 0; i < TableCount(); ++i)
+    {
         float acceleration = TableValue(i);
         uint32_t driveLogPeriod = DriveLogPeriodMs();
         samplesPerDirection +=
             (DriveDurationMs(acceleration) + driveLogPeriod - 1U) / driveLogPeriod +
             (c->brakeTimeoutMs + LOG_PERIOD_MS - 1U) / LOG_PERIOD_MS + 4U;
     }
-    return 2U * c->repetitions * samplesPerDirection <=
-        WHEEL_PERFORMANCE_TRACE_CAPACITY;
+    return 2U * c->repetitions * samplesPerDirection <= WHEEL_PERFORMANCE_TRACE_CAPACITY;
 }
 
 static void ObserveWheels(uint32_t dtMs)
@@ -190,150 +188,156 @@ static void ObserveWheels(uint32_t dtMs)
     rightPathMm += fabsf(dr * wheelPerformanceMmPerCount);
 }
 
-static bool RecordSample(uint32_t timeMs, uint32_t dtMs, uint32_t trial,
-                         uint32_t phase, float targetCps,
-                         float leftPwm, float rightPwm)
+static bool RecordSample(uint32_t timeMs,
+                         uint32_t dtMs,
+                         uint32_t trial,
+                         uint32_t phase,
+                         float targetCps,
+                         float leftPwm,
+                         float rightPwm)
 {
-    if (wheelPerformanceTraceCount >= WHEEL_PERFORMANCE_TRACE_CAPACITY) {
+    if (wheelPerformanceTraceCount >= WHEEL_PERFORMANCE_TRACE_CAPACITY)
+    {
         wheelPerformanceStatus = WHEEL_TEST_LOG_FULL;
         return false;
     }
-    if (!isfinite(leftSpeedCps) || !isfinite(rightSpeedCps) ||
-        fabsf(leftSpeedCps) > 32767.0f || fabsf(rightSpeedCps) > 32767.0f) {
+    if (!isfinite(leftSpeedCps) || !isfinite(rightSpeedCps) || fabsf(leftSpeedCps) > 32767.0f ||
+        fabsf(rightSpeedCps) > 32767.0f)
+    {
         wheelPerformanceStatus = WHEEL_TEST_TELEMETRY_RANGE;
         return false;
     }
     WheelPerformanceSample *s = &wheelPerformanceTrace[wheelPerformanceTraceCount];
-    *s = (WheelPerformanceSample) {
-        .timeMs = timeMs, .dtMs = (uint16_t)dtMs,
-        .trial = (uint8_t)trial, .phase = (uint8_t)phase,
-        .targetCps = (int16_t)lroundf(targetCps),
-        .leftCps = (int16_t)lroundf(leftSpeedCps),
-        .rightCps = (int16_t)lroundf(rightSpeedCps),
-        .leftPwmX100 = (int16_t)lroundf(leftPwm * 100.0f),
-        .rightPwmX100 = (int16_t)lroundf(rightPwm * 100.0f),
-        .leftMode = (uint8_t)fixture.leftRearWheel.state.mode,
-        .rightMode = (uint8_t)fixture.rightRearWheel.state.mode
-    };
+    *s = (WheelPerformanceSample){.timeMs = timeMs,
+                                  .dtMs = (uint16_t)dtMs,
+                                  .trial = (uint8_t)trial,
+                                  .phase = (uint8_t)phase,
+                                  .targetCps = (int16_t)lroundf(targetCps),
+                                  .leftCps = (int16_t)lroundf(leftSpeedCps),
+                                  .rightCps = (int16_t)lroundf(rightSpeedCps),
+                                  .leftPwmX100 = (int16_t)lroundf(leftPwm * 100.0f),
+                                  .rightPwmX100 = (int16_t)lroundf(rightPwm * 100.0f),
+                                  .leftMode = (uint8_t)fixture.leftRearWheel.state.mode,
+                                  .rightMode = (uint8_t)fixture.rightRearWheel.state.mode};
     ++wheelPerformanceTraceCount;
     return true;
 }
 
 static bool InitWheelControllers(void)
 {
-    const WheelSpeedBrakeConfig brakeConfig = {
-        .map = &rearWheelBrakeMap,
-        .engageOverspeedCps = 200.0f, .releaseOverspeedCps = 100.0f,
-        .fullDemandOverspeedCps = 800.0f
-    };
-    if (!RobotTestFixture_InitWheelControllers(&fixture))
-        return false;
+    const WheelSpeedBrakeConfig brakeConfig = {.map = &rearWheelBrakeMap,
+                                               .engageOverspeedCps = 200.0f,
+                                               .releaseOverspeedCps = 100.0f,
+                                               .fullDemandOverspeedCps = 800.0f};
+    if (!RobotTestFixture_InitWheelControllers(&fixture)) return false;
     fixture.leftWheelController.pid.kp = fixture.rightWheelController.pid.kp =
         wheelPerformanceRunConfig.wheelKp;
     fixture.leftWheelController.pid.ki = fixture.rightWheelController.pid.ki =
         wheelPerformanceRunConfig.wheelKi;
-    return
-        WheelSpeedController_ConfigureBrake(&fixture.leftWheelController, &brakeConfig) &&
-        WheelSpeedController_ConfigureBrake(&fixture.rightWheelController, &brakeConfig);
+    return WheelSpeedController_ConfigureBrake(&fixture.leftWheelController, &brakeConfig) &&
+           WheelSpeedController_ConfigureBrake(&fixture.rightWheelController, &brakeConfig);
 }
 
 static float EstimateSlowdownDistanceMm(float deceleration)
 {
-    float speed = wheelPerformanceRunConfig.decelerationStartCps *
-        wheelPerformanceMmPerCount;
+    float speed = wheelPerformanceRunConfig.decelerationStartCps * wheelPerformanceMmPerCount;
     return speed * speed / (2.0f * deceleration);
 }
 
 static float EstimateDriveDistanceMm(int direction, float value)
 {
-    if (wheelPerformanceRunConfig.experiment == WHEEL_PERFORMANCE_DECELERATION) {
+    if (wheelPerformanceRunConfig.experiment == WHEEL_PERFORMANCE_DECELERATION)
+    {
         const WheelPerformanceConfig *c = &wheelPerformanceRunConfig;
         float speed = c->decelerationStartCps * wheelPerformanceMmPerCount;
         return speed * speed / (2.0f * c->preparationAccelerationMmps2) +
-            speed * (c->preparationHoldMs / 1000.0f) + EstimateSlowdownDistanceMm(value);
+               speed * (c->preparationHoldMs / 1000.0f) + EstimateSlowdownDistanceMm(value);
     }
-    if (wheelPerformanceRunConfig.experiment == WHEEL_PERFORMANCE_TOP_SPEED) {
+    if (wheelPerformanceRunConfig.experiment == WHEEL_PERFORMANCE_TOP_SPEED)
+    {
         /* Existing steady-speed model, applied for the full drive duration.
          * Startup acceleration is deliberately not subtracted. This is a
          * model estimate, not a bound on an as-yet unmeasured maximum speed.
          * Use the faster wheel so runway planning covers either wheel's travel.
          */
-        float leftSlope = direction > 0 ? leftCalibration.forwardSlope
-                                        : leftCalibration.reverseSlope;
-        float leftOffset = direction > 0 ? leftCalibration.forwardOffset
-                                         : leftCalibration.reverseOffset;
-        float rightSlope = direction > 0 ? rightCalibration.forwardSlope
-                                         : rightCalibration.reverseSlope;
-        float rightOffset = direction > 0 ? rightCalibration.forwardOffset
-                                          : rightCalibration.reverseOffset;
+        float leftSlope =
+            direction > 0 ? leftCalibration.forwardSlope : leftCalibration.reverseSlope;
+        float leftOffset =
+            direction > 0 ? leftCalibration.forwardOffset : leftCalibration.reverseOffset;
+        float rightSlope =
+            direction > 0 ? rightCalibration.forwardSlope : rightCalibration.reverseSlope;
+        float rightOffset =
+            direction > 0 ? rightCalibration.forwardOffset : rightCalibration.reverseOffset;
         float leftCps = fmaxf(0.0f, leftSlope * (value - leftOffset));
         float rightCps = fmaxf(0.0f, rightSlope * (value - rightOffset));
         return fmaxf(leftCps, rightCps) * wheelPerformanceMmPerCount *
-            (wheelPerformanceRunConfig.speedDriveMs / 1000.0f);
+               (wheelPerformanceRunConfig.speedDriveMs / 1000.0f);
     }
 
-    float speedMmps = wheelPerformanceRunConfig.accelerationTargetCps *
-        wheelPerformanceMmPerCount;
+    float speedMmps = wheelPerformanceRunConfig.accelerationTargetCps * wheelPerformanceMmPerCount;
     float rampTimeSec = speedMmps / value;
     float holdTimeSec = DriveDurationMs(value) / 1000.0f - rampTimeSec;
-    return 0.5f * speedMmps * rampTimeSec +
-        speedMmps * fmaxf(0.0f, holdTimeSec);
+    return 0.5f * speedMmps * rampTimeSec + speedMmps * fmaxf(0.0f, holdTimeSec);
 }
 
-static void PrepareTrial(uint32_t trialIndex, int direction, float value,
-                         float estimatedDriveMm)
+static void PrepareTrial(uint32_t trialIndex, int direction, float value, float estimatedDriveMm)
 {
     OLED_Clear();
-    OLED_Printf(0, 0, "Trial %lu/%lu %s", (unsigned long)(trialIndex + 1U),
-        (unsigned long)(2U * wheelPerformanceRunConfig.repetitions * TableCount()),
-        direction > 0 ? "FWD" : "REV");
+    OLED_Printf(0,
+                0,
+                "Trial %lu/%lu %s",
+                (unsigned long)(trialIndex + 1U),
+                (unsigned long)(2U * wheelPerformanceRunConfig.repetitions * TableCount()),
+                direction > 0 ? "FWD" : "REV");
     bool rawPwm = wheelPerformanceRunConfig.experiment == WHEEL_PERFORMANCE_TOP_SPEED;
     bool deceleration = wheelPerformanceRunConfig.experiment == WHEEL_PERFORMANCE_DECELERATION;
-    OLED_Printf(0, 1, rawPwm ? "PWM %.0f%%" :
-        deceleration ? "Decel %.0f mm/s2" : "Accel %.0f mm/s2", value);
+    OLED_Printf(0,
+                1,
+                rawPwm         ? "PWM %.0f%%"
+                : deceleration ? "Decel %.0f mm/s2"
+                               : "Accel %.0f mm/s2",
+                value);
     OLED_Printf(0, 2, "Drive ~%.0f mm", estimatedDriveMm);
-    if (deceleration)
-        OLED_Printf(0, 3, "Slowdown ~%.0f mm", EstimateSlowdownDistanceMm(value));
-    else
-        OLED_Printf(0, 3, "%s", rawPwm ? "Model estimate" : "Ramp + hold estimate");
+    if (deceleration) OLED_Printf(0, 3, "Slowdown ~%.0f mm", EstimateSlowdownDistanceMm(value));
+    else OLED_Printf(0, 3, "%s", rawPwm ? "Model estimate" : "Ramp + hold estimate");
     OLED_Printf(0, 4, "Guard %.0f mm", wheelPerformanceRunConfig.maxDriveDistanceMm);
     OLED_Printf(0, 5, "Plus stopping space");
     if (estimatedDriveMm >= wheelPerformanceRunConfig.maxDriveDistanceMm)
         OLED_Printf(0, 6, "Guard may cut run");
-    OLED_Printf(0, 7, "%s", wheelPerformanceRunConfig.waitBetweenTrials
-        ? "Reposition; SW1" : "Auto start");
+    OLED_Printf(
+        0, 7, "%s", wheelPerformanceRunConfig.waitBetweenTrials ? "Reposition; SW1" : "Auto start");
     OLED_Refresh_Gram();
-    if (wheelPerformanceRunConfig.waitBetweenTrials)
-        SW1_WaitForPressAndRelease();
-    else
-        HAL_Delay(500U);
+    if (wheelPerformanceRunConfig.waitBetweenTrials) SW1_WaitForPressAndRelease();
+    else HAL_Delay(500U);
     /* No controller updates across a repositioning gap; counts reset afterward. */
 }
 
-static bool StopAndRecord(uint32_t trialIndex, uint32_t trialStart,
-                          uint32_t *lastControl, uint32_t *lastLog)
+static bool
+StopAndRecord(uint32_t trialIndex, uint32_t trialStart, uint32_t *lastControl, uint32_t *lastLog)
 {
     BrakeBoth();
     uint32_t stopStart = HAL_GetTick();
     uint32_t stable = 0U;
-    while ((HAL_GetTick() - stopStart) < wheelPerformanceRunConfig.brakeTimeoutMs) {
+    while ((HAL_GetTick() - stopStart) < wheelPerformanceRunConfig.brakeTimeoutMs)
+    {
         uint32_t now = HAL_GetTick();
         uint32_t dtMs = now - *lastControl;
-        if (dtMs < CONTROL_PERIOD_MS)
-            continue;
+        if (dtMs < CONTROL_PERIOD_MS) continue;
         *lastControl = now;
         ObserveWheels(dtMs);
         if (dtMs > MAX_CONTROL_GAP_MS && wheelPerformanceStatus == WHEEL_TEST_RUNNING)
             wheelPerformanceStatus = WHEEL_TEST_TIMING_FAULT;
         bool stationary = fabsf(leftSpeedCps) < WHEEL_STATIONARY_THRESHOLD_CPS &&
-            fabsf(rightSpeedCps) < WHEEL_STATIONARY_THRESHOLD_CPS;
+                          fabsf(rightSpeedCps) < WHEEL_STATIONARY_THRESHOLD_CPS;
         stable = stationary ? stable + 1U : 0U;
-        if ((now - *lastLog) >= LOG_PERIOD_MS || stable >= STATIONARY_SAMPLES) {
+        if ((now - *lastLog) >= LOG_PERIOD_MS || stable >= STATIONARY_SAMPLES)
+        {
             *lastLog = now;
-            RecordSample(now - trialStart, dtMs, trialIndex, WHEEL_TEST_BRAKE,
-                         0.0f, 100.0f, 100.0f);
+            RecordSample(
+                now - trialStart, dtMs, trialIndex, WHEEL_TEST_BRAKE, 0.0f, 100.0f, 100.0f);
         }
-        if (stable >= STATIONARY_SAMPLES) {
+        if (stable >= STATIONARY_SAMPLES)
+        {
             DCMotor_Neutral(&fixture.leftRearWheel);
             DCMotor_Neutral(&fixture.rightRearWheel);
             return true;
@@ -345,7 +349,8 @@ static bool StopAndRecord(uint32_t trialIndex, uint32_t trialStart,
     return false;
 }
 
-typedef struct {
+typedef struct
+{
     float left[SETTLE_WINDOW_SAMPLES];
     float right[SETTLE_WINDOW_SAMPLES];
     uint32_t count;
@@ -357,24 +362,24 @@ static bool PreparationSettled(SpeedSettleWindow *window, int direction)
     window->left[window->next] = direction * leftSpeedCps;
     window->right[window->next] = direction * rightSpeedCps;
     window->next = (window->next + 1U) % SETTLE_WINDOW_SAMPLES;
-    if (window->count < SETTLE_WINDOW_SAMPLES)
-        ++window->count;
-    if (window->count < SETTLE_WINDOW_SAMPLES)
-        return false;
+    if (window->count < SETTLE_WINDOW_SAMPLES) ++window->count;
+    if (window->count < SETTLE_WINDOW_SAMPLES) return false;
 
     float tolerance = 0.05f * wheelPerformanceRunConfig.decelerationStartCps;
     const float *wheels[] = {window->left, window->right};
-    for (uint32_t wheel = 0; wheel < 2U; ++wheel) {
+    for (uint32_t wheel = 0; wheel < 2U; ++wheel)
+    {
         float firstHalf = 0.0f, lastHalf = 0.0f;
-        for (uint32_t i = 0; i < SETTLE_WINDOW_SAMPLES; ++i) {
+        for (uint32_t i = 0; i < SETTLE_WINDOW_SAMPLES; ++i)
+        {
             float speed = wheels[wheel][(window->next + i) % SETTLE_WINDOW_SAMPLES];
             if (i < SETTLE_WINDOW_SAMPLES / 2U) firstHalf += speed;
             else lastHalf += speed;
         }
         firstHalf /= SETTLE_WINDOW_SAMPLES / 2U;
         lastHalf /= SETTLE_WINDOW_SAMPLES / 2U;
-        if (fabsf(0.5f * (firstHalf + lastHalf) -
-                  wheelPerformanceRunConfig.decelerationStartCps) > tolerance ||
+        if (fabsf(0.5f * (firstHalf + lastHalf) - wheelPerformanceRunConfig.decelerationStartCps) >
+                tolerance ||
             fabsf(lastHalf - firstHalf) > tolerance)
             return false;
     }
@@ -392,7 +397,8 @@ static bool RunTrial(int direction, uint32_t repetition, uint32_t tableIndex)
 
     Servo_SetSteering(&fixture.steeringServo, wheelPerformanceRunConfig.steeringRawCommand);
     HAL_Delay(300U);
-    if (!rawPwm && !InitWheelControllers()) {
+    if (!rawPwm && !InitWheelControllers())
+    {
         wheelPerformanceStatus = WHEEL_TEST_INIT_FAILED;
         BrakeBoth();
         return false;
@@ -403,26 +409,30 @@ static bool RunTrial(int direction, uint32_t repetition, uint32_t tableIndex)
     leftSpeedCps = rightSpeedCps = 0.0f;
     leftDistanceMm = rightDistanceMm = leftPathMm = rightPathMm = 0.0f;
     WheelPerformanceTrial *trial = &wheelPerformanceTrials[index];
-    *trial = (WheelPerformanceTrial) {
-        .direction = direction > 0 ? 1U : 2U, .repetition = repetition + 1U,
+    *trial = (WheelPerformanceTrial){
+        .direction = direction > 0 ? 1U : 2U,
+        .repetition = repetition + 1U,
         .pwmPercent = rawPwm ? direction * value : 0.0f,
-        .accelerationMmps2 = rawPwm ? 0.0f : deceleration
-            ? wheelPerformanceRunConfig.preparationAccelerationMmps2 : value,
+        .accelerationMmps2 = rawPwm         ? 0.0f
+                             : deceleration ? wheelPerformanceRunConfig.preparationAccelerationMmps2
+                                            : value,
         .decelerationMmps2 = deceleration ? value : 0.0f,
-        .targetCps = rawPwm ? 0.0f : direction * (deceleration
-            ? wheelPerformanceRunConfig.decelerationStartCps
-            : wheelPerformanceRunConfig.accelerationTargetCps),
+        .targetCps =
+            rawPwm ? 0.0f
+                   : direction * (deceleration ? wheelPerformanceRunConfig.decelerationStartCps
+                                               : wheelPerformanceRunConfig.accelerationTargetCps),
         .estimatedDriveDistanceMm = estimatedDriveMm,
         .estimatedSlowdownDistanceMm = deceleration ? EstimateSlowdownDistanceMm(value) : 0.0f,
-        .firstSample = wheelPerformanceTraceCount, .status = WHEEL_TEST_RUNNING
-    };
+        .firstSample = wheelPerformanceTraceCount,
+        .status = WHEEL_TEST_RUNNING};
     ++wheelPerformanceTrialCount;
 
     uint32_t start = HAL_GetTick();
     uint32_t lastControl = start;
     uint32_t lastLog = start;
     uint32_t driveDuration = DriveDurationMs(rawPwm ? 0.0f : value);
-    if (rawPwm) {
+    if (rawPwm)
+    {
         DCMotor_SetPWM(&fixture.leftRearWheel, direction * value);
         DCMotor_SetPWM(&fixture.rightRearWheel, direction * value);
     }
@@ -431,19 +441,25 @@ static bool RunTrial(int direction, uint32_t repetition, uint32_t tableIndex)
      * New ramp commands are computed after observation/logging, avoiding a
      * one-control-cycle shift between target and measured response.
      */
-    uint32_t intervalPhase = rawPwm ? WHEEL_TEST_DRIVE :
-        deceleration ? WHEEL_TEST_PREP_ACCEL : WHEEL_TEST_RAMP;
+    uint32_t intervalPhase = rawPwm         ? WHEEL_TEST_DRIVE
+                             : deceleration ? WHEEL_TEST_PREP_ACCEL
+                                            : WHEEL_TEST_RAMP;
     uint32_t preparationHoldStart = 0U;
     uint32_t stationaryCount = 0U;
     bool controlledStopped = false;
     SpeedSettleWindow settleWindow = {0};
-    RecordSample(0U, 0U, index, intervalPhase, 0.0f,
-                 rawPwm ? direction * value : 0.0f, rawPwm ? direction * value : 0.0f);
-    while (wheelPerformanceStatus == WHEEL_TEST_RUNNING) {
+    RecordSample(0U,
+                 0U,
+                 index,
+                 intervalPhase,
+                 0.0f,
+                 rawPwm ? direction * value : 0.0f,
+                 rawPwm ? direction * value : 0.0f);
+    while (wheelPerformanceStatus == WHEEL_TEST_RUNNING)
+    {
         uint32_t now = HAL_GetTick();
         uint32_t dtMs = now - lastControl;
-        if (dtMs < CONTROL_PERIOD_MS)
-            continue;
+        if (dtMs < CONTROL_PERIOD_MS) continue;
         lastControl = now;
         ObserveWheels(dtMs);
         float target = rawPwm ? 0.0f : fixture.leftWheelController.targetSpeedCps;
@@ -453,69 +469,87 @@ static bool RunTrial(int direction, uint32_t repetition, uint32_t tableIndex)
             lpwm = fixture.leftRearWheel.state.activeDutyCycle;
         if (fixture.rightRearWheel.state.mode == DCMOTOR_MODE_BRAKE)
             rpwm = fixture.rightRearWheel.state.activeDutyCycle;
-        if (now - lastLog >= DriveLogPeriodMs()) {
+        if (now - lastLog >= DriveLogPeriodMs())
+        {
             lastLog = now;
-            if (!RecordSample(now - start, dtMs, index, intervalPhase, target, lpwm, rpwm))
-                break;
+            if (!RecordSample(now - start, dtMs, index, intervalPhase, target, lpwm, rpwm)) break;
         }
-        if (dtMs > MAX_CONTROL_GAP_MS) {
+        if (dtMs > MAX_CONTROL_GAP_MS)
+        {
             wheelPerformanceStatus = WHEEL_TEST_TIMING_FAULT;
             break;
         }
-        if (SW1_ReadState() == SW1_Enabled) {
+        if (SW1_ReadState() == SW1_Enabled)
+        {
             wheelPerformanceStatus = WHEEL_TEST_BUTTON_ABORT;
             break;
         }
-        if (fmaxf(leftPathMm, rightPathMm) >= wheelPerformanceRunConfig.maxDriveDistanceMm) {
+        if (fmaxf(leftPathMm, rightPathMm) >= wheelPerformanceRunConfig.maxDriveDistanceMm)
+        {
             wheelPerformanceStatus = WHEEL_TEST_DISTANCE_LIMIT;
             break;
         }
         uint32_t elapsed = now - start;
-        if (!deceleration && elapsed >= driveDuration)
-            break;
-        if (deceleration) {
+        if (!deceleration && elapsed >= driveDuration) break;
+        if (deceleration)
+        {
             const WheelPerformanceConfig *c = &wheelPerformanceRunConfig;
             float magnitude = c->decelerationStartCps;
-            if (intervalPhase == WHEEL_TEST_PREP_ACCEL) {
+            if (intervalPhase == WHEEL_TEST_PREP_ACCEL)
+            {
                 magnitude = fminf(c->decelerationStartCps,
-                    c->preparationAccelerationMmps2 * (elapsed / 1000.0f) /
-                    wheelPerformanceMmPerCount);
-                if (magnitude >= c->decelerationStartCps) {
+                                  c->preparationAccelerationMmps2 * (elapsed / 1000.0f) /
+                                      wheelPerformanceMmPerCount);
+                if (magnitude >= c->decelerationStartCps)
+                {
                     intervalPhase = WHEEL_TEST_PREP_HOLD;
                     preparationHoldStart = elapsed;
                 }
-            } else if (intervalPhase == WHEEL_TEST_PREP_HOLD) {
+            }
+            else if (intervalPhase == WHEEL_TEST_PREP_HOLD)
+            {
                 bool settled = PreparationSettled(&settleWindow, direction);
                 uint32_t holdMs = elapsed - preparationHoldStart;
-                if (holdMs >= c->preparationHoldMs && settled) {
+                if (holdMs >= c->preparationHoldMs && settled)
+                {
                     intervalPhase = WHEEL_TEST_DECEL;
                     trial->decelerationStartMs = elapsed;
                     trial->leftDecelerationStartCps = leftSpeedCps;
                     trial->rightDecelerationStartCps = rightSpeedCps;
                     trial->leftDecelerationStartDistanceMm = leftDistanceMm;
                     trial->rightDecelerationStartDistanceMm = rightDistanceMm;
-                } else if (holdMs >= c->preparationTimeoutMs) {
+                }
+                else if (holdMs >= c->preparationTimeoutMs)
+                {
                     wheelPerformanceStatus = WHEEL_TEST_SPEED_NOT_SETTLED;
                     break;
                 }
-            } else if (intervalPhase == WHEEL_TEST_DECEL) {
-                magnitude = fmaxf(0.0f, c->decelerationStartCps -
-                    value * ((elapsed - trial->decelerationStartMs) / 1000.0f) /
-                    wheelPerformanceMmPerCount);
-                if (magnitude == 0.0f) {
+            }
+            else if (intervalPhase == WHEEL_TEST_DECEL)
+            {
+                magnitude = fmaxf(0.0f,
+                                  c->decelerationStartCps -
+                                      value * ((elapsed - trial->decelerationStartMs) / 1000.0f) /
+                                          wheelPerformanceMmPerCount);
+                if (magnitude == 0.0f)
+                {
                     intervalPhase = WHEEL_TEST_ZERO_SETTLE;
                     trial->zeroTargetMs = elapsed;
                 }
-            } else {
+            }
+            else
+            {
                 magnitude = 0.0f;
                 bool stationary = fabsf(leftSpeedCps) < WHEEL_STATIONARY_THRESHOLD_CPS &&
-                    fabsf(rightSpeedCps) < WHEEL_STATIONARY_THRESHOLD_CPS;
+                                  fabsf(rightSpeedCps) < WHEEL_STATIONARY_THRESHOLD_CPS;
                 stationaryCount = stationary ? stationaryCount + 1U : 0U;
-                if (stationaryCount >= STATIONARY_SAMPLES) {
+                if (stationaryCount >= STATIONARY_SAMPLES)
+                {
                     controlledStopped = true;
                     break;
                 }
-                if (elapsed - trial->zeroTargetMs >= c->brakeTimeoutMs) {
+                if (elapsed - trial->zeroTargetMs >= c->brakeTimeoutMs)
+                {
                     wheelPerformanceStatus = WHEEL_TEST_STOP_TIMEOUT;
                     break;
                 }
@@ -527,12 +561,14 @@ static bool RunTrial(int direction, uint32_t repetition, uint32_t tableIndex)
             WheelSpeedController_Update(&fixture.rightWheelController, dtMs / 1000.0f);
             continue;
         }
-        if (!rawPwm) {
+        if (!rawPwm)
+        {
             float magnitude = fminf(wheelPerformanceRunConfig.accelerationTargetCps,
-                value * (elapsed / 1000.0f) / wheelPerformanceMmPerCount);
+                                    value * (elapsed / 1000.0f) / wheelPerformanceMmPerCount);
             target = direction * magnitude;
             intervalPhase = magnitude >= wheelPerformanceRunConfig.accelerationTargetCps
-                ? WHEEL_TEST_HOLD : WHEEL_TEST_RAMP;
+                                ? WHEEL_TEST_HOLD
+                                : WHEEL_TEST_RAMP;
             WheelSpeedController_SetTarget(&fixture.leftWheelController, target);
             WheelSpeedController_SetTarget(&fixture.rightWheelController, target);
             WheelSpeedController_Update(&fixture.leftWheelController, dtMs / 1000.0f);
@@ -544,23 +580,26 @@ static bool RunTrial(int direction, uint32_t repetition, uint32_t tableIndex)
     trial->leftDriveDistanceMm = leftDistanceMm;
     trial->rightDriveDistanceMm = rightDistanceMm;
     bool stopped = controlledStopped;
-    if (controlledStopped) {
+    if (controlledStopped)
+    {
         DCMotor_Neutral(&fixture.leftRearWheel);
         DCMotor_Neutral(&fixture.rightRearWheel);
-    } else {
+    }
+    else
+    {
         stopped = StopAndRecord(index, start, &lastControl, &lastLog);
     }
     trial->leftFinalDistanceMm = leftDistanceMm;
     trial->rightFinalDistanceMm = rightDistanceMm;
     trial->sampleCount = wheelPerformanceTraceCount - trial->firstSample;
-    trial->status = wheelPerformanceStatus == WHEEL_TEST_RUNNING
-        ? WHEEL_TEST_COMPLETE : wheelPerformanceStatus;
+    trial->status =
+        wheelPerformanceStatus == WHEEL_TEST_RUNNING ? WHEEL_TEST_COMPLETE : wheelPerformanceStatus;
     return stopped && wheelPerformanceStatus == WHEEL_TEST_RUNNING;
 }
 
 __attribute__((noinline)) void WheelPerformanceTest_Complete(void)
 {
-    __asm volatile ("" ::: "memory");
+    __asm volatile("" ::: "memory");
 }
 
 void WheelPerformanceTestRun(void)
@@ -573,16 +612,17 @@ void WheelPerformanceTestRun(void)
     ShowMessage("Set config; SW1");
     SW1_WaitForPressAndRelease();
     wheelPerformanceRunConfig = wheelPerformanceConfig;
-    wheelPerformanceMmPerCount = 3.14159265358979323846f *
-        kinematics.rearWheelDiameterMm / kinematics.rearEncoderCountsPerRev;
-    if (!ValidateConfiguration()) {
+    wheelPerformanceMmPerCount = 3.14159265358979323846f * kinematics.rearWheelDiameterMm /
+                                 kinematics.rearEncoderCountsPerRev;
+    if (!ValidateConfiguration())
+    {
         wheelPerformanceStatus = WHEEL_TEST_INVALID_CONFIG;
         ShowMessage("Invalid config");
         WheelPerformanceTest_Complete();
         return;
     }
-    if (!RobotTestFixture_InitRearWheels(&fixture) ||
-        !RobotTestFixture_InitFrontWheels(&fixture)) {
+    if (!RobotTestFixture_InitRearWheels(&fixture) || !RobotTestFixture_InitFrontWheels(&fixture))
+    {
         wheelPerformanceStatus = WHEEL_TEST_INIT_FAILED;
         /* Only touch a peripheral whose fixture initialization has reached it. */
         if (fixture.leftRearWheel.config.pwmHtim) DCMotor_Brake(&fixture.leftRearWheel);
@@ -594,14 +634,15 @@ void WheelPerformanceTestRun(void)
     wheelPerformanceStatus = WHEEL_TEST_RUNNING;
     bool keepRunning = true;
     for (uint32_t repetition = 0; repetition < wheelPerformanceRunConfig.repetitions && keepRunning;
-         ++repetition) {
-        for (int direction = 1; direction >= -1 && keepRunning; direction -= 2) {
+         ++repetition)
+    {
+        for (int direction = 1; direction >= -1 && keepRunning; direction -= 2)
+        {
             for (uint32_t i = 0; i < TableCount() && keepRunning; ++i)
                 keepRunning = RunTrial(direction, repetition, i);
         }
     }
-    if (wheelPerformanceStatus == WHEEL_TEST_RUNNING)
-        wheelPerformanceStatus = WHEEL_TEST_COMPLETE;
+    if (wheelPerformanceStatus == WHEEL_TEST_RUNNING) wheelPerformanceStatus = WHEEL_TEST_COMPLETE;
     OLED_Clear();
     OLED_Printf(0, 0, "Sweep status %lu", (unsigned long)wheelPerformanceStatus);
     OLED_Printf(0, 1, "%lu trials", (unsigned long)wheelPerformanceTrialCount);

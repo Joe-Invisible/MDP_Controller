@@ -10,7 +10,8 @@
 #define WHEEL_PERFORMANCE_TRACE_CAPACITY 3000U
 #define WHEEL_PERFORMANCE_TRIAL_CAPACITY 64U
 
-typedef enum {
+typedef enum
+{
     WHEEL_TEST_NOT_STARTED = 0,
     WHEEL_TEST_RUNNING,
     WHEEL_TEST_COMPLETE,
@@ -25,7 +26,8 @@ typedef enum {
     WHEEL_TEST_SPEED_NOT_SETTLED
 } WheelPerformanceStatus;
 
-typedef enum {
+typedef enum
+{
     WHEEL_TEST_DRIVE = 1,
     WHEEL_TEST_RAMP,
     WHEEL_TEST_HOLD,
@@ -40,7 +42,8 @@ typedef enum {
  * The entire configuration is frozen for the sweep and exported with the data.
  * Battery voltage is a manually entered measurement; there is no battery ADC.
  */
-typedef struct {
+typedef struct
+{
     uint32_t experiment;
     uint32_t repetitions;
     bool waitBetweenTrials;
@@ -65,7 +68,8 @@ typedef struct {
  * Motor modes distinguish positive braking PWM from forward propulsion.
  * timeMs is relative to this trial, not the whole sweep (repositioning excluded).
  */
-typedef struct {
+typedef struct
+{
     uint32_t timeMs;
     uint16_t dtMs;
     uint8_t trial;
@@ -79,7 +83,8 @@ typedef struct {
     uint8_t rightMode;
 } WheelPerformanceSample;
 
-typedef struct {
+typedef struct
+{
     uint32_t direction; /* 1 forward, 2 reverse */
     uint32_t repetition;
     float pwmPercent;
