@@ -26,17 +26,15 @@
 
 #include <stdint.h>
 
-
-#define STEERING_GEOMETRY_ITER_POINT_COUNT          (13U)
-#define STEERING_GEOMETRY_ITER_SWEEP_COUNT          (2U)
-#define STEERING_GEOMETRY_ITER_MAX_ROUNDS           (3U)
+#define STEERING_GEOMETRY_ITER_POINT_COUNT (13U)
+#define STEERING_GEOMETRY_ITER_SWEEP_COUNT (2U)
+#define STEERING_GEOMETRY_ITER_MAX_ROUNDS (3U)
 
 /*
  * Five points are unresolved in the Round-2 seed dataset.
  * At most five runs can occur per continuation round.
  */
-#define STEERING_GEOMETRY_ITER_MAX_RESULT_COUNT     (15U)
-
+#define STEERING_GEOMETRY_ITER_MAX_RESULT_COUNT (15U)
 
 typedef enum
 {
@@ -44,7 +42,6 @@ typedef enum
     STEERING_GEOMETRY_ITER_DECREASING = -1
 
 } SteeringGeometryIterationSweepDirection;
-
 
 typedef enum
 {
@@ -62,7 +59,6 @@ typedef enum
 
 } SteeringGeometryIterationUpdateMethod;
 
-
 typedef struct
 {
     /*
@@ -71,7 +67,6 @@ typedef struct
     float steeringCommand;
     int8_t sweepDirection;
     uint8_t commandIndex;
-
 
     /*
      * Two most recent fixed-point observations.
@@ -88,7 +83,6 @@ typedef struct
     float currentReferenceCurvaturePerMm;
     float currentMeasuredCurvaturePerMm;
     float currentErrorCurvaturePerMm;
-
 
     /*
      * Persistent root bracket.
@@ -112,12 +106,10 @@ typedef struct
 
     uint8_t hasBracket;
 
-
     /*
      * Reference curvature to use for the next autonomous run.
      */
     float nextReferenceCurvaturePerMm;
-
 
     /*
      * Candidate final calibration quantity.
@@ -128,7 +120,6 @@ typedef struct
     float finalCurvaturePerMm;
     float finalEffectiveAngleRad;
 
-
     float tolerancePerMm;
 
     uint8_t converged;
@@ -137,7 +128,6 @@ typedef struct
     uint8_t unbracketedAttemptCount;
 
 } SteeringGeometryIterationPointState;
-
 
 typedef struct
 {
@@ -150,12 +140,10 @@ typedef struct
     uint8_t roundIndex;
     uint8_t valid;
 
-
     /*
      * Fixed-point reference used for this autonomous run.
      */
     float referenceCurvaturePerMm;
-
 
     /*
      * Autonomous motion result captured before the braking tail.
@@ -171,7 +159,6 @@ typedef struct
     float wheelSyncErrorMm;
     float maxAbsWheelSyncErrorMm;
 
-
     /*
      * Primary gyro geometry.
      */
@@ -179,14 +166,12 @@ typedef struct
     float measuredCurvaturePerMm;
     float effectiveAngleGyroRad;
 
-
     /*
      * Rear-wheel differential diagnostic.
      */
     float yawEncoderDeg;
     float curvatureEncoderPerMm;
     float effectiveAngleEncoderRad;
-
 
     /*
      * Fixed-point convergence information.
@@ -199,13 +184,11 @@ typedef struct
     uint8_t converged;
     uint8_t updateMethod;
 
-
     /*
      * Final stationary state after braking.
      */
     float finalDistanceMm;
     float finalYawDeg;
-
 
     /*
      * Timing and failure diagnostics.
@@ -221,7 +204,6 @@ typedef struct
 
 } SteeringGeometryIterationResult;
 
-
 /*
  * [0] = increasing-command branch
  * [1] = decreasing-command branch
@@ -234,10 +216,8 @@ typedef struct
  *     12 -> +12
  */
 extern volatile SteeringGeometryIterationPointState
-    g_steeringGeometryIterationPointState[
-        STEERING_GEOMETRY_ITER_SWEEP_COUNT]
-        [STEERING_GEOMETRY_ITER_POINT_COUNT];
-
+    g_steeringGeometryIterationPointState[STEERING_GEOMETRY_ITER_SWEEP_COUNT]
+                                         [STEERING_GEOMETRY_ITER_POINT_COUNT];
 
 /*
  * Candidate replacement calibration tables.
@@ -245,52 +225,35 @@ extern volatile SteeringGeometryIterationPointState
  * A table entry is production-usable only if the corresponding
  * g_steeringGeometryIterationConverged[][] entry is nonzero.
  */
-extern volatile float
-    g_steeringGeometryIterationCurvaturePerMm[
-        STEERING_GEOMETRY_ITER_SWEEP_COUNT]
-        [STEERING_GEOMETRY_ITER_POINT_COUNT];
+extern volatile float g_steeringGeometryIterationCurvaturePerMm[STEERING_GEOMETRY_ITER_SWEEP_COUNT]
+                                                               [STEERING_GEOMETRY_ITER_POINT_COUNT];
 
-extern volatile float
-    g_steeringGeometryIterationAngleRad[
-        STEERING_GEOMETRY_ITER_SWEEP_COUNT]
-        [STEERING_GEOMETRY_ITER_POINT_COUNT];
+extern volatile float g_steeringGeometryIterationAngleRad[STEERING_GEOMETRY_ITER_SWEEP_COUNT]
+                                                         [STEERING_GEOMETRY_ITER_POINT_COUNT];
 
-extern volatile uint8_t
-    g_steeringGeometryIterationConverged[
-        STEERING_GEOMETRY_ITER_SWEEP_COUNT]
-        [STEERING_GEOMETRY_ITER_POINT_COUNT];
+extern volatile uint8_t g_steeringGeometryIterationConverged[STEERING_GEOMETRY_ITER_SWEEP_COUNT]
+                                                            [STEERING_GEOMETRY_ITER_POINT_COUNT];
 
-extern volatile uint8_t
-    g_steeringGeometryIterationCount[
-        STEERING_GEOMETRY_ITER_SWEEP_COUNT]
-        [STEERING_GEOMETRY_ITER_POINT_COUNT];
-
+extern volatile uint8_t g_steeringGeometryIterationCount[STEERING_GEOMETRY_ITER_SWEEP_COUNT]
+                                                        [STEERING_GEOMETRY_ITER_POINT_COUNT];
 
 /*
  * Chronological continuation-run records.
  */
 extern volatile SteeringGeometryIterationResult
-    g_steeringGeometryIterationResults[
-        STEERING_GEOMETRY_ITER_MAX_RESULT_COUNT];
+    g_steeringGeometryIterationResults[STEERING_GEOMETRY_ITER_MAX_RESULT_COUNT];
 
-extern volatile uint32_t
-    g_steeringGeometryIterationResultCount;
+extern volatile uint32_t g_steeringGeometryIterationResultCount;
 
-extern volatile uint32_t
-    g_steeringGeometryIterationUnresolvedCount;
+extern volatile uint32_t g_steeringGeometryIterationUnresolvedCount;
 
-extern volatile uint32_t
-    g_steeringGeometryIterationCompletedRounds;
-
+extern volatile uint32_t g_steeringGeometryIterationCompletedRounds;
 
 /*
  * Human-readable configuration string for debugger export.
  */
-extern volatile char
-    g_steeringGeometryIterationInfo[];
-
+extern volatile char g_steeringGeometryIterationInfo[];
 
 void SteeringGeometryCalibrationIterationTestRun(void);
-
 
 #endif /* INC_STEERINGGEOMETRYCALIBRATIONITERATIONTEST_H_ */
