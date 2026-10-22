@@ -28,7 +28,6 @@ typedef struct
 
 } PIDController;
 
-
 /**
  * @brief Initialise a PID controller.
  *
@@ -42,13 +41,7 @@ typedef struct
  * @return true on success, false if parameters are invalid.
  */
 bool PIDController_Init(
-        PIDController *controller,
-        float kp,
-        float ki,
-        float kd,
-        float outputMin,
-        float outputMax);
-
+    PIDController *controller, float kp, float ki, float kd, float outputMin, float outputMax);
 
 /**
  * @brief Update the PID controller.
@@ -59,11 +52,7 @@ bool PIDController_Init(
  *
  * @return Controller output.
  */
-float PIDController_Update(
-        PIDController *controller,
-        float error,
-        float dt);
-
+float PIDController_Update(PIDController *controller, float error, float dt);
 
 /**
  * @brief Reset accumulated controller state.
