@@ -94,22 +94,16 @@ typedef struct SteeringGeometryCalibrationResult
 
 } SteeringGeometryCalibrationResult;
 
-
 /*
  * Five focused commands, three repeats each.
  */
 #define STEERING_GEOMETRY_CAL_RESULT_COUNT 15U
 
-
 extern volatile SteeringGeometryCalibrationResult
-    g_steeringGeometryCalibrationResults[
-        STEERING_GEOMETRY_CAL_RESULT_COUNT];
+    g_steeringGeometryCalibrationResults[STEERING_GEOMETRY_CAL_RESULT_COUNT];
 
-extern volatile uint32_t
-    g_steeringGeometryCalibrationResultCount;
-
+extern volatile uint32_t g_steeringGeometryCalibrationResultCount;
 
 void SteeringGeometryCalibrationTestRun(void);
-
 
 #endif /* INC_STEERINGGEOMETRYCALIBRATIONTEST_H_ */

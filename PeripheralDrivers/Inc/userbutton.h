@@ -16,7 +16,6 @@ typedef enum SW1_State_t
     SW1_Enabled = GPIO_PIN_RESET,
 } SW1_State_t;
 
-
 /**
  * @brief Read the instantaneous GPIO state of SW1.
  *
@@ -25,25 +24,21 @@ typedef enum SW1_State_t
  */
 SW1_State_t SW1_ReadState(void);
 
-
 /**
  * @brief Block until SW1 has been stably pressed.
  */
 void SW1_WaitForPress(void);
-
 
 /**
  * @brief Block until SW1 has been stably released.
  */
 void SW1_WaitForRelease(void);
 
-
 /**
  * @brief Block for one complete debounced button action:
  *        press followed by release.
  */
 void SW1_WaitForPressAndRelease(void);
-
 
 /**
  * @deprecated
@@ -57,6 +52,5 @@ void SW1_WaitForPressAndRelease(void);
  * press has been detected.
  */
 void SW1_WhileNotPressed(void);
-
 
 #endif /* INC_USERBUTTON_H_ */
