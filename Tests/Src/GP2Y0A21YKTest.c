@@ -5,7 +5,6 @@
  *      Author: Joe
  */
 
-
 /*
  * GP2Y0A21YKTest.c
  *
@@ -21,7 +20,7 @@
 
 #include <stdint.h>
 
-#define SIDE_IR_TEST_PERIOD_MS    50U
+#define SIDE_IR_TEST_PERIOD_MS 50U
 
 void GP2Y0A21YKTestRun(void)
 {
@@ -38,16 +37,10 @@ void GP2Y0A21YKTestRun(void)
     leftStatus = GP2Y0A21YK_Init(&leftSensor, &sideIRLeftConfig);
     rightStatus = GP2Y0A21YK_Init(&rightSensor, &sideIRRightConfig);
 
-    if ((leftStatus != GP2Y0A21YK_OK) ||
-        (rightStatus != GP2Y0A21YK_OK))
+    if ((leftStatus != GP2Y0A21YK_OK) || (rightStatus != GP2Y0A21YK_OK))
     {
         OLED_Printf(0, 0, "Side IR init fail");
-        OLED_Printf(
-            0,
-            1,
-            "L:%u R:%u",
-            (unsigned int)leftStatus,
-            (unsigned int)rightStatus);
+        OLED_Printf(0, 1, "L:%u R:%u", (unsigned int)leftStatus, (unsigned int)rightStatus);
         OLED_Refresh_Gram();
         return;
     }
@@ -61,38 +54,28 @@ void GP2Y0A21YKTestRun(void)
 
         if (leftStatus == GP2Y0A21YK_OK)
         {
-            OLED_Printf(
-                0,
-                1,
-                "L %4u  %.3fV ",
-                (unsigned int)leftMeasurement.rawAdc,
-                leftMeasurement.voltageV);
+            OLED_Printf(0,
+                        1,
+                        "L %4u  %.3fV ",
+                        (unsigned int)leftMeasurement.rawAdc,
+                        leftMeasurement.voltageV);
         }
         else
         {
-            OLED_Printf(
-                0,
-                1,
-                "L error %u     ",
-                (unsigned int)leftStatus);
+            OLED_Printf(0, 1, "L error %u     ", (unsigned int)leftStatus);
         }
 
         if (rightStatus == GP2Y0A21YK_OK)
         {
-            OLED_Printf(
-                0,
-                2,
-                "R %4u  %.3fV ",
-                (unsigned int)rightMeasurement.rawAdc,
-                rightMeasurement.voltageV);
+            OLED_Printf(0,
+                        2,
+                        "R %4u  %.3fV ",
+                        (unsigned int)rightMeasurement.rawAdc,
+                        rightMeasurement.voltageV);
         }
         else
         {
-            OLED_Printf(
-                0,
-                2,
-                "R error %u     ",
-                (unsigned int)rightStatus);
+            OLED_Printf(0, 2, "R error %u     ", (unsigned int)rightStatus);
         }
 
         OLED_Refresh_Gram();

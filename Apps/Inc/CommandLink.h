@@ -42,7 +42,8 @@ bool CommandLink_Send(const char *text);
 #define COMMANDLINK_DIAGNOSTICS 0
 #endif
 #if COMMANDLINK_DIAGNOSTICS
-typedef struct {
+typedef struct
+{
     uint32_t sends;
     uint32_t failures;
     uint32_t lastDurationMs;

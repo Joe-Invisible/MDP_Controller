@@ -14,10 +14,11 @@
 #include <stdint.h>
 
 #define MOTION_DIAGNOSTICS_REPLY_SIZE 384U
-typedef struct {
+typedef struct
+{
     bool valid, numbered;
     unsigned seq, step;
-    const char *command; /* Static string, e.g. "F" or "BR". */
+    const char *command;      /* Static string, e.g. "F" or "BR". */
     const char *event, *mode; /* Static strings only. */
     float parameter, targetMm, travelledMm, leftMm, rightMm;
     float leftCps, rightCps, steeringCommand, yawDeg;
