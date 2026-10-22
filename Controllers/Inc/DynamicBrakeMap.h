@@ -49,10 +49,7 @@ typedef struct
 
 } DynamicBrakeMap;
 
-
-bool DynamicBrakeMap_ValidateMap(
-        const DynamicBrakeMap *map);
-
+bool DynamicBrakeMap_ValidateMap(const DynamicBrakeMap *map);
 
 /*
  * Returns physical brake PWM percentage [0, 100].
@@ -63,9 +60,6 @@ bool DynamicBrakeMap_ValidateMap(
  * Speeds outside the calibrated range are clamped to the
  * nearest calibrated speed rather than extrapolated.
  */
-float DynamicBrakeMap_GetPWM(
-        const DynamicBrakeMap *map,
-        float brakeDemand,
-        float speedCps);
+float DynamicBrakeMap_GetPWM(const DynamicBrakeMap *map, float brakeDemand, float speedCps);
 
 #endif /* INC_DYNAMICBRAKEMAP_H_ */

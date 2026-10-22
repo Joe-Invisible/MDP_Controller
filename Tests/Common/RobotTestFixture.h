@@ -13,7 +13,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-
 #include "rwdriver.h"
 #include "icm20948.h"
 
@@ -28,42 +27,41 @@
 #include "MotionController.h"
 #include "MotionControllerConfig.h"
 
-typedef struct RobotTestFixture {
-	DCMotor leftRearWheel;
-	DCMotor rightRearWheel;
+typedef struct RobotTestFixture
+{
+    DCMotor leftRearWheel;
+    DCMotor rightRearWheel;
 
-	Servo steeringServo;
+    Servo steeringServo;
 
-	WheelSpeedController leftWheelController;
-	WheelSpeedController rightWheelController;
+    WheelSpeedController leftWheelController;
+    WheelSpeedController rightWheelController;
 
-	SteeringController steeringController;
+    SteeringController steeringController;
 
-	MotionController motionController;
+    MotionController motionController;
 
-	ICM20948 imu;
+    ICM20948 imu;
 } RobotTestFixture;
 
-bool RobotTestFixture_InitIMU(
-	RobotTestFixture *fixture);
+bool RobotTestFixture_InitIMU(RobotTestFixture *fixture);
 
-bool RobotTestFixture_InitRearWheels(
-    RobotTestFixture *fixture);
+bool RobotTestFixture_InitRearWheels(RobotTestFixture *fixture);
 
-bool RobotTestFixture_InitFrontWheels(
-	RobotTestFixture *fixture);
+bool RobotTestFixture_InitFrontWheels(RobotTestFixture *fixture);
 
-bool RobotTestFixture_InitWheelControllers(
-    RobotTestFixture *fixture);
+bool RobotTestFixture_InitWheelControllers(RobotTestFixture *fixture);
 
-bool RobotTestFixture_InitSteeringController(
-	RobotTestFixture *fixture);
+bool RobotTestFixture_InitSteeringController(RobotTestFixture *fixture);
 
-bool RobotTestFixture_InitMotionController(
-	RobotTestFixture *fixture,
-	float headingKp, float headingKi, float headingKd,
-	float maxHeadingSteeringAngleRad,
-	float wheelSyncKpCpsPerMm, float maxWheelSyncCorrectionCps,
-	float motionAccelerationMmps2, float motionDecelerationMmps2);
+bool RobotTestFixture_InitMotionController(RobotTestFixture *fixture,
+                                           float headingKp,
+                                           float headingKi,
+                                           float headingKd,
+                                           float maxHeadingSteeringAngleRad,
+                                           float wheelSyncKpCpsPerMm,
+                                           float maxWheelSyncCorrectionCps,
+                                           float motionAccelerationMmps2,
+                                           float motionDecelerationMmps2);
 
 #endif /* COMMON_ROBOTTESTFIXTURE_H_ */

@@ -28,47 +28,47 @@
 
 typedef enum
 {
-	/**
+    /**
 	 * No motion command is being executed;
 	 * lower-level motion control inactive.
 	 */
-	MOTIONCONTROLLER_IDLE = 0,
-	/**
+    MOTIONCONTROLLER_IDLE = 0,
+    /**
 	 * Executing straight motion command
 	 */
-	MOTIONCONTROLLER_STRAIGHT,
-	/**
+    MOTIONCONTROLLER_STRAIGHT,
+    /**
 	 * Executing curved motion command
 	 */
-	MOTIONCONTROLLER_ARC,
-	/**
+    MOTIONCONTROLLER_ARC,
+    /**
 	 * Executing brake command
 	 * MotionController will actively command
 	 * the robot to attain zero-velocity.
 	 */
-	MOTIONCONTROLLER_BRAKING,
+    MOTIONCONTROLLER_BRAKING,
 } MotionControllerMode;
 
 typedef struct
 {
-	/*
+    /*
 	 * Controlled hardware / lower-level controllers
 	 */
-	WheelSpeedController *leftWheel;
-	WheelSpeedController *rightWheel;
+    WheelSpeedController *leftWheel;
+    WheelSpeedController *rightWheel;
 
-	SteeringController *steering;
+    SteeringController *steering;
 
-	ICM20948 *imu;
+    ICM20948 *imu;
 
-	const RobotKinematics *kinematics;
+    const RobotKinematics *kinematics;
 
-	/*
+    /*
 	 * Straight-line heading controller
 	 */
-	PIDController headingPID;
+    PIDController headingPID;
 
-	/*
+    /*
 	 * Rear-wheel synchronization controller.
 	 *
 	 * Error convention:
@@ -87,26 +87,26 @@ typedef struct
 	 * this difference should be derived from the robot
 	 * model.
 	 */
-	float wheelSyncKpCpsPerMm;
-	float maxWheelSyncCorrectionCps;
+    float wheelSyncKpCpsPerMm;
+    float maxWheelSyncCorrectionCps;
 
-	float desiredWheelTravelDifferenceMm;
-	float wheelSyncErrorMm;
-	float wheelSyncCorrectionCps;
+    float desiredWheelTravelDifferenceMm;
+    float wheelSyncErrorMm;
+    float wheelSyncCorrectionCps;
 
-	MotionControllerMode mode;
+    MotionControllerMode mode;
 
-	/*
+    /*
 	 * Current motion command
 	 */
-	int8_t motionDirection;
+    int8_t motionDirection;
 
-	float maxSpeedCps;		/* unsigned requested cruise speed magnitude */
-	float targetSpeedCps;	/* signed current profiled reference */
+    float maxSpeedCps;    /* unsigned requested cruise speed magnitude */
+    float targetSpeedCps; /* signed current profiled reference */
 
-	float targetDistanceMm;
+    float targetDistanceMm;
 
-	/*
+    /*
 	 * Geometric path command.
 	 *
 	 * Straight:
@@ -117,50 +117,48 @@ typedef struct
 	 *     curvature = 1 / radius
 	 *     steering  = atan(L * curvature)
 	 */
-	float targetCurvaturePerMm;
-	float targetSteeringAngleRad;
+    float targetCurvaturePerMm;
+    float targetSteeringAngleRad;
 
-	MotionProfile motionProfile;
+    MotionProfile motionProfile;
 
-	/*
+    /*
 	 * Relative heading since motion began.
 	 */
-	float yawDeg;
+    float yawDeg;
 
-	/*
+    /*
 	 * Encoder odometry since motion began.
 	 */
-	int16_t previousLeftEncoderCount;
-	int16_t previousRightEncoderCount;
+    int16_t previousLeftEncoderCount;
+    int16_t previousRightEncoderCount;
 
-	float leftTravelMm;
-	float rightTravelMm;
-	float travelledDistanceMm;
+    float leftTravelMm;
+    float rightTravelMm;
+    float travelledDistanceMm;
 
-	/*
+    /*
 	 * Used to reject a single noisy near-zero speed sample
 	 * when deciding that the robot has stopped.
 	 */
-	uint8_t stationarySamples;
+    uint8_t stationarySamples;
 
 } MotionController;
 
-
-bool MotionController_Init(
-    MotionController *controller,
-    WheelSpeedController *leftWheel,
-    WheelSpeedController *rightWheel,
-    SteeringController *steering,
-    ICM20948 *imu,
-    const RobotKinematics *kinematics,
-    float headingKp,
-    float headingKi,
-    float headingKd,
-    float maxHeadingSteeringAngleRad,
-    float wheelSyncKpCpsPerMm,
-    float maxWheelSyncCorrectionCps,
-	float motionAccelerationMmps2,
-	float motionDecelerationMmps2);
+bool MotionController_Init(MotionController *controller,
+                           WheelSpeedController *leftWheel,
+                           WheelSpeedController *rightWheel,
+                           SteeringController *steering,
+                           ICM20948 *imu,
+                           const RobotKinematics *kinematics,
+                           float headingKp,
+                           float headingKi,
+                           float headingKd,
+                           float maxHeadingSteeringAngleRad,
+                           float wheelSyncKpCpsPerMm,
+                           float maxWheelSyncCorrectionCps,
+                           float motionAccelerationMmps2,
+                           float motionDecelerationMmps2);
 
 /**
  * Straight line motion.
@@ -173,10 +171,7 @@ bool MotionController_Init(
  * 		not be attained, pertaining to the configured motion profile
  * 		and specified distance.
  */
-bool MotionController_MoveStraight(
-	MotionController *controller,
-	float distanceMm,
-	float speedCps);
+bool MotionController_MoveStraight(MotionController *controller, float distanceMm, float speedCps);
 
 /**
  * Constant-curvature arc motion.
@@ -193,37 +188,31 @@ bool MotionController_MoveStraight(
  * speedCps:
  *     Unsigned centre-speed magnitude.
  */
-bool MotionController_MoveArc(
-    MotionController *controller,
-    float distanceMm,
-    float radiusMm,
-    float speedCps);
+bool MotionController_MoveArc(MotionController *controller,
+                              float distanceMm,
+                              float radiusMm,
+                              float speedCps);
 
 /**
  * Full brake. Unfinished motion will be
  * aborted.
  */
-bool MotionController_Brake(
-	MotionController *controller);
+bool MotionController_Brake(MotionController *controller);
 
 /**
  * Steps through control laws
  */
-bool MotionController_Update(
-	MotionController *controller,
-	float dt);
+bool MotionController_Update(MotionController *controller, float dt);
 
 /**
  * Stops executing control laws. If called while
  * in motion, this will cause the robot to coast.
  */
-void MotionController_Stop(
-	MotionController *controller);
+void MotionController_Stop(MotionController *controller);
 
 /**
  * Returns whether a motion is being executed.
  */
-bool MotionController_IsBusy(
-	const MotionController *controller);
+bool MotionController_IsBusy(const MotionController *controller);
 
 #endif /* INC_MOTIONCONTROLLER_H_ */
