@@ -11,9 +11,9 @@
  * tens of bytes. The consumer polls at 100 Hz; 256 buffers normal
  * batches/status requests, not a sustained full-rate stream.
  */
-#define COMMANDLINK_BUFFER_BYTES	256
+#define COMMANDLINK_BUFFER_BYTES 256
 
-#define COMMANDLINK_TX_TIMEOUT_MS	20U
+#define COMMANDLINK_TX_TIMEOUT_MS 20U
 
 static UART_HandleTypeDef *link_uart;
 static StreamBufferHandle_t link_stream;
@@ -24,41 +24,40 @@ static volatile uint32_t link_dropCount;
 volatile CommandLinkDiagnostics CommandLink_Diagnostics;
 #endif
 
-bool CommandLink_Init(UART_HandleTypeDef *huart) {
-	if (huart == NULL)
-		return false;
+bool CommandLink_Init(UART_HandleTypeDef *huart)
+{
+    if (huart == NULL) return false;
 
-	/* Trigger level 1: the consumer wakes on every byte. */
-	link_stream = xStreamBufferCreate(COMMANDLINK_BUFFER_BYTES, 1);
-	if (link_stream == NULL)
-		return false;
+    /* Trigger level 1: the consumer wakes on every byte. */
+    link_stream = xStreamBufferCreate(COMMANDLINK_BUFFER_BYTES, 1);
+    if (link_stream == NULL) return false;
 
-	link_uart = huart;
+    link_uart = huart;
 
-	if (HAL_UART_Receive_IT(link_uart, &link_rxByte, 1) != HAL_OK) {
-		vStreamBufferDelete(link_stream);
-		link_stream = NULL;
-		link_uart = NULL;
-		return false;
-	}
+    if (HAL_UART_Receive_IT(link_uart, &link_rxByte, 1) != HAL_OK)
+    {
+        vStreamBufferDelete(link_stream);
+        link_stream = NULL;
+        link_uart = NULL;
+        return false;
+    }
 
-	return true;
+    return true;
 }
 
-size_t CommandLink_ReadBytes(uint8_t *buf, size_t maxLen, uint32_t timeoutTicks) {
-	if (link_stream == NULL || buf == NULL || maxLen == 0)
-		return 0;
+size_t CommandLink_ReadBytes(uint8_t *buf, size_t maxLen, uint32_t timeoutTicks)
+{
+    if (link_stream == NULL || buf == NULL || maxLen == 0) return 0;
 
-	return xStreamBufferReceive(link_stream, buf, maxLen, timeoutTicks);
+    return xStreamBufferReceive(link_stream, buf, maxLen, timeoutTicks);
 }
 
-bool CommandLink_Send(const char *text) {
-	if (link_uart == NULL || text == NULL)
-		return false;
+bool CommandLink_Send(const char *text)
+{
+    if (link_uart == NULL || text == NULL) return false;
 
-	size_t len = strlen(text);
-	if (len == 0)
-		return true;
+    size_t len = strlen(text);
+    if (len == 0) return true;
 
     /* MotionTask is the only transmitter. This remains a bounded blocking send.
      * Measure query traffic during motion before considering asynchronous TX.
@@ -66,51 +65,50 @@ bool CommandLink_Send(const char *text) {
 #if COMMANDLINK_DIAGNOSTICS
     uint32_t startedMs = HAL_GetTick();
 #endif
-    HAL_StatusTypeDef result = HAL_UART_Transmit(link_uart, (const uint8_t *)text,
-            (uint16_t)len, COMMANDLINK_TX_TIMEOUT_MS);
+    HAL_StatusTypeDef result = HAL_UART_Transmit(
+        link_uart, (const uint8_t *)text, (uint16_t)len, COMMANDLINK_TX_TIMEOUT_MS);
 #if COMMANDLINK_DIAGNOSTICS
     uint32_t elapsedMs = HAL_GetTick() - startedMs;
     CommandLink_Diagnostics.sends++;
     CommandLink_Diagnostics.lastDurationMs = elapsedMs;
     if (elapsedMs > CommandLink_Diagnostics.maxDurationMs)
         CommandLink_Diagnostics.maxDurationMs = elapsedMs;
-    if (result != HAL_OK)
-        CommandLink_Diagnostics.failures++;
+    if (result != HAL_OK) CommandLink_Diagnostics.failures++;
 #endif
     return result == HAL_OK;
 }
 
-void CommandLink_IsrRxComplete(UART_HandleTypeDef *huart) {
-	if (huart != link_uart || link_stream == NULL)
-		return;
+void CommandLink_IsrRxComplete(UART_HandleTypeDef *huart)
+{
+    if (huart != link_uart || link_stream == NULL) return;
 
-	BaseType_t woken = pdFALSE;
-	if (xStreamBufferSendFromISR(link_stream, &link_rxByte, 1, &woken) != 1)
-		link_dropCount++;
+    BaseType_t woken = pdFALSE;
+    if (xStreamBufferSendFromISR(link_stream, &link_rxByte, 1, &woken) != 1) link_dropCount++;
 
-	/*
+    /*
 	 * Re-arm before yielding: the shift register only buffers one
 	 * byte, so reception must be pending again as soon as possible.
 	 */
-	HAL_UART_Receive_IT(link_uart, &link_rxByte, 1);
+    HAL_UART_Receive_IT(link_uart, &link_rxByte, 1);
 
-	portYIELD_FROM_ISR(woken);
+    portYIELD_FROM_ISR(woken);
 }
 
-void CommandLink_IsrError(UART_HandleTypeDef *huart) {
-	if (huart != link_uart)
-		return;
+void CommandLink_IsrError(UART_HandleTypeDef *huart)
+{
+    if (huart != link_uart) return;
 
-	/*
+    /*
 	 * An overrun (or noise/framing error) aborts interrupt reception:
 	 * without this re-arm the port stays silent forever. The byte in
 	 * flight is lost either way; MotionTask resynchronises on the
 	 * next '\n'.
 	 */
-	link_dropCount++;
-	HAL_UART_Receive_IT(link_uart, &link_rxByte, 1);
+    link_dropCount++;
+    HAL_UART_Receive_IT(link_uart, &link_rxByte, 1);
 }
 
-uint32_t CommandLink_GetDropCount(void) {
-	return link_dropCount;
+uint32_t CommandLink_GetDropCount(void)
+{
+    return link_dropCount;
 }

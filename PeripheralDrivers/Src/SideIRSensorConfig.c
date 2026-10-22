@@ -9,9 +9,9 @@
 
 #include "adc.h"
 
-#define SIDE_IR_ADC_REFERENCE_V       3.3f
-#define SIDE_IR_ADC_TIMEOUT_MS        2U
-#define SIDE_IR_ADC_SAMPLING_TIME     ADC_SAMPLETIME_144CYCLES
+#define SIDE_IR_ADC_REFERENCE_V 3.3f
+#define SIDE_IR_ADC_TIMEOUT_MS 2U
+#define SIDE_IR_ADC_SAMPLING_TIME ADC_SAMPLETIME_144CYCLES
 
 /* H1 pin 8: PC1 / ADC1_IN11. */
 const GP2Y0A21YK_Config sideIRLeftConfig = {

@@ -8,16 +8,12 @@
 #include "userbutton.h"
 #include "gpio.h"
 
-
-#define SW1_DEBOUNCE_MS    30U
-
+#define SW1_DEBOUNCE_MS 30U
 
 SW1_State_t SW1_ReadState(void)
 {
-    return (SW1_State_t)
-        HAL_GPIO_ReadPin(USERBTN_GPIO_Port, USERBTN_Pin);
+    return (SW1_State_t)HAL_GPIO_ReadPin(USERBTN_GPIO_Port, USERBTN_Pin);
 }
-
 
 void SW1_WaitForPress(void)
 {
@@ -45,7 +41,6 @@ void SW1_WaitForPress(void)
     }
 }
 
-
 void SW1_WaitForRelease(void)
 {
     while (1)
@@ -69,13 +64,11 @@ void SW1_WaitForRelease(void)
     }
 }
 
-
 void SW1_WaitForPressAndRelease(void)
 {
     SW1_WaitForPress();
     SW1_WaitForRelease();
 }
-
 
 void SW1_WhileNotPressed(void)
 {

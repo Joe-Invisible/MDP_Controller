@@ -13,8 +13,8 @@
 
 #include <stdbool.h>
 
-
-typedef struct MotionProfile {
+typedef struct MotionProfile
+{
     /*
      * Profile limits
      */
@@ -43,21 +43,17 @@ typedef struct MotionProfile {
  * 		accelerationMmps2 and decelerationMmps2
  * 		must be positive magnitudes.
  */
-bool MotionProfile_Init(
-    MotionProfile *profile,
-    float accelerationMmps2,
-    float decelerationMmps2,
-	float completionToleranceMm);
+bool MotionProfile_Init(MotionProfile *profile,
+                        float accelerationMmps2,
+                        float decelerationMmps2,
+                        float completionToleranceMm);
 
 /**
  * @brief Starts a rest-to-rest motion profile.
  * 		distanceMm and maxSpeedMmps must be
  * 		positive magnitudes.
  */
-bool MotionProfile_Start(
-    MotionProfile *profile,
-    float distanceMm,
-    float maxSpeedMmps);
+bool MotionProfile_Start(MotionProfile *profile, float distanceMm, float maxSpeedMmps);
 
 /**
  * @brief Updates the speed reference using travelled
@@ -66,10 +62,7 @@ bool MotionProfile_Start(
  *
  * Returns the unsigned target vehicle speed in mm/s.
  */
-float MotionProfile_Update(
-    MotionProfile *profile,
-    float travelledDistanceMm,
-    float dt);
+float MotionProfile_Update(MotionProfile *profile, float travelledDistanceMm, float dt);
 
 /**
  * @brief Stops profile generation and resets the
@@ -81,6 +74,5 @@ void MotionProfile_Stop(MotionProfile *profile);
  * @brief Returns whether a profile is currently active.
  */
 bool MotionProfile_IsActive(const MotionProfile *profile);
-
 
 #endif /* INC_MOTIONPROFILE_H_ */
