@@ -5,7 +5,6 @@
  *      Author: Joe
  */
 
-
 #include "WheelSpeedControllerTest.h"
 #include "oledutils.h"
 #include "userbutton.h"
@@ -19,41 +18,32 @@
 #define MOTORCENC htim4
 
 // See kp_analysis in exp/
-#define TEST_KP		0.02f
-#define TEST_KI		0.0f
+#define TEST_KP 0.02f
+#define TEST_KI 0.0f
 
 /* Controller runs at 100 Hz. */
-#define CONTROL_PERIOD_MS      10U
+#define CONTROL_PERIOD_MS 10U
 
 /* Update display much more slowly than the control loop. */
-#define DISPLAY_PERIOD_MS      100U
+#define DISPLAY_PERIOD_MS 100U
 
 /* Hold each target for this long. */
-#define TARGET_DURATION_MS     3000U
-
+#define TARGET_DURATION_MS 3000U
 
 /*
  * Speeds are deliberately kept well inside the experimentally
  * measured operating range for this initial test.
  */
 static const float testTargets[] = {
-     2000.0f,
-     4000.0f,
-     6000.0f,
-        0.0f,
-    -2000.0f,
-    -4000.0f,
-    -6000.0f,
-        0.0f
-};
+    2000.0f, 4000.0f, 6000.0f, 0.0f, -2000.0f, -4000.0f, -6000.0f, 0.0f};
 
-#define NUM_TEST_TARGETS \
-    (sizeof(testTargets) / sizeof(testTargets[0]))
+#define NUM_TEST_TARGETS (sizeof(testTargets) / sizeof(testTargets[0]))
 
 #define DEBUGLOG 1
 
 #if DEBUGLOG == 1
-typedef struct {
+typedef struct
+{
     float targetCps;
     float measuredCps;
     float pwm;
@@ -67,9 +57,7 @@ static WheelDebugSample debugSamples[DEBUG_SAMPLE_COUNT];
 static int debugSampleIndex = 0;
 #endif
 
-static void WheelSpeedControllerTest_RunTarget(
-        WheelSpeedController *controller,
-        float targetCps)
+static void WheelSpeedControllerTest_RunTarget(WheelSpeedController *controller, float targetCps)
 {
     WheelSpeedController_SetTarget(controller, targetCps);
 
@@ -77,10 +65,9 @@ static void WheelSpeedControllerTest_RunTarget(
      * In actual deployment the motion control task will run periodically and there
      * should be no such mismatch.
      */
-    controller->previousEncoderCount =
-            DCMotor_GetEncoderCount(controller->motor);
+    controller->previousEncoderCount = DCMotor_GetEncoderCount(controller->motor);
 
-    uint32_t startTick   = HAL_GetTick();
+    uint32_t startTick = HAL_GetTick();
     uint32_t lastControl = startTick;
     // uint32_t lastDisplay = startTick;
 
@@ -96,14 +83,11 @@ static void WheelSpeedControllerTest_RunTarget(
          */
         if ((now - lastControl) >= CONTROL_PERIOD_MS)
         {
-            float dt =
-                    (float)(now - lastControl) / 1000.0f;
+            float dt = (float)(now - lastControl) / 1000.0f;
 
             lastControl = now;
 
-            WheelSpeedController_Update(
-                    controller,
-                    dt);
+            WheelSpeedController_Update(controller, dt);
 
 #if DEBUGLOG == 1
             debugSamples[debugSampleIndex].error = controller->pid.previousError;
@@ -112,10 +96,10 @@ static void WheelSpeedControllerTest_RunTarget(
             debugSamples[debugSampleIndex].pwm = controller->outputPWM;
             debugSamples[debugSampleIndex].targetCps = controller->targetSpeedCps;
             debugSampleIndex++;
-#endif	/* DEBUGLOG */
+#endif /* DEBUGLOG */
         }
 
-#if DEBUGLOG == 0	/* Do not refresh display if logging debug data */
+#if DEBUGLOG == 0 /* Do not refresh display if logging debug data */
         /*
          * OLED refreshes are relatively slow, so do not perform
          * them at control-loop frequency.
@@ -124,52 +108,35 @@ static void WheelSpeedControllerTest_RunTarget(
         {
             lastDisplay = now;
 
-            OLED_Printf(
-                    0, 0,
-                    "Target: %.0f ",
-                    controller->targetSpeedCps);
+            OLED_Printf(0, 0, "Target: %.0f ", controller->targetSpeedCps);
+
+            OLED_Printf(0, 1, "Speed:  %.0f ", controller->measuredSpeedCps);
 
             OLED_Printf(
-                    0, 1,
-                    "Speed:  %.0f ",
-                    controller->measuredSpeedCps);
+                0, 2, "Error:  %.0f ", controller->targetSpeedCps - controller->measuredSpeedCps);
 
-            OLED_Printf(
-                    0, 2,
-                    "Error:  %.0f ",
-                    controller->targetSpeedCps -
-                    controller->measuredSpeedCps);
-
-            OLED_Printf(
-                    0, 3,
-                    "PID:    %.2f ",
-                    controller->pid.output);
-            OLED_Printf(
-					0, 4,
-					"PWM:    %.2f ",
-					controller->outputPWM);
+            OLED_Printf(0, 3, "PID:    %.2f ", controller->pid.output);
+            OLED_Printf(0, 4, "PWM:    %.2f ", controller->outputPWM);
 
             OLED_Refresh_Gram();
         }
-#endif	/* DEBUGLOG */
+#endif /* DEBUGLOG */
     }
 }
 
-
-static void WheelSpeedControllerTest_RunMotor(
-        DCMotor *motor,
-        const WheelSpeedCalibration *calibration,
-        const char *motorName)
+static void WheelSpeedControllerTest_RunMotor(DCMotor *motor,
+                                              const WheelSpeedCalibration *calibration,
+                                              const char *motorName)
 {
     WheelSpeedController controller = {0};
 
-    if (!WheelSpeedController_Init(
-            &controller,
-            motor,
-			TEST_KP, TEST_KI,
-			WHEELSPEEDCONTROLLER_MIN_FEEDBACK,
-			WHEELSPEEDCONTROLLER_MAX_FEEDBACK,
-            calibration))
+    if (!WheelSpeedController_Init(&controller,
+                                   motor,
+                                   TEST_KP,
+                                   TEST_KI,
+                                   WHEELSPEEDCONTROLLER_MIN_FEEDBACK,
+                                   WHEELSPEEDCONTROLLER_MAX_FEEDBACK,
+                                   calibration))
     {
         OLED_Clear();
         OLED_Printf(0, 0, "WSC Init failed");
@@ -177,25 +144,18 @@ static void WheelSpeedControllerTest_RunMotor(
         return;
     }
 
-
     for (uint32_t i = 0; i < NUM_TEST_TARGETS; i++)
     {
 #if DEBUGLOG == 0
         OLED_Clear();
         OLED_Printf(0, 0, "%s", motorName);
-        OLED_Printf(
-                0, 1,
-                "Next: %.0f cps",
-                testTargets[i]);
+        OLED_Printf(0, 1, "Next: %.0f cps", testTargets[i]);
         OLED_Refresh_Gram();
 
         HAL_Delay(500U);
 #endif
-        WheelSpeedControllerTest_RunTarget(
-                &controller,
-                testTargets[i]);
+        WheelSpeedControllerTest_RunTarget(&controller, testTargets[i]);
     }
-
 
     WheelSpeedController_Stop(&controller);
 
@@ -204,22 +164,23 @@ static void WheelSpeedControllerTest_RunMotor(
     OLED_Refresh_Gram();
 }
 
-void WheelSpeedControllerTestRun() {
-	DCMotor lmotor = { 0 };
-	DCMotor rmotor = { 0 };
-	DCMotor_Init(&lmotor, &MOTORBPWMSRC, false, &MOTORBENC);
-	DCMotor_Init(&rmotor, &MOTORCPWMSRC, true, &MOTORCENC);
+void WheelSpeedControllerTestRun()
+{
+    DCMotor lmotor = {0};
+    DCMotor rmotor = {0};
+    DCMotor_Init(&lmotor, &MOTORBPWMSRC, false, &MOTORBENC);
+    DCMotor_Init(&rmotor, &MOTORCPWMSRC, true, &MOTORCENC);
 
-	DCMotor_Enable(&lmotor);
-	DCMotor_Enable(&rmotor);
+    DCMotor_Enable(&lmotor);
+    DCMotor_Enable(&rmotor);
 
-	OLED_Clear();
-	OLED_Printf(0, 0, "WSCtrl Test");
-	OLED_Printf(0, 1, "SW1: Left Motor");
-	OLED_Refresh_Gram();
-	// SW1_WhileNotPressed();
+    OLED_Clear();
+    OLED_Printf(0, 0, "WSCtrl Test");
+    OLED_Printf(0, 1, "SW1: Left Motor");
+    OLED_Refresh_Gram();
+    // SW1_WhileNotPressed();
 
-	WheelSpeedControllerTest_RunMotor(&rmotor, &rightCalibration, "LEFT");
+    WheelSpeedControllerTest_RunMotor(&rmotor, &rightCalibration, "LEFT");
 
     OLED_Clear();
     OLED_Printf(0, 0, "Right complete");
@@ -229,9 +190,7 @@ void WheelSpeedControllerTestRun() {
     // SW1_WhileNotPressed();
     WheelSpeedControllerTest_RunMotor(&rmotor, &rightCalibration, "RIGHT");
 
-
     OLED_Clear();
     OLED_Printf(0, 0, "Test complete");
     OLED_Refresh_Gram();
-
 }

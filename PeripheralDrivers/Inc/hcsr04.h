@@ -13,8 +13,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define HCSR04_TRIGGER_PULSE_US    10U
-#define HCSR04_TIMEOUT_MS          50U
+#define HCSR04_TRIGGER_PULSE_US 10U
+#define HCSR04_TIMEOUT_MS 50U
 
 /*
  * Speed of sound at approximately 20 deg C:
@@ -23,7 +23,7 @@
  *
  * The ultrasonic pulse travels to the object and back, hence / 2.
  */
-#define HCSR04_MM_PER_US           (0.343f / 2.0f)
+#define HCSR04_MM_PER_US (0.343f / 2.0f)
 
 typedef enum
 {
@@ -49,7 +49,6 @@ typedef struct
 
     uint32_t triggerTickMs;
 } HCSR04_HandleTypeDef;
-
 
 /**
  * @brief Initialise an HC-SR04 instance.
@@ -82,8 +81,7 @@ void HCSR04_Update(HCSR04_HandleTypeDef *sensor);
  *
  * Call this from HAL_TIM_IC_CaptureCallback().
  */
-void HCSR04_HandleInputCapture(HCSR04_HandleTypeDef *sensor,
-                               TIM_HandleTypeDef *htim);
+void HCSR04_HandleInputCapture(HCSR04_HandleTypeDef *sensor, TIM_HandleTypeDef *htim);
 
 /**
  * @brief Return whether the sensor is currently waiting for an echo.
