@@ -24,10 +24,9 @@
  *     -DSTEERING_USE_FIXED_POINT_CALIBRATION=0
  */
 #ifndef STEERING_USE_FIXED_POINT_CALIBRATION
-#define STEERING_USE_FIXED_POINT_CALIBRATION    (0)
+#define STEERING_USE_FIXED_POINT_CALIBRATION (0)
 #endif
 
 extern const SteeringControllerCalibration steeringCalibration;
-
 
 #endif /* INC_STEERINGCONTROLLERCONFIG_H_ */

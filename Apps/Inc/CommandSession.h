@@ -6,7 +6,8 @@
 #define COMMANDSESSION_MAX_COMMANDS 8U
 #define COMMANDSESSION_REPLY_SIZE 48U
 
-typedef enum {
+typedef enum
+{
     COMMANDSESSION_READY,
     COMMANDSESSION_BUSY,
     COMMANDSESSION_DONE,
@@ -16,7 +17,8 @@ typedef enum {
 } CommandSessionState;
 
 /* One current/latest batch. Owned exclusively by MotionTask; no RTOS state. */
-typedef struct {
+typedef struct
+{
     Command commands[COMMANDSESSION_MAX_COMMANDS];
     size_t count;
     size_t next;
@@ -35,15 +37,15 @@ void CommandSession_Init(CommandSession *session);
  * Returns true only when the caller must initiate braking (standalone S).
  * STATUS and duplicate frames only report state; they never start motion.
  */
-bool CommandSession_Receive(CommandSession *session, const char *line,
+bool CommandSession_Receive(CommandSession *session,
+                            const char *line,
                             char reply[COMMANDSESSION_REPLY_SIZE]);
 const Command *CommandSession_Current(const CommandSession *session);
-void CommandSession_CommandDone(CommandSession *session,
-                                char reply[COMMANDSESSION_REPLY_SIZE]);
-void CommandSession_Fault(CommandSession *session, const char *reason,
+void CommandSession_CommandDone(CommandSession *session, char reply[COMMANDSESSION_REPLY_SIZE]);
+void CommandSession_Fault(CommandSession *session,
+                          const char *reason,
                           char reply[COMMANDSESSION_REPLY_SIZE]);
 /* Call after braking has physically completed. */
-void CommandSession_Stopped(CommandSession *session,
-                            char reply[COMMANDSESSION_REPLY_SIZE]);
+void CommandSession_Stopped(CommandSession *session, char reply[COMMANDSESSION_REPLY_SIZE]);
 
 #endif

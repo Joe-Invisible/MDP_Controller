@@ -15,17 +15,19 @@
 // A compile-time flag because for testing we might have already called OLED_Init earlier.
 #define OLED_ALREADY_INITIALIZED 0
 
-void OLEDTask(void* _) {
-	(void)_;
+void OLEDTask(void *_)
+{
+    (void)_;
 
-	/* OLED hardware and framebuffer are owned by this task. */
+    /* OLED hardware and framebuffer are owned by this task. */
 #if !(OLED_ALREADY_INITIALIZED == 1)
-	OLED_Init();
+    OLED_Init();
 #endif
-	for (;;) {
+    for (;;)
+    {
 #if !(OLED_ALREADY_INITIALIZED == 1)
-		OLED_ManagerRefresh();
+        OLED_ManagerRefresh();
 #endif
-		osDelay(OLED_MANAGER_REFRESH_PERIOD_MS);
-	}
+        osDelay(OLED_MANAGER_REFRESH_PERIOD_MS);
+    }
 }

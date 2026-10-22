@@ -26,41 +26,45 @@
  * usable for bench testing.
  */
 
-typedef enum {
-	COMMAND_FORWARD,	/* F<mm>  */
-	COMMAND_BACKWARD,	/* B<mm>  */
-	COMMAND_LEFT,		/* L<deg> */
-	COMMAND_RIGHT,		/* R<deg> */
-	COMMAND_STOP,		/* S      */
+typedef enum
+{
+    COMMAND_FORWARD,  /* F<mm>  */
+    COMMAND_BACKWARD, /* B<mm>  */
+    COMMAND_LEFT,     /* L<deg> */
+    COMMAND_RIGHT,    /* R<deg> */
+    COMMAND_STOP,     /* S      */
 } CommandType;
 
-typedef struct {
-	CommandType type;
-	/*
+typedef struct
+{
+    CommandType type;
+    /*
 	 * Positive magnitude. Meaningless for COMMAND_STOP.
 	 */
-	float param;
+    float param;
 } Command;
 
-typedef enum {
-	COMMANDPARSER_OK = 0,
-	COMMANDPARSER_ERROR_EMPTY,
-	COMMANDPARSER_ERROR_BAD_COMMAND,
-	COMMANDPARSER_ERROR_BAD_SEQ,
-	COMMANDPARSER_ERROR_TOO_MANY,
+typedef enum
+{
+    COMMANDPARSER_OK = 0,
+    COMMANDPARSER_ERROR_EMPTY,
+    COMMANDPARSER_ERROR_BAD_COMMAND,
+    COMMANDPARSER_ERROR_BAD_SEQ,
+    COMMANDPARSER_ERROR_TOO_MANY,
 } CommandParserStatus;
 
-typedef struct {
-	Command *commands;
-	size_t capacity;
+typedef struct
+{
+    Command *commands;
+    size_t capacity;
 
-	/*
+    /*
 	 * Populated only on COMMANDPARSER_OK.
 	 */
-	size_t count;
+    size_t count;
 
-	uint8_t seq;
-	bool hasSeq;
+    uint8_t seq;
+    bool hasSeq;
 } CommandFrame;
 
 /**
@@ -71,9 +75,7 @@ typedef struct {
  * must not be used: frames are accepted or rejected atomically,
  * never partially.
  */
-CommandParserStatus CommandParser_ParseFrame(
-		const char *frame,
-		CommandFrame *out);
+CommandParserStatus CommandParser_ParseFrame(const char *frame, CommandFrame *out);
 
 /**
  * Short human-readable name for a status, for diagnostics.

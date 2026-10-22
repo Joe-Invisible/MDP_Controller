@@ -12,7 +12,8 @@
 #define COMMANDMOTION_STRAIGHT_SPEED_CPS 5000.0f
 #define COMMANDMOTION_MAX_TURN_DEG 360.0f
 
-typedef struct {
+typedef struct
+{
     float distanceMm;
     float radiusMm; /* Zero means straight. Positive means left. */
     float speedCps;

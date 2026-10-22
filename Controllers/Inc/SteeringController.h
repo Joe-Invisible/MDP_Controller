@@ -26,7 +26,6 @@ typedef struct
 
 } SteeringCalibrationPoint;
 
-
 typedef struct
 {
     /*
@@ -53,7 +52,6 @@ typedef struct
     float minCommand;
     float maxCommand;
 
-
     /*
      * Minimum effective-angle reversal required before
      * switching to the opposite major hysteresis branch.
@@ -72,7 +70,6 @@ typedef struct
     float maxCommandRatePerSec;
 
 } SteeringControllerCalibration;
-
 
 typedef enum
 {
@@ -141,7 +138,6 @@ typedef struct
 
 } SteeringController;
 
-
 /**
  * @brief Initialise the steering controller.
  *
@@ -152,10 +148,9 @@ typedef struct
  * increasing command values and monotonically non-increasing
  * effective angles.
  */
-bool SteeringController_Init(
-    SteeringController *controller,
-    Servo *servo,
-    const SteeringControllerCalibration *calibration);
+bool SteeringController_Init(SteeringController *controller,
+                             Servo *servo,
+                             const SteeringControllerCalibration *calibration);
 
 /**
  * @brief Command the servo directly in normalized raw command space.
@@ -173,10 +168,7 @@ bool SteeringController_Init(
  * the legacy calibration model is not valid outside its calibrated
  * command range.
  */
-void SteeringController_SetRawCommand(
-    SteeringController *controller,
-    float command);
-
+void SteeringController_SetRawCommand(SteeringController *controller, float command);
 
 /**
  * @brief Rate-limited version of SteeringController_SetRawCommand().
@@ -185,10 +177,9 @@ void SteeringController_SetRawCommand(
  * requested command to the physical servo range rather than to the
  * legacy effective-angle calibration range.
  */
-void SteeringController_SetRawCommandRateLimited(
-    SteeringController *controller,
-    float command,
-    float dt);
+void SteeringController_SetRawCommandRateLimited(SteeringController *controller,
+                                                 float command,
+                                                 float dt);
 
 /**
  * @brief Command a steering position.
@@ -199,18 +190,15 @@ void SteeringController_SetRawCommandRateLimited(
  * The effective steering-angle estimate and hysteresis state
  * are updated automatically.
  */
-void SteeringController_SetCommand(
-    SteeringController *controller,
-    float command);
+void SteeringController_SetCommand(SteeringController *controller, float command);
 
 /**
  * Rate-limited command setting. Configurable command
  * rate via SteeringControllerConfig.
  */
-void SteeringController_SetCommandRateLimited(
-    SteeringController *controller,
-    float command,
-    float dt);
+void SteeringController_SetCommandRateLimited(SteeringController *controller,
+                                              float command,
+                                              float dt);
 
 /**
  * @brief Request an effective bicycle-model steering angle.
@@ -222,31 +210,27 @@ void SteeringController_SetCommandRateLimited(
  * from the required direction of physical steering motion,
  * performs the inverse calibration, and commands the servo.
  */
-void SteeringController_SetEffectiveAngleRad(
-    SteeringController *controller,
-    float targetAngleRad,
-	float dt);
+void SteeringController_SetEffectiveAngleRad(SteeringController *controller,
+                                             float targetAngleRad,
+                                             float dt);
 
 /**
  * @brief Return the currently requested effective steering
  *        angle, in radians.
  */
-float SteeringController_GetTargetEffectiveAngleRad(
-    const SteeringController *controller);
+float SteeringController_GetTargetEffectiveAngleRad(const SteeringController *controller);
 
 /**
  * @brief Return the minimum bidirectionally controllable
  *        effective steering angle.
  */
-float SteeringController_GetMinEffectiveAngleRad(
-    const SteeringController *controller);
+float SteeringController_GetMinEffectiveAngleRad(const SteeringController *controller);
 
 /**
  * @brief Return the maximum bidirectionally controllable
  *        effective steering angle.
  */
-float SteeringController_GetMaxEffectiveAngleRad(
-    const SteeringController *controller);
+float SteeringController_GetMaxEffectiveAngleRad(const SteeringController *controller);
 
 /**
  * @brief Command the nominal servo centre.
@@ -254,32 +238,24 @@ float SteeringController_GetMaxEffectiveAngleRad(
  * This does NOT erase hysteresis state. It is equivalent to
  * SteeringController_SetCommand(controller, 0.0f).
  */
-void SteeringController_Centre(
-    SteeringController *controller);
-
+void SteeringController_Centre(SteeringController *controller);
 
 /**
  * @brief Return the actual clamped steering command.
  */
-float SteeringController_GetCommand(
-    const SteeringController *controller);
-
+float SteeringController_GetCommand(const SteeringController *controller);
 
 /**
  * @brief Return the estimated effective bicycle steering
  *        angle, in radians.
  */
-float SteeringController_GetEffectiveAngleRad(
-    const SteeringController *controller);
-
+float SteeringController_GetEffectiveAngleRad(const SteeringController *controller);
 
 /**
  * @brief Return whether the linkage model is currently
  *        traversing backlash.
  */
-bool SteeringController_IsBacklashActive(
-    const SteeringController *controller);
-
+bool SteeringController_IsBacklashActive(const SteeringController *controller);
 
 /**
  * @brief Return current steering-command movement direction.
@@ -288,15 +264,13 @@ bool SteeringController_IsBacklashActive(
  * -1 = decreasing
  *  0 = not yet established
  */
-int8_t SteeringController_GetMovementDirection(
-    const SteeringController *controller);
+int8_t SteeringController_GetMovementDirection(const SteeringController *controller);
 
 /**
  * @brief Return whether the requested angle is pending
  * 		due to the configured reversal deadband.
  */
-bool SteeringController_IsReversalPending(
-    const SteeringController *controller);
+bool SteeringController_IsReversalPending(const SteeringController *controller);
 
 /**
  * @brief Deterministic centering with fixed precondition.
@@ -305,8 +279,7 @@ bool SteeringController_IsReversalPending(
  */
 void SteeringController_StartCentre(SteeringController *controller);
 
-bool SteeringController_UpdateCentre(SteeringController *controller,
-                                     float dt);
+bool SteeringController_UpdateCentre(SteeringController *controller, float dt);
 
 bool SteeringController_IsCentring(const SteeringController *controller);
 

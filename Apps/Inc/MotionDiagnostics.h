@@ -13,7 +13,8 @@
 #include <stddef.h>
 
 #define MOTION_DIAGNOSTICS_REPLY_SIZE 256U
-typedef struct {
+typedef struct
+{
     bool valid, numbered;
     unsigned seq, step;
     char command;
