@@ -20,7 +20,7 @@
 /* Change only this table to adjust the sweep. Rate is nominal at speedCps.
  * Each row measures both entry and exit under the same wheel-speed setting. */
 const SteeringRampTrial steeringRampTrials[STEERING_RAMP_TRIAL_COUNT] = {
-    {4500.0f,  50.0f, 525.0f, 350.0f, 300.0f, 350.0f, 150.0f},
+    {4500.0f, 50.0f, 525.0f, 350.0f, 300.0f, 350.0f, 150.0f},
     {4500.0f, 100.0f, 525.0f, 350.0f, 300.0f, 350.0f, 150.0f},
     {4500.0f, 200.0f, 525.0f, 350.0f, 300.0f, 350.0f, 150.0f},
 };
@@ -56,10 +56,8 @@ static bool ConfigureExperiment(void)
     for (uint32_t i = 0U; i < rampArcConfig.positivePointCount; ++i)
     {
         const MotionControllerArcFeedforwardPoint point = rampArcConfig.positivePoints[i];
-        if (point.curvaturePerMm <= lastLooseCurvature)
-            continue;
-        if (count >= STEERING_RAMP_KNOT_CAPACITY)
-            return false;
+        if (point.curvaturePerMm <= lastLooseCurvature) continue;
+        if (count >= STEERING_RAMP_KNOT_CAPACITY) return false;
         positivePoints[count++] = point;
     }
     rampArcConfig.positivePoints = positivePoints;
@@ -111,13 +109,11 @@ static bool PrepareSteering(void)
     while (SteeringController_IsCentring(&fixture.steeringController))
     {
         HAL_Delay(CONTROL_PERIOD_MS);
-        SteeringController_UpdateCentre(&fixture.steeringController,
-                                         CONTROL_PERIOD_MS * 0.001f);
-        if (HAL_GetTick() - start >= CENTRE_TIMEOUT_MS)
-            return false;
+        SteeringController_UpdateCentre(&fixture.steeringController, CONTROL_PERIOD_MS * 0.001f);
+        if (HAL_GetTick() - start >= CENTRE_TIMEOUT_MS) return false;
     }
     SteeringController_SetRawCommand(&fixture.steeringController,
-        steeringRampMotionConfig.straightSteeringFeedforwardCommand);
+                                     steeringRampMotionConfig.straightSteeringFeedforwardCommand);
     HAL_Delay((uint32_t)(INITIAL_SETTLING_SEC * 1000.0f));
     return true;
 }
@@ -129,26 +125,44 @@ static void ShowPreparation(uint32_t index)
     const MotionControllerConfig *config = fixture.motionController.config;
     const SteeringRampKnot *end = &profile->knots[profile->knotCount - 1U];
     OLED_Clear();
-    OLED_Printf(0, 0, "Ramp %lu/%u %.0f u/s", (unsigned long)(index + 1U),
-                STEERING_RAMP_TRIAL_COUNT, profile->trial.nominalRawRatePerSec);
-    OLED_Printf(0, 1, "%.0fCPS %.1f -> %.1f", profile->trial.speedCps,
-                profile->knots[0].rawCommand, end->rawCommand);
+    OLED_Printf(0,
+                0,
+                "Ramp %lu/%u %.0f u/s",
+                (unsigned long)(index + 1U),
+                STEERING_RAMP_TRIAL_COUNT,
+                profile->trial.nominalRawRatePerSec);
+    OLED_Printf(0,
+                1,
+                "%.0fCPS %.1f -> %.1f",
+                profile->trial.speedCps,
+                profile->knots[0].rawCommand,
+                end->rawCommand);
     OLED_Printf(0, 2, "Travel %.0f mm", profile->totalDistanceMm);
-    OLED_Printf(0, 3, "Area %.0fx%.0f mm",
+    OLED_Printf(0,
+                3,
+                "Area %.0fx%.0f mm",
                 result->maxXmm - result->minXmm + 2.0f * FOOTPRINT_PADDING_MM,
                 result->maxYmm - result->minYmm + 2.0f * FOOTPRINT_PADDING_MM);
-    OLED_Printf(0, 4, "S P%.0f I%.0f D%.0f H%.1f", config->straightYawRateKp,
-                config->straightYawRateKi, config->straightYawRateKd,
+    OLED_Printf(0,
+                4,
+                "S P%.0f I%.0f D%.0f H%.1f",
+                config->straightYawRateKp,
+                config->straightYawRateKi,
+                config->straightYawRateKd,
                 config->straightHeadingKpPerSec);
-    OLED_Printf(0, 5, "A P%.0f I%.0f D%.0f H%.1f", config->arcYawRateKp,
-                config->arcYawRateKi, config->arcYawRateKd, config->arcHeadingKpPerSec);
+    OLED_Printf(0,
+                5,
+                "A P%.0f I%.0f D%.0f H%.1f",
+                config->arcYawRateKp,
+                config->arcYawRateKi,
+                config->arcYawRateKd,
+                config->arcHeadingKpPerSec);
     OLED_Printf(0, 6, "Wheel P%.2f; 10ms", fixture.leftWheelController.pid.kp);
     OLED_Printf(0, 7, "Reset pose; SW1 start");
     OLED_Refresh_Gram();
 }
 
-static void LogSample(uint32_t index, uint32_t elapsedMs, float commandRate,
-                      bool terminal)
+static void LogSample(uint32_t index, uint32_t elapsedMs, float commandRate, bool terminal)
 {
     SteeringRampResponseResult *result = &steeringRampResults[index];
     uint32_t slot;
@@ -162,15 +176,14 @@ static void LogSample(uint32_t index, uint32_t elapsedMs, float commandRate,
     const MotionController *controller = &fixture.motionController;
     const SteeringRampProfile *profile = &steeringRampProfiles[index];
     SteeringRampPhase phase = SteeringRampProfile_Phase(profile, controller->travelledDistanceMm);
-    if (controller->mode == MOTIONCONTROLLER_PROFILE_PREPARING)
-        phase = STEERING_RAMP_PREPARING;
-    else if (controller->mode == MOTIONCONTROLLER_BRAKING)
-        phase = STEERING_RAMP_STOPPING;
-    if (terminal)
-        phase = STEERING_RAMP_FINISHED;
+    if (controller->mode == MOTIONCONTROLLER_PROFILE_PREPARING) phase = STEERING_RAMP_PREPARING;
+    else if (controller->mode == MOTIONCONTROLLER_BRAKING) phase = STEERING_RAMP_STOPPING;
+    if (terminal) phase = STEERING_RAMP_FINISHED;
     steeringRampLog[slot] = (SteeringRampResponseSample){
-        .timeMs = elapsedMs, .trialIndex = (uint16_t)index,
-        .mode = (uint8_t)controller->mode, .phase = (uint8_t)phase,
+        .timeMs = elapsedMs,
+        .trialIndex = (uint16_t)index,
+        .mode = (uint8_t)controller->mode,
+        .phase = (uint8_t)phase,
         .progressMm = controller->travelledDistanceMm,
         .rawReference = SteeringRampProfile_RawCommand(profile, controller->travelledDistanceMm),
         .rawCommand = fixture.steeringController.command,
@@ -197,7 +210,8 @@ static void RunTrial(uint32_t index)
         .signedDistanceMm = profile->totalDistanceMm,
         .maxSpeedCps = profile->trial.speedCps,
         .steeringSettlingTimeSec = INITIAL_SETTLING_SEC,
-        .evaluate = SteeringRampProfile_Evaluate, .context = profile,
+        .evaluate = SteeringRampProfile_Evaluate,
+        .context = profile,
         .steeringCommandRatePerSec = SOFTWARE_SLEW_LIMIT,
         /* Distance termination: yaw must not change the duration of the test. */
         .terminalYawPriority = false,
@@ -217,16 +231,13 @@ static void RunTrial(uint32_t index)
     {
         uint32_t now = HAL_GetTick();
         uint32_t interval = now - previous;
-        if (interval < CONTROL_PERIOD_MS)
-            continue;
+        if (interval < CONTROL_PERIOD_MS) continue;
         previous = now;
-        result->maxUpdateIntervalMs = interval > result->maxUpdateIntervalMs
-                                         ? interval : result->maxUpdateIntervalMs;
+        result->maxUpdateIntervalMs =
+            interval > result->maxUpdateIntervalMs ? interval : result->maxUpdateIntervalMs;
         SteeringRampOutcome abortReason = STEERING_RAMP_NOT_RUN;
-        if (SW1_ReadState() == SW1_Enabled)
-            abortReason = STEERING_RAMP_CANCELLED;
-        else if (now - start >= RUN_TIMEOUT_MS)
-            abortReason = STEERING_RAMP_TIMED_OUT;
+        if (SW1_ReadState() == SW1_Enabled) abortReason = STEERING_RAMP_CANCELLED;
+        else if (now - start >= RUN_TIMEOUT_MS) abortReason = STEERING_RAMP_TIMED_OUT;
         else if (result->sampleCount >= STEERING_RAMP_SAMPLES_PER_TRIAL - 1U)
             abortReason = STEERING_RAMP_LOG_FULL;
         if (!aborting && abortReason != STEERING_RAMP_NOT_RUN)
@@ -243,8 +254,7 @@ static void RunTrial(uint32_t index)
             break;
         }
         result->status = MotionController_Update(&fixture.motionController, interval * 0.001f);
-        commandRate = (fixture.steeringController.command - previousCommand) /
-                      (interval * 0.001f);
+        commandRate = (fixture.steeringController.command - previousCommand) / (interval * 0.001f);
         previousCommand = fixture.steeringController.command;
         if (result->status != MOTIONCONTROLLER_STATUS_OK ||
             fabsf(fixture.motionController.arcSteeringCorrectionCommand) > 0.0001f)
@@ -261,15 +271,14 @@ static void RunTrial(uint32_t index)
     result->elapsedMs = HAL_GetTick() - start;
     result->measuredDistanceMm = fixture.motionController.travelledDistanceMm;
     result->measuredYawDeg = fixture.motionController.yawDeg;
-    if (result->outcome == STEERING_RAMP_NOT_RUN)
-        result->outcome = STEERING_RAMP_COMPLETED;
+    if (result->outcome == STEERING_RAMP_NOT_RUN) result->outcome = STEERING_RAMP_COMPLETED;
     LogSample(index, result->elapsedMs, commandRate, true);
 }
 
 __attribute__((noinline)) void SteeringRampResponseTestFinished(void)
 {
     /* Debugger hook: all batch state has been finalized before this call. */
-    __asm volatile ("" ::: "memory");
+    __asm volatile("" ::: "memory");
 }
 
 void SteeringRampResponseTestRun(void)
@@ -294,8 +303,8 @@ void SteeringRampResponseTestRun(void)
     /* Validate the entire sweep before asking the operator to start any run. */
     for (uint32_t i = 0U; i < STEERING_RAMP_TRIAL_COUNT; ++i)
     {
-        if (!SteeringRampProfile_Build(&steeringRampProfiles[i], &fixture.motionController,
-                                      &steeringRampTrials[i]))
+        if (!SteeringRampProfile_Build(
+                &steeringRampProfiles[i], &fixture.motionController, &steeringRampTrials[i]))
         {
             steeringRampResults[i].outcome = STEERING_RAMP_PREPARATION_ERROR;
             steeringRampResultCount = i + 1U;
@@ -307,8 +316,11 @@ void SteeringRampResponseTestRun(void)
     {
         steeringRampResultCount = i + 1U;
         MotionControllerStatus status = MotionController_Init(&fixture.motionController,
-            &fixture.leftWheelController, &fixture.rightWheelController,
-            &fixture.steeringController, &fixture.imu, &steeringRampMotionConfig);
+                                                              &fixture.leftWheelController,
+                                                              &fixture.rightWheelController,
+                                                              &fixture.steeringController,
+                                                              &fixture.imu,
+                                                              &steeringRampMotionConfig);
         steeringRampResults[i].status = status;
         if (status != MOTIONCONTROLLER_STATUS_OK || !PrepareSteering())
         {
@@ -318,8 +330,7 @@ void SteeringRampResponseTestRun(void)
         ShowPreparation(i);
         SW1_WaitForPressAndRelease();
         RunTrial(i);
-        if (steeringRampResults[i].outcome != STEERING_RAMP_COMPLETED)
-            break;
+        if (steeringRampResults[i].outcome != STEERING_RAMP_COMPLETED) break;
     }
     steeringRampBatchComplete =
         steeringRampResultCount == STEERING_RAMP_TRIAL_COUNT &&
@@ -329,7 +340,10 @@ finished:
     OLED_Clear();
     OLED_Printf(0, 0, "Ramp batch %s", steeringRampBatchComplete ? "DONE" : "INVALID");
     for (uint32_t i = 0U; i < steeringRampResultCount; ++i)
-        OLED_Printf(0, (uint8_t)(i + 1U), "Run%lu code%u %.2fs", (unsigned long)(i + 1U),
+        OLED_Printf(0,
+                    (uint8_t)(i + 1U),
+                    "Run%lu code%u %.2fs",
+                    (unsigned long)(i + 1U),
                     (unsigned)steeringRampResults[i].outcome,
                     steeringRampResults[i].elapsedMs * 0.001f);
     OLED_Printf(0, 5, "Export whole batch");

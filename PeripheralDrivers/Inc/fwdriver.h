@@ -62,15 +62,16 @@
  * feedback to the MCU. Its shaft potentiometer is wired only to its own
  * internal control loop.
  */
-typedef struct ServoConfg {
-  /**
+typedef struct ServoConfg
+{
+    /**
    * PWM source timer module
    */
-  TIM_HandleTypeDef *pwmHtim;
-  /**
+    TIM_HandleTypeDef *pwmHtim;
+    /**
    * PWM source channel
    */
-  uint32_t pwmChannel;
+    uint32_t pwmChannel;
 
 } ServoConfg;
 
@@ -82,19 +83,20 @@ typedef struct ServoConfg {
  * against a mechanical stop, which it will keep pushing against at up to
  * 2.5A for as long as the command stands.
  */
-typedef struct ServoIntrn {
-  /**
+typedef struct ServoIntrn
+{
+    /**
    * Pulse width at full deflection in the negative steering direction.
    */
-  uint16_t minPulseUs;
-  /**
+    uint16_t minPulseUs;
+    /**
    * Pulse width with the wheels pointing straight ahead.
    */
-  uint16_t centrePulseUs;
-  /**
+    uint16_t centrePulseUs;
+    /**
    * Pulse width at full deflection in the positive steering direction.
    */
-  uint16_t maxPulseUs;
+    uint16_t maxPulseUs;
 
 } ServoIntrn;
 
@@ -104,28 +106,30 @@ typedef struct ServoIntrn {
  * These record what was last commanded, NOT what the servo actually did.
  * Unlike DCMotorState.encCount, nothing here is a measurement.
  */
-typedef struct ServoState {
-  /**
+typedef struct ServoState
+{
+    /**
    * Last commanded pulse width, in microseconds,
    * before timer compare quantization.
    */
-  float pulseUs;
+    float pulseUs;
 
-  /**
+    /**
    * Range -100~+100
    * Last commanded steering position.
    * -: one direction
    * +: the other
    * 0: centred
    */
-  float steer;
+    float steer;
 
 } ServoState;
 
-typedef struct Servo {
-  ServoConfg config;
-  ServoIntrn intrin;
-  ServoState state;
+typedef struct Servo
+{
+    ServoConfg config;
+    ServoIntrn intrin;
+    ServoState state;
 } Servo;
 
 /**
@@ -137,8 +141,11 @@ typedef struct Servo {
  *                          <  maxPulseUs
  *                          <= SERVO_ABS_MAX_PULSE_US
  */
-bool Servo_Init(Servo *sm, TIM_HandleTypeDef *pwmHtim, uint32_t pwmChannel,
-                uint16_t minPulseUs, uint16_t centrePulseUs,
+bool Servo_Init(Servo *sm,
+                TIM_HandleTypeDef *pwmHtim,
+                uint32_t pwmChannel,
+                uint16_t minPulseUs,
+                uint16_t centrePulseUs,
                 uint16_t maxPulseUs);
 
 /**

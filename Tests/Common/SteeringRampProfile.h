@@ -51,13 +51,10 @@ typedef struct
  * The raw/s rate is nominal at trial.speedCps; actual rate is logged by the test.
  * Nominal yaw is integrated analytically through every calibration-table knot. */
 bool SteeringRampProfile_Build(SteeringRampProfile *profile,
-                              const MotionController *controller,
-                              const SteeringRampTrial *trial);
-bool SteeringRampProfile_Evaluate(const void *context, float progressMm,
-                                  MotionPathSample *sample);
-SteeringRampPhase SteeringRampProfile_Phase(const SteeringRampProfile *profile,
-                                          float progressMm);
-float SteeringRampProfile_RawCommand(const SteeringRampProfile *profile,
-                                    float progressMm);
+                               const MotionController *controller,
+                               const SteeringRampTrial *trial);
+bool SteeringRampProfile_Evaluate(const void *context, float progressMm, MotionPathSample *sample);
+SteeringRampPhase SteeringRampProfile_Phase(const SteeringRampProfile *profile, float progressMm);
+float SteeringRampProfile_RawCommand(const SteeringRampProfile *profile, float progressMm);
 
 #endif

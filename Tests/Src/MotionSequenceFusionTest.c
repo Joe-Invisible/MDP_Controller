@@ -24,7 +24,7 @@
 #define FUSION_FACE_GAP_MM 1050.0f
 #define FUSION_OBSTACLE_THICKNESS_MM 100.0f
 #define FUSION_OBSTACLE_1_X_MM (FUSION_FACE_GAP_MM + 50.0f)
-#define FUSION_OBSTACLE_2_X_MM \
+#define FUSION_OBSTACLE_2_X_MM                                                                     \
     (FUSION_OBSTACLE_1_X_MM + FUSION_OBSTACLE_THICKNESS_MM + FUSION_FACE_GAP_MM)
 /* Compact 500 mm second obstacle. Preserve 225 mm centre-to-face
  * outbound clearance: second lane is -475 mm; first remains +275 mm. */
@@ -32,11 +32,10 @@
 #define FUSION_OBSTACLE_2_LENGTH_MM 500.0f
 #define FUSION_SECOND_LANE_Y_MM (-(FUSION_OBSTACLE_2_LENGTH_MM / 2.0f + 225.0f))
 #define FUSION_ENTRY_END_X_MM (100.0f + FUSION_RADIUS_MM * FUSION_SQRT_3)
-#define FUSION_CROSS_DIAGONAL_MM \
+#define FUSION_CROSS_DIAGONAL_MM                                                                   \
     (2.0f * (FUSION_FIRST_LANE_Y_MM - FUSION_SECOND_LANE_Y_MM - FUSION_RADIUS_MM) / FUSION_SQRT_3)
-#define FUSION_CROSS_ADVANCE_MM \
-    (FUSION_RADIUS_MM * FUSION_SQRT_3 + FUSION_CROSS_DIAGONAL_MM / 2.0f)
-#define FUSION_CROSS_START_X_MM \
+#define FUSION_CROSS_ADVANCE_MM (FUSION_RADIUS_MM * FUSION_SQRT_3 + FUSION_CROSS_DIAGONAL_MM / 2.0f)
+#define FUSION_CROSS_START_X_MM                                                                    \
     ((FUSION_OBSTACLE_1_X_MM + FUSION_OBSTACLE_2_X_MM - FUSION_CROSS_ADVANCE_MM) / 2.0f)
 #define FUSION_CROSS_END_X_MM (FUSION_CROSS_START_X_MM + FUSION_CROSS_ADVANCE_MM)
 #define FUSION_FAR_TURN_X_MM (FUSION_OBSTACLE_2_X_MM + 275.0f)
@@ -107,8 +106,7 @@ static bool MotionSequenceFusionTest_IsAccuracyExperiment(void)
 
 static const char *MotionSequenceFusionTest_RunLabel(uint32_t index)
 {
-    if (MotionSequenceFusionTest_IsSingleRun())
-        return "Tuning";
+    if (MotionSequenceFusionTest_IsSingleRun()) return "Tuning";
     if (motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK1_GAINS)
         return index == 0U ? "A reduced" : "B Task1";
     return index == 0U ? "A existing" : "B matched";
@@ -142,7 +140,8 @@ static void MotionSequenceFusionTest_LogSample(uint32_t elapsedMs)
 {
     if (motionSequenceFusionTestLogCount >= FUSION_LOG_CAPACITY ||
         (MotionSequenceFusionTest_IsAccuracyExperiment() &&
-         motionSequenceFusionTestLogCount - runLogStartCount >= MotionSequenceFusionTest_RunLogCapacity()))
+         motionSequenceFusionTestLogCount - runLogStartCount >=
+             MotionSequenceFusionTest_RunLogCapacity()))
     {
         motionSequenceFusionTestLogTruncated = true;
         runLogTruncated = true;
@@ -161,30 +160,26 @@ static void MotionSequenceFusionTest_LogSample(uint32_t elapsedMs)
     sample->firstSegment = sequence->run.first;
     sample->lastSegment = sequence->run.last;
     sample->runDistanceMm = controller->travelledDistanceMm;
-    bool currentRunIncluded = sequence->state == MOTION_SEQUENCE_COMPLETE ||
-                              sequence->state == MOTION_SEQUENCE_ABORTED;
-    sample->sequenceTravelMm =
-        sequence->completedMeasuredTravelMm +
-        (currentRunIncluded ? 0.0f : fabsf(controller->travelledDistanceMm));
+    bool currentRunIncluded =
+        sequence->state == MOTION_SEQUENCE_COMPLETE || sequence->state == MOTION_SEQUENCE_ABORTED;
+    sample->sequenceTravelMm = sequence->completedMeasuredTravelMm +
+                               (currentRunIncluded ? 0.0f : fabsf(controller->travelledDistanceMm));
     sample->sequenceYawRad =
         sequence->completedMeasuredYawRad +
-        (currentRunIncluded ? 0.0f
-                            : controller->yawDeg * (3.14159265358979323846f / 180.0f));
+        (currentRunIncluded ? 0.0f : controller->yawDeg * (3.14159265358979323846f / 180.0f));
     sample->desiredYawRad = controller->pathSample.desiredYawRad;
     sample->curvaturePerMm = controller->targetCurvaturePerMm;
     sample->commandedCurvaturePerMm = controller->arcCommandedCurvaturePerMm;
     sample->localSpeedLimitCps = controller->pathSample.speedLimitCps;
     sample->targetSpeedCps = controller->targetSpeedCps;
     sample->measuredCentreSpeedMmps = controller->measuredCentreSpeedMmps;
-    sample->filteredMeasuredCentreSpeedMmps =
-        controller->filteredMeasuredCentreSpeedMmps;
+    sample->filteredMeasuredCentreSpeedMmps = controller->filteredMeasuredCentreSpeedMmps;
     sample->yawRateDps = controller->yawRateDps;
     sample->filteredYawRateDps = controller->filteredYawRateDps;
     sample->targetYawRateRadPerSec = controller->arcTargetYawRateRadPerSec;
     sample->unfilteredGeometricYawRateRadPerSec =
         controller->arcUnfilteredFeedforwardYawRateRadPerSec;
-    sample->filteredGeometricYawRateRadPerSec =
-        controller->arcFilteredFeedforwardYawRateRadPerSec;
+    sample->filteredGeometricYawRateRadPerSec = controller->arcFilteredFeedforwardYawRateRadPerSec;
     sample->headingErrorRad = controller->arcHeadingErrorRad;
     sample->steeringFeedforward = controller->arcSteeringFeedforwardCommand;
     sample->steeringCorrection = controller->arcSteeringCorrectionCommand;
@@ -211,32 +206,64 @@ __attribute__((noinline)) void MotionSequenceFusionTestFinished(void)
         OLED_Clear();
         OLED_Printf(0, 0, "Tuning %s", motionSequenceFusionTestPassed ? "DONE" : "INVALID");
         OLED_Printf(0, 1, "Time: %lu ms", (unsigned long)fused->elapsedMs);
-        OLED_Printf(0, 2, "Yaw: %+.2f deg", (double)((fused->measuredYawRad - fused->nominalYawRad) * 180.0f / FUSION_PI));
+        OLED_Printf(0,
+                    2,
+                    "Yaw: %+.2f deg",
+                    (double)((fused->measuredYawRad - fused->nominalYawRad) * 180.0f / FUSION_PI));
         OLED_Printf(0, 3, "Status: %u", (unsigned)motionSequenceFusionTestStatus);
-        OLED_Printf(0, 4, "%s", motionSequenceFusionTestTimedOut ? "TIMEOUT" :
-                    motionSequenceFusionTestCancelled ? "CANCELLED" :
-                    fused->passed ? "COMPLETE" : "INCOMPLETE");
-        OLED_Printf(0, 5, "%s", motionSequenceFusionTestLogTruncated ? "LOG TRUNCATED" : "20ms; export once");
+        OLED_Printf(0,
+                    4,
+                    "%s",
+                    motionSequenceFusionTestTimedOut    ? "TIMEOUT"
+                    : motionSequenceFusionTestCancelled ? "CANCELLED"
+                    : fused->passed                     ? "COMPLETE"
+                                                        : "INCOMPLETE");
+        OLED_Printf(0,
+                    5,
+                    "%s",
+                    motionSequenceFusionTestLogTruncated ? "LOG TRUNCATED" : "20ms; export once");
         OLED_Refresh_Gram();
         return;
     }
     if (MotionSequenceFusionTest_IsAccuracyExperiment())
     {
         OLED_Clear();
-        OLED_Printf(0, 0, "%s A/B %s",
+        OLED_Printf(0,
+                    0,
+                    "%s A/B %s",
                     motionSequenceFusionTestExperiment == MOTION_SEQUENCE_FUSION_TEST_TASK1_GAINS
-                        ? "Gains" : "Filter",
+                        ? "Gains"
+                        : "Filter",
                     motionSequenceFusionTestComparisonValid ? "DONE" : "INVALID");
-        OLED_Printf(0, 1, "%s: %s", MotionSequenceFusionTest_RunLabel(0U), fused->passed ? "OK" : "INCOMPLETE");
-        OLED_Printf(0, 2, "%s: %s", MotionSequenceFusionTest_RunLabel(1U), stopped->passed ? "OK" : "INCOMPLETE");
-        OLED_Printf(0, 3, "A yaw: %+.2f deg", (double)((fused->measuredYawRad - fused->nominalYawRad) * 180.0f / FUSION_PI));
-        OLED_Printf(0, 4, "B yaw: %+.2f deg", (double)((stopped->measuredYawRad - stopped->nominalYawRad) * 180.0f / FUSION_PI));
-        OLED_Printf(0, 5, "%s", motionSequenceFusionTestLogTruncated ? "LOG TRUNCATED" : "20ms; export once");
+        OLED_Printf(0,
+                    1,
+                    "%s: %s",
+                    MotionSequenceFusionTest_RunLabel(0U),
+                    fused->passed ? "OK" : "INCOMPLETE");
+        OLED_Printf(0,
+                    2,
+                    "%s: %s",
+                    MotionSequenceFusionTest_RunLabel(1U),
+                    stopped->passed ? "OK" : "INCOMPLETE");
+        OLED_Printf(0,
+                    3,
+                    "A yaw: %+.2f deg",
+                    (double)((fused->measuredYawRad - fused->nominalYawRad) * 180.0f / FUSION_PI));
+        OLED_Printf(
+            0,
+            4,
+            "B yaw: %+.2f deg",
+            (double)((stopped->measuredYawRad - stopped->nominalYawRad) * 180.0f / FUSION_PI));
+        OLED_Printf(0,
+                    5,
+                    "%s",
+                    motionSequenceFusionTestLogTruncated ? "LOG TRUNCATED" : "20ms; export once");
         OLED_Refresh_Gram();
         return;
     }
     OLED_Clear();
-    OLED_Printf(0, 0, "Pattern A/B %s", motionSequenceFusionTestComparisonValid ? "DONE" : "INVALID");
+    OLED_Printf(
+        0, 0, "Pattern A/B %s", motionSequenceFusionTestComparisonValid ? "DONE" : "INVALID");
     OLED_Printf(0, 1, "A fused: %lu ms", (unsigned long)fused->elapsedMs);
     OLED_Printf(0, 2, "B stopped: %lu ms", (unsigned long)stopped->elapsedMs);
     if (motionSequenceFusionTestComparisonValid)
@@ -246,11 +273,18 @@ __attribute__((noinline)) void MotionSequenceFusionTestFinished(void)
     }
     else
     {
-        OLED_Printf(0, 3, "A:%s B:%s", fused->passed ? "OK" : "INCOMPLETE",
+        OLED_Printf(0,
+                    3,
+                    "A:%s B:%s",
+                    fused->passed ? "OK" : "INCOMPLETE",
                     stopped->passed ? "OK" : "INCOMPLETE");
         OLED_Printf(0, 4, "Status: %u", (unsigned)motionSequenceFusionTestStatus);
-        OLED_Printf(0, 5, "%s", motionSequenceFusionTestTimedOut ? "TIMEOUT" :
-                    motionSequenceFusionTestCancelled ? "CANCELLED" : "NO COMPARISON");
+        OLED_Printf(0,
+                    5,
+                    "%s",
+                    motionSequenceFusionTestTimedOut    ? "TIMEOUT"
+                    : motionSequenceFusionTestCancelled ? "CANCELLED"
+                                                        : "NO COMPARISON");
     }
     OLED_Refresh_Gram();
 }
@@ -264,9 +298,9 @@ static MotionControllerStatus MotionSequenceFusionTest_BuildPattern(bool stopAft
     const float returnDy = FUSION_SECOND_LANE_Y_MM + FUSION_RETURN_RADIUS_MM;
     const float returnCentreDistance = hypotf(returnDx, returnDy);
     const float returnYawRad = FUSION_PI + atan2f(returnDy, returnDx) +
-        asinf(FUSION_RETURN_RADIUS_MM / returnCentreDistance);
+                               asinf(FUSION_RETURN_RADIUS_MM / returnCentreDistance);
     const float returnDistanceMm = sqrtf(returnCentreDistance * returnCentreDistance -
-        FUSION_RETURN_RADIUS_MM * FUSION_RETURN_RADIUS_MM);
+                                         FUSION_RETURN_RADIUS_MM * FUSION_RETURN_RADIUS_MM);
     /* Task 2 outward S: first left, second right; tangent straight back.
      * Only stopAfter differs between A and B. No reversing/vision/IR stops.
      * Blends preserve distance/yaw, not exact XY closure; see route checks. */
@@ -283,25 +317,25 @@ static MotionControllerStatus MotionSequenceFusionTest_BuildPattern(bool stopAft
         {FUSION_RETURN_RADIUS_MM * returnYawRad, +FUSION_RETURN_RADIUS_MM, FUSION_SPEED_CPS},
         {returnDistanceMm, 0.0f, FUSION_SPEED_CPS},
     };
-    _Static_assert(sizeof(fusionTestSteps) / sizeof(fusionTestSteps[0]) <=
-                       MOTION_SEQUENCE_CAPACITY, "Task 2 course exceeds sequence capacity");
-    const MotionSequenceFusionTestStep *steps = MotionSequenceFusionTest_IsSingleRun()
-        ? tuningTestSteps : MotionSequenceFusionTest_IsAccuracyExperiment()
-        ? filterTestSteps : fusionTestSteps;
+    _Static_assert(sizeof(fusionTestSteps) / sizeof(fusionTestSteps[0]) <= MOTION_SEQUENCE_CAPACITY,
+                   "Task 2 course exceeds sequence capacity");
+    const MotionSequenceFusionTestStep *steps =
+        MotionSequenceFusionTest_IsSingleRun()            ? tuningTestSteps
+        : MotionSequenceFusionTest_IsAccuracyExperiment() ? filterTestSteps
+                                                          : fusionTestSteps;
     const size_t stepCount = MotionSequenceFusionTest_IsSingleRun()
-        ? sizeof(tuningTestSteps) / sizeof(tuningTestSteps[0])
-        : MotionSequenceFusionTest_IsAccuracyExperiment()
-        ? sizeof(filterTestSteps) / sizeof(filterTestSteps[0])
-        : sizeof(fusionTestSteps) / sizeof(fusionTestSteps[0]);
+                                 ? sizeof(tuningTestSteps) / sizeof(tuningTestSteps[0])
+                             : MotionSequenceFusionTest_IsAccuracyExperiment()
+                                 ? sizeof(filterTestSteps) / sizeof(filterTestSteps[0])
+                                 : sizeof(fusionTestSteps) / sizeof(fusionTestSteps[0]);
     MotionSequenceConfig sequenceConfig = motionSequenceConfig;
     if (MotionSequenceFusionTest_IsSingleRun())
         sequenceConfig.blendLengthMm = FUSION_TUNING_BLEND_LENGTH_MM;
     MotionSequence *sequence = &motionSequenceFusionTestSequence;
-    MotionControllerStatus status = MotionSequence_Begin(
-        sequence, &fixture.motionController, &sequenceConfig);
-    for (size_t stepIndex = 0U;
-         stepIndex < stepCount &&
-         status == MOTIONCONTROLLER_STATUS_OK; ++stepIndex)
+    MotionControllerStatus status =
+        MotionSequence_Begin(sequence, &fixture.motionController, &sequenceConfig);
+    for (size_t stepIndex = 0U; stepIndex < stepCount && status == MOTIONCONTROLLER_STATUS_OK;
+         ++stepIndex)
     {
         const MotionSequenceFusionTestStep *step = &steps[stepIndex];
         if (step->radiusMm == 0.0f)
@@ -320,8 +354,7 @@ static MotionControllerStatus MotionSequenceFusionTest_BuildPattern(bool stopAft
 
 static bool MotionSequenceFusionTest_RunPattern(bool stopAfter)
 {
-    MotionSequenceFusionTestResult *result =
-        &motionSequenceFusionTestResults[comparisonRunIndex];
+    MotionSequenceFusionTestResult *result = &motionSequenceFusionTestResults[comparisonRunIndex];
     /* Reset this branch's defaults for the timing mode. The Task 1 operating
      * point below is user-confirmed and independent of these branch defaults. */
     fusionMotionConfig.straightYawRateKp = motionControllerConfig.straightYawRateKp;
@@ -369,12 +402,15 @@ static bool MotionSequenceFusionTest_RunPattern(bool stopAfter)
          comparisonRunIndex == 1U);
     result->stopAfterEachSegment = stopAfter;
     result->useMatchedYawRateReferenceFilter = fusionMotionConfig.useMatchedYawRateReferenceFilter;
-    result->straightTuning = (MotionSequenceFusionTestTuning){
-        fusionMotionConfig.straightYawRateKp, fusionMotionConfig.straightYawRateKi,
-        fusionMotionConfig.straightYawRateKd, fusionMotionConfig.straightHeadingKpPerSec};
-    result->arcTuning = (MotionSequenceFusionTestTuning){
-        fusionMotionConfig.arcYawRateKp, fusionMotionConfig.arcYawRateKi,
-        fusionMotionConfig.arcYawRateKd, fusionMotionConfig.arcHeadingKpPerSec};
+    result->straightTuning =
+        (MotionSequenceFusionTestTuning){fusionMotionConfig.straightYawRateKp,
+                                         fusionMotionConfig.straightYawRateKi,
+                                         fusionMotionConfig.straightYawRateKd,
+                                         fusionMotionConfig.straightHeadingKpPerSec};
+    result->arcTuning = (MotionSequenceFusionTestTuning){fusionMotionConfig.arcYawRateKp,
+                                                         fusionMotionConfig.arcYawRateKi,
+                                                         fusionMotionConfig.arcYawRateKd,
+                                                         fusionMotionConfig.arcHeadingKpPerSec};
     runLogStartCount = motionSequenceFusionTestLogCount;
     runLogTruncated = false;
     motionSequenceFusionTestElapsedMs = 0U;
@@ -382,9 +418,12 @@ static bool MotionSequenceFusionTest_RunPattern(bool stopAfter)
     motionSequenceFusionTestCancelled = false;
     /* Validate each run's actual config and initialize PI gains/history before
      * its ready screen. Reuse the initialized hardware and IMU calibration. */
-    motionSequenceFusionTestStatus = MotionController_Init(
-        &fixture.motionController, &fixture.leftWheelController, &fixture.rightWheelController,
-        &fixture.steeringController, &fixture.imu, &fusionMotionConfig);
+    motionSequenceFusionTestStatus = MotionController_Init(&fixture.motionController,
+                                                           &fixture.leftWheelController,
+                                                           &fixture.rightWheelController,
+                                                           &fixture.steeringController,
+                                                           &fixture.imu,
+                                                           &fusionMotionConfig);
     if (motionSequenceFusionTestStatus == MOTIONCONTROLLER_STATUS_OK)
         motionSequenceFusionTestStatus = MotionSequenceFusionTest_BuildPattern(stopAfter);
     if (motionSequenceFusionTestStatus != MOTIONCONTROLLER_STATUS_OK)
@@ -396,7 +435,8 @@ static bool MotionSequenceFusionTest_RunPattern(bool stopAfter)
 
     float estimatedTravelMm = 0.0f;
     for (uint32_t i = 0U; i < motionSequenceFusionTestSequence.plan.count; ++i)
-        estimatedTravelMm += fabsf(motionSequenceFusionTestSequence.plan.segments[i].signedDistanceMm);
+        estimatedTravelMm +=
+            fabsf(motionSequenceFusionTestSequence.plan.segments[i].signedDistanceMm);
     OLED_Clear();
     if (MotionSequenceFusionTest_IsAccuracyExperiment())
     {
@@ -409,24 +449,40 @@ static bool MotionSequenceFusionTest_RunPattern(bool stopAfter)
         OLED_Printf(0, 1, "Task2 S: %.2fm", (double)(estimatedTravelMm / 1000.0f));
     }
     if (MotionSequenceFusionTest_IsSingleRun())
-        OLED_Printf(0, 2, "5000 CPS; B:%gmm", (double)motionSequenceFusionTestSequence.config.blendLengthMm);
-    else
-        OLED_Printf(0, 2, "5000 CPS requested");
-    OLED_Printf(0, 3, "%s", MotionSequenceFusionTest_IsSingleRun()
-        ? "Path: 2.0 x 1.6m" : MotionSequenceFusionTest_IsAccuracyExperiment()
-        ? "Path: 1.6 x 1.5m" : "A/D S:3000 C:2000");
-    OLED_Printf(0, 4, "%s", MotionSequenceFusionTest_IsAccuracyExperiment()
-        ? "Reset +x; SW1 start" : "Park +x; SW1 start");
+        OLED_Printf(0,
+                    2,
+                    "5000 CPS; B:%gmm",
+                    (double)motionSequenceFusionTestSequence.config.blendLengthMm);
+    else OLED_Printf(0, 2, "5000 CPS requested");
+    OLED_Printf(0,
+                3,
+                "%s",
+                MotionSequenceFusionTest_IsSingleRun()            ? "Path: 2.0 x 1.6m"
+                : MotionSequenceFusionTest_IsAccuracyExperiment() ? "Path: 1.6 x 1.5m"
+                                                                  : "A/D S:3000 C:2000");
+    OLED_Printf(0,
+                4,
+                "%s",
+                MotionSequenceFusionTest_IsAccuracyExperiment() ? "Reset +x; SW1 start"
+                                                                : "Park +x; SW1 start");
     OLED_Printf(0, 5, "SW1 running: cancel");
     if (MotionSequenceFusionTest_IsAccuracyExperiment())
     {
         const MotionControllerConfig *config = fixture.motionController.config;
-        OLED_Printf(0, 6, "S P%g I%g D%g H%g",
-                    (double)config->straightYawRateKp, (double)config->straightYawRateKi,
-                    (double)config->straightYawRateKd, (double)config->straightHeadingKpPerSec);
-        OLED_Printf(0, 7, "C P%g I%g D%g H%g",
-                    (double)config->arcYawRateKp, (double)config->arcYawRateKi,
-                    (double)config->arcYawRateKd, (double)config->arcHeadingKpPerSec);
+        OLED_Printf(0,
+                    6,
+                    "S P%g I%g D%g H%g",
+                    (double)config->straightYawRateKp,
+                    (double)config->straightYawRateKi,
+                    (double)config->straightYawRateKd,
+                    (double)config->straightHeadingKpPerSec);
+        OLED_Printf(0,
+                    7,
+                    "C P%g I%g D%g H%g",
+                    (double)config->arcYawRateKp,
+                    (double)config->arcYawRateKi,
+                    (double)config->arcYawRateKd,
+                    (double)config->arcHeadingKpPerSec);
     }
     OLED_Refresh_Gram();
     SW1_WaitForPressAndRelease();
@@ -453,8 +509,7 @@ static bool MotionSequenceFusionTest_RunPattern(bool stopAfter)
             continue;
         }
 
-        if (!aborting &&
-            ((nowMs - startMs >= FUSION_TIMEOUT_MS) || SW1_ReadState() == SW1_Enabled))
+        if (!aborting && ((nowMs - startMs >= FUSION_TIMEOUT_MS) || SW1_ReadState() == SW1_Enabled))
         {
             motionSequenceFusionTestTimedOut = nowMs - startMs >= FUSION_TIMEOUT_MS;
             motionSequenceFusionTestCancelled = !motionSequenceFusionTestTimedOut;
@@ -486,14 +541,14 @@ static bool MotionSequenceFusionTest_RunPattern(bool stopAfter)
     }
 
     motionSequenceFusionTestElapsedMs = HAL_GetTick() - startMs;
-    result->passed =
-        motionSequenceFusionTestStatus == MOTIONCONTROLLER_STATUS_OK &&
-        sequence->state == MOTION_SEQUENCE_COMPLETE;
+    result->passed = motionSequenceFusionTestStatus == MOTIONCONTROLLER_STATUS_OK &&
+                     sequence->state == MOTION_SEQUENCE_COMPLETE;
 
     /* Reserve/replace the last slot so a truncated log still has a final sample. */
     if (motionSequenceFusionTestLogCount == FUSION_LOG_CAPACITY ||
         (MotionSequenceFusionTest_IsAccuracyExperiment() &&
-         motionSequenceFusionTestLogCount - runLogStartCount == MotionSequenceFusionTest_RunLogCapacity()))
+         motionSequenceFusionTestLogCount - runLogStartCount ==
+             MotionSequenceFusionTest_RunLogCapacity()))
     {
         --motionSequenceFusionTestLogCount;
         motionSequenceFusionTestLogTruncated = true;
@@ -542,7 +597,8 @@ void MotionSequenceFusionTestRun(void)
         return;
     }
     motionSequenceFusionTestLogPeriodMs = MotionSequenceFusionTest_IsAccuracyExperiment()
-        ? FUSION_FILTER_LOG_PERIOD_MS : FUSION_TIMING_LOG_PERIOD_MS;
+                                              ? FUSION_FILTER_LOG_PERIOD_MS
+                                              : FUSION_TIMING_LOG_PERIOD_MS;
     fusionMotionConfig = motionControllerConfig;
     fusionMotionConfig.useMatchedYawRateReferenceFilter = false;
     if (MotionSequenceFusionTest_IsAccuracyExperiment())
@@ -561,11 +617,11 @@ void MotionSequenceFusionTestRun(void)
     fixture.leftWheelController.pid.ki = fixture.rightWheelController.pid.ki = 0.0f;
     fixture.leftWheelController.pid.kd = fixture.rightWheelController.pid.kd = 0.0f;
 
-    for (comparisonRunIndex = 0U;
-         comparisonRunIndex < MotionSequenceFusionTest_RunCount(); ++comparisonRunIndex)
+    for (comparisonRunIndex = 0U; comparisonRunIndex < MotionSequenceFusionTest_RunCount();
+         ++comparisonRunIndex)
     {
-        if (!MotionSequenceFusionTest_RunPattern(
-                !MotionSequenceFusionTest_IsAccuracyExperiment() && comparisonRunIndex == 1U))
+        if (!MotionSequenceFusionTest_RunPattern(!MotionSequenceFusionTest_IsAccuracyExperiment() &&
+                                                 comparisonRunIndex == 1U))
         {
             break; /* A failed/cancelled trace never launches another trace. */
         }
@@ -574,22 +630,21 @@ void MotionSequenceFusionTestRun(void)
     motionSequenceFusionTestComparisonValid =
         !MotionSequenceFusionTest_IsSingleRun() &&
         motionSequenceFusionTestResultCount == MOTION_SEQUENCE_FUSION_TEST_RUN_COUNT &&
-        motionSequenceFusionTestResults[0].passed &&
-        motionSequenceFusionTestResults[1].passed &&
+        motionSequenceFusionTestResults[0].passed && motionSequenceFusionTestResults[1].passed &&
         motionSequenceFusionTestResults[1].elapsedMs > 0U &&
         (!MotionSequenceFusionTest_IsAccuracyExperiment() || !motionSequenceFusionTestLogTruncated);
     motionSequenceFusionTestPassed = MotionSequenceFusionTest_IsSingleRun()
-        ? motionSequenceFusionTestResultCount == 1U &&
-          motionSequenceFusionTestResults[0].passed && !motionSequenceFusionTestLogTruncated
-        : motionSequenceFusionTestComparisonValid;
+                                         ? motionSequenceFusionTestResultCount == 1U &&
+                                               motionSequenceFusionTestResults[0].passed &&
+                                               !motionSequenceFusionTestLogTruncated
+                                         : motionSequenceFusionTestComparisonValid;
     if (motionSequenceFusionTestComparisonValid && !MotionSequenceFusionTest_IsAccuracyExperiment())
     {
         motionSequenceFusionTestSavedTimeMs =
             (int32_t)motionSequenceFusionTestResults[1].elapsedMs -
             (int32_t)motionSequenceFusionTestResults[0].elapsedMs;
-        motionSequenceFusionTestSavedPercent =
-            100.0f * (float)motionSequenceFusionTestSavedTimeMs /
-            (float)motionSequenceFusionTestResults[1].elapsedMs;
+        motionSequenceFusionTestSavedPercent = 100.0f * (float)motionSequenceFusionTestSavedTimeMs /
+                                               (float)motionSequenceFusionTestResults[1].elapsedMs;
     }
     MotionSequenceFusionTestFinished();
 }
