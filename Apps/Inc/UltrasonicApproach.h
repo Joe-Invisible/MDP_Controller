@@ -8,7 +8,8 @@
 /* Pure decision logic. MotionTask owns this state and applies its actions.
  * It consumes SensorTask snapshots; it never triggers or waits for an echo.
  */
-typedef enum {
+typedef enum
+{
     ULTRASONIC_APPROACH_DRIVE,
     ULTRASONIC_APPROACH_BRAKE,
     ULTRASONIC_APPROACH_VERIFY,
@@ -16,7 +17,8 @@ typedef enum {
     ULTRASONIC_APPROACH_FAULT
 } UltrasonicApproachAction;
 
-typedef struct {
+typedef struct
+{
     UltrasonicApproachAction action;
     float targetMm;
     float travelLimitMm;
@@ -30,8 +32,10 @@ typedef struct {
 } UltrasonicApproach;
 
 /* Returns NULL on success, otherwise a fault token; no motor side effects. */
-const char *UltrasonicApproach_Start(UltrasonicApproach *state, float targetMm,
-                                    const UltrasonicReading *reading, uint32_t now);
+const char *UltrasonicApproach_Start(UltrasonicApproach *state,
+                                     float targetMm,
+                                     const UltrasonicReading *reading,
+                                     uint32_t now);
 
 /* DRIVE: update the existing MotionProfile targetDistanceMm, without restarting
  * the profile. Keep its acceleration, deceleration and cruise speed unchanged.
@@ -41,7 +45,11 @@ const char *UltrasonicApproach_Start(UltrasonicApproach *state, float targetMm,
  * FAULT: brake and cancel the rest of the batch. No automatic retry/reverse.
  */
 UltrasonicApproachAction UltrasonicApproach_Update(UltrasonicApproach *state,
-    const UltrasonicReading *reading, uint32_t now, float progressMm,
-    float speedMmps, bool controllerBusy, bool controllerBraking);
+                                                   const UltrasonicReading *reading,
+                                                   uint32_t now,
+                                                   float progressMm,
+                                                   float speedMmps,
+                                                   bool controllerBusy,
+                                                   bool controllerBraking);
 
 #endif

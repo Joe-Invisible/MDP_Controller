@@ -48,10 +48,8 @@ SensorStatus SensorReading_IRStatus(const IRReading *reading, uint32_t now);
 const char *SensorReading_StatusName(SensorStatus status);
 
 /* U <sample-seq> <status> <corrected-mm-or-dash> <echo-us> <age-ms>\n */
-void SensorReading_Format(const UltrasonicReading *reading, uint32_t now,
-                          char *reply, size_t size);
+void SensorReading_Format(const UltrasonicReading *reading, uint32_t now, char *reply, size_t size);
 /* I seq L-status L-adc L-mV L-age R-status R-adc R-mV R-age\n */
-void SensorReading_FormatIR(const IRPairReading *reading, uint32_t now,
-                            char *reply, size_t size);
+void SensorReading_FormatIR(const IRPairReading *reading, uint32_t now, char *reply, size_t size);
 
 #endif /* SENSOR_READING_H */

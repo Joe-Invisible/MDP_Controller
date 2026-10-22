@@ -41,7 +41,8 @@
 #define TASK2_COURSE_WRAP 1
 #endif
 
-typedef enum {
+typedef enum
+{
     TASK2COURSE_RUNNING,
     TASK2COURSE_DONE,
     TASK2COURSE_FAULT,
@@ -49,7 +50,8 @@ typedef enum {
 
 typedef Task2AppIo Task2CourseIo;
 
-typedef struct {
+typedef struct
+{
     const Task2CourseIo *io;
     uint32_t stageStartedMs;
 #if TASK2_COURSE_WRAP
@@ -57,14 +59,15 @@ typedef struct {
 #else
     Task2App app;
 #endif
-    const char *fault;     /* static token when Update returns TASK2COURSE_FAULT */
+    const char *fault; /* static token when Update returns TASK2COURSE_FAULT */
 } Task2Course;
 
 /* Called once Task2Commands_Begin has run. NULL on success, else a fault token. */
-const char *Task2Course_Start(Task2Course *course, const Task2CourseIo *io,
-                              Task2Commands *commands, uint32_t nowMs);
-Task2CourseStatus Task2Course_Update(Task2Course *course, Task2Commands *commands,
-                                     uint32_t nowMs);
+const char *Task2Course_Start(Task2Course *course,
+                              const Task2CourseIo *io,
+                              Task2Commands *commands,
+                              uint32_t nowMs);
+Task2CourseStatus Task2Course_Update(Task2Course *course, Task2Commands *commands, uint32_t nowMs);
 /* O1's range from before START, right after a successful Start. Only the R275 sequence uses it. */
 void Task2Course_UsePrestart(Task2Course *course, const Task2WrapPrestartRange *range);
 /* The camera's depth to O1 before START (mm, 0: none); right after a successful Start. Only the R275 sequence uses it. */

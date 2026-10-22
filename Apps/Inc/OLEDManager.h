@@ -8,19 +8,21 @@
 
 #include <stdint.h>
 
-#define OLED_INVALID_SLOT    UINT8_MAX
+#define OLED_INVALID_SLOT UINT8_MAX
 
-typedef struct {
-	uint8_t slot;
+typedef struct
+{
+    uint8_t slot;
 } OLED_Handle_t;
 
-typedef enum {
-	OLED_OK = 0,
-	OLED_ERROR_NOT_INITIALIZED,
-	OLED_ERROR_INVALID_ARGUMENT,
-	OLED_ERROR_INVALID_HANDLE,
-	OLED_ERROR_FULL,
-	OLED_ERROR_OS
+typedef enum
+{
+    OLED_OK = 0,
+    OLED_ERROR_NOT_INITIALIZED,
+    OLED_ERROR_INVALID_ARGUMENT,
+    OLED_ERROR_INVALID_HANDLE,
+    OLED_ERROR_FULL,
+    OLED_ERROR_OS
 } OLED_Status_t;
 
 /**

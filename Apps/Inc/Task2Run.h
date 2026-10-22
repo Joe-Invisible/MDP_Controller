@@ -21,27 +21,29 @@
  *   - Nothing here changes an earlier run's state when a later batch faults.
  */
 
-typedef enum {
+typedef enum
+{
     TASK2RUN_RUNNING,
-    TASK2RUN_DONE,    /* send events, then complete the batch ("DONE r") */
-    TASK2RUN_FAULT,   /* send events, then fault the batch with the token */
+    TASK2RUN_DONE,  /* send events, then complete the batch ("DONE r") */
+    TASK2RUN_FAULT, /* send events, then fault the batch with the token */
 } Task2RunStatus;
 
-typedef struct {
+typedef struct
+{
     Task2Commands commands;
     Task2Course course;
-    bool active;      /* the T2 command is running */
-    bool stopping;    /* S accepted; STOPPED once stationary */
-    bool finishing;   /* course done; waiting for stationary wheels */
-    Task2WrapPrestart prestart;  /* ultrasonic samples from before START */
+    bool active;                /* the T2 command is running */
+    bool stopping;              /* S accepted; STOPPED once stationary */
+    bool finishing;             /* course done; waiting for stationary wheels */
+    Task2WrapPrestart prestart; /* ultrasonic samples from before START */
 } Task2Run;
 
 void Task2Run_Init(Task2Run *r);
 
 /* The batch's T2 command is starting, with arrow 1 from its start line (NONE for plain T2).
  * NULL on success, else a fault token. */
-const char *Task2Run_Start(Task2Run *r, uint8_t run, Task2CommandArrow arrow1,
-                           const Task2CourseIo *io, uint32_t nowMs);
+const char *Task2Run_Start(
+    Task2Run *r, uint8_t run, Task2CommandArrow arrow1, const Task2CourseIo *io, uint32_t nowMs);
 
 /* Every control tick while no run is active: keeps the ultrasonic samples a run may range O1 from. */
 void Task2Run_Idle(Task2Run *r, const Task2CourseIo *io, bool moving, uint32_t nowMs);
@@ -67,10 +69,14 @@ bool Task2Run_NextEvent(Task2Run *r, char line[TASK2COMMANDS_REPLY_SIZE]);
 bool Task2Run_Receive(Task2Run *r, const char *line, char reply[TASK2COMMANDS_REPLY_SIZE]);
 
 /* "D T" / "D T g" for the latest run (see Task2Diagnostics.h); the number of lines written. */
-unsigned Task2Run_Diagnostics(const Task2Run *r, const char *line,
-                              char lines[][TASK2_DIAG_LINE_SIZE], unsigned maxLines);
+unsigned Task2Run_Diagnostics(const Task2Run *r,
+                              const char *line,
+                              char lines[][TASK2_DIAG_LINE_SIZE],
+                              unsigned maxLines);
 /* "D R" / "D R b": the latest run's trace (see Task2Diagnostics.h); the number of lines written. */
-unsigned Task2Run_Trace(const Task2Run *r, const char *line,
-                        char lines[][TASK2_DIAG_LINE_SIZE], unsigned maxLines);
+unsigned Task2Run_Trace(const Task2Run *r,
+                        const char *line,
+                        char lines[][TASK2_DIAG_LINE_SIZE],
+                        unsigned maxLines);
 
 #endif

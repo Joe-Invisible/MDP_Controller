@@ -13,19 +13,22 @@
  * host. The assembler only sorts lines; the caller decides what a stop or any other line means.
  */
 #define TASK2_PLAN_FRAME_BYTES 24U
-#define TASK2_PLAN_MAX_FRAMES ((TASK2_WIRE_MAX_BYTES + TASK2_PLAN_FRAME_BYTES - 1U) / TASK2_PLAN_FRAME_BYTES)
+#define TASK2_PLAN_MAX_FRAMES                                                                      \
+    ((TASK2_WIRE_MAX_BYTES + TASK2_PLAN_FRAME_BYTES - 1U) / TASK2_PLAN_FRAME_BYTES)
 
-typedef enum {
-    TASK2_PLAN_FRAME_OTHER,     /* not a planning reply: keep it for the main loop */
-    TASK2_PLAN_FRAME_STOP,      /* "S" */
-    TASK2_PLAN_FRAME_STALE,     /* a reply to another request: dropped */
-    TASK2_PLAN_FRAME_MORE,      /* accepted, more to come */
-    TASK2_PLAN_FRAME_DONE,      /* the whole reply is assembled */
-    TASK2_PLAN_FRAME_NONE,      /* the host has no plan: plan locally now */
-    TASK2_PLAN_FRAME_BAD        /* malformed or contradictory: plan locally now */
+typedef enum
+{
+    TASK2_PLAN_FRAME_OTHER, /* not a planning reply: keep it for the main loop */
+    TASK2_PLAN_FRAME_STOP,  /* "S" */
+    TASK2_PLAN_FRAME_STALE, /* a reply to another request: dropped */
+    TASK2_PLAN_FRAME_MORE,  /* accepted, more to come */
+    TASK2_PLAN_FRAME_DONE,  /* the whole reply is assembled */
+    TASK2_PLAN_FRAME_NONE,  /* the host has no plan: plan locally now */
+    TASK2_PLAN_FRAME_BAD    /* malformed or contradictory: plan locally now */
 } Task2PlanFrame;
 
-typedef struct {
+typedef struct
+{
     uint16_t generation;
     unsigned parts, received;
     size_t lastBytes;

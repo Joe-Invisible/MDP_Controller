@@ -14,14 +14,15 @@ typedef struct
     float ultrasonicRangeToleranceMm;
     uint32_t ultrasonicApproachMedianSamples;
     uint32_t ultrasonicDepartureMedianSamples;
-    float ultrasonicJumpMm; /* Upward change after compensating for chassis motion. */
+    float ultrasonicJumpMm;             /* Upward change after compensating for chassis motion. */
     float ultrasonicMaxDepartureYawDeg; /* Relative to the O2 face normal. */
-    uint16_t irPresentAdc; /* Inclusive raw 12-bit ADC thresholds. */
+    uint16_t irPresentAdc;              /* Inclusive raw 12-bit ADC thresholds. */
     uint16_t irAbsentAdc;
-    uint16_t irFaceDropAdc; /* Once armed, "gone" is also anything this far below the face level; 0 disables. */
+    uint16_t
+        irFaceDropAdc; /* Once armed, "gone" is also anything this far below the face level; 0 disables. */
     float irAcquisitionMinYawDeg; /* Mirrored chassis yaw; side IR becomes eligible here. */
-    uint16_t irTrendMinDropAdc; /* Median-filtered drop from the preceding plateau. */
-    uint16_t irTrendReboundAdc; /* Small upward fluctuations do not cancel a decline. */
+    uint16_t irTrendMinDropAdc;   /* Median-filtered drop from the preceding plateau. */
+    uint16_t irTrendReboundAdc;   /* Small upward fluctuations do not cancel a decline. */
     uint32_t irTrendSamples;
     float irTrendMinTravelMm;
     float edgeUncertaintyMm;
@@ -31,14 +32,19 @@ typedef struct
     uint32_t absentSamples;
 } Task2ObstacleSensorConfig;
 
-typedef enum { TASK2_SENSOR_ULTRASONIC, TASK2_SENSOR_LEFT_IR, TASK2_SENSOR_RIGHT_IR,
-    TASK2_SENSOR_COUNT } Task2ObstacleSensor;
+typedef enum
+{
+    TASK2_SENSOR_ULTRASONIC,
+    TASK2_SENSOR_LEFT_IR,
+    TASK2_SENSOR_RIGHT_IR,
+    TASK2_SENSOR_COUNT
+} Task2ObstacleSensor;
 
 typedef struct
 {
     bool valid;
-    bool fault; /* ADC/trigger fault is distinct from a completed no-echo timeout. */
-    float value; /* mm for ultrasonic; raw ADC counts (0..4095) for IR. */
+    bool fault;          /* ADC/trigger fault is distinct from a completed no-echo timeout. */
+    float value;         /* mm for ultrasonic; raw ADC counts (0..4095) for IR. */
     Task2RoutePose pose; /* Pose when the measurement was triggered. */
 } Task2ObstacleObservation;
 
@@ -95,27 +101,31 @@ typedef struct
     /* O2 half-length proven by armed, present face samples: the hit's lateral coordinate on the
      * face plane, less edge and pose uncertainty. A lower bound, unlike observedWidthMm. */
     float faceExtentLowerMm;
-    float faceHitMm[8];        /* Latest consecutive face hits (at most 8 are compared). */
-    uint32_t faceHitCount;     /* Consecutive qualifying samples; reset by any non-present one. */
+    float faceHitMm[8];    /* Latest consecutive face hits (at most 8 are compared). */
+    uint32_t faceHitCount; /* Consecutive qualifying samples; reset by any non-present one. */
     Task2RoutePose lastUltrasonicPose; /* Capture pose of lastUltrasonicRangeMm. */
-    bool reacquire;               /* Same-side, unarmed: the IR reads no face beyond the proven face; back onto it. */
-    uint16_t irFaceRecentAdc[3];  /* Latest consecutive present readings. */
+    bool
+        reacquire; /* Same-side, unarmed: the IR reads no face beyond the proven face; back onto it. */
+    uint16_t irFaceRecentAdc[3]; /* Latest consecutive present readings. */
     uint32_t irFaceRecentCount;
-    uint16_t irFaceMedianAdc[8];  /* Medians of three, from the latest present readings once armed. */
+    uint16_t
+        irFaceMedianAdc[8]; /* Medians of three, from the latest present readings once armed. */
     uint32_t irFaceMedianCount;
-    uint16_t irFaceLevelAdc;      /* Highest of irFaceMedianAdc: the face level; 0 before any. */
+    uint16_t irFaceLevelAdc; /* Highest of irFaceMedianAdc: the face level; 0 before any. */
 } Task2ObstacleDetection;
 
 bool Task2ObstacleDetection_ValidConfig(const Task2ObstacleSensorConfig *config);
 /* Keep acquired O2 evidence; seed a shorter departure window from its baseline. */
 void Task2ObstacleDetection_BeginUSSDeparture(Task2ObstacleDetection *state,
-    const Task2ObstacleSensorConfig *config);
+                                              const Task2ObstacleSensorConfig *config);
 /* Called once at the stopped-heading start of the sensor-terminated straight. */
 void Task2ObstacleDetection_BeginIRTraverse(Task2ObstacleDetection *state,
-    const Task2RoutePose *pose);
+                                            const Task2RoutePose *pose);
 /* USS: approach acquisition, LL/RR departure loss. IR: LR/RL straight only. */
 void Task2ObstacleDetection_Observe(Task2ObstacleDetection *state,
-    const Task2ObstacleSensorConfig *config, const Task2RouteConfig *route,
-    Task2ObstacleSensor sensor, const Task2ObstacleObservation *observation,
-    bool departing);
+                                    const Task2ObstacleSensorConfig *config,
+                                    const Task2RouteConfig *route,
+                                    Task2ObstacleSensor sensor,
+                                    const Task2ObstacleObservation *observation,
+                                    bool departing);
 #endif

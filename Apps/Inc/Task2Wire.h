@@ -15,10 +15,11 @@
  */
 
 #define TASK2_WIRE_FORMAT 2U
-#define TASK2_WIRE_MAX_BYTES 1024U   /* Largest encoded request or reply. */
+#define TASK2_WIRE_MAX_BYTES 1024U /* Largest encoded request or reply. */
 #define TASK2_WIRE_REASON_BYTES 40U
 
-typedef enum {
+typedef enum
+{
     TASK2_WIRE_REPLAN_DEPARTURE = 1,
     TASK2_WIRE_REPLAN_IR_TRAVERSE,
     TASK2_WIRE_REPLAN_OBSTACLE2,
@@ -27,26 +28,28 @@ typedef enum {
     TASK2_WIRE_CALL_END
 } Task2WireCall;
 
-typedef struct {
-    uint8_t call;               /* Task2WireCall */
+typedef struct
+{
+    uint8_t call; /* Task2WireCall */
     uint8_t run;
     uint16_t generation;
-    Task2Route route;           /* The route as the call would receive it. */
-    Task2RouteConfig config;    /* The config argument (departure and traverse calls). */
+    Task2Route route;        /* The route as the call would receive it. */
+    Task2RouteConfig config; /* The config argument (departure and traverse calls). */
     Task2RoutePose pose;
     bool hasIr;
     Task2RouteIRDeparture ir;
-    float widthMm;              /* Width argument (edge and return calls). */
-    uint32_t step;              /* Completed step argument (edge and return calls). */
+    float widthMm; /* Width argument (edge and return calls). */
+    uint32_t step; /* Completed step argument (edge and return calls). */
 } Task2WireRequest;
 
-typedef struct {
+typedef struct
+{
     uint8_t run;
     uint16_t generation;
-    bool ok;                    /* The planner call's result. */
-    uint32_t checks;            /* Its whole planning work, for the record. */
-    uint32_t request;           /* Task2Wire_RequestTag of the request it answers. */
-    Task2Route route;           /* The route the call left. */
+    bool ok;          /* The planner call's result. */
+    uint32_t checks;  /* Its whole planning work, for the record. */
+    uint32_t request; /* Task2Wire_RequestTag of the request it answers. */
+    Task2Route route; /* The route the call left. */
 } Task2WireReply;
 
 size_t Task2Wire_EncodeRequest(const Task2WireRequest *request, uint8_t *out, size_t capacity);

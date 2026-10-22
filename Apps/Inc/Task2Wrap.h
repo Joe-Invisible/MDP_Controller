@@ -84,32 +84,51 @@
 /* Ultrasonic readings while no run is active, so a run can use O1's range from before START. Commanded motion
  * and unsteady or stale echoes make them unusable; the robot must still be left alone before START. */
 #define TASK2_WRAP_PRESTART_SAMPLES 5U
-typedef struct {
+typedef struct
+{
     float values[TASK2_WRAP_PRESTART_SAMPLES];
     uint32_t capturedMs[TASK2_WRAP_PRESTART_SAMPLES], sequences[TASK2_WRAP_PRESTART_SAMPLES];
     unsigned count, head;
     uint32_t sequence;
 } Task2WrapPrestart;
 /* What the samples gave at START: the median when trusted, with where it came from. */
-typedef struct {
-    float medianMm;                    /* median of five kept echoes, also when not trusted; NAN with fewer */
-    float spreadMm;                    /* largest minus smallest echo; NAN with fewer than five */
+typedef struct
+{
+    float medianMm; /* median of five kept echoes, also when not trusted; NAN with fewer */
+    float spreadMm; /* largest minus smallest echo; NAN with fewer than five */
     uint32_t newestSequence, newestCapturedMs, oldestAgeMs;
-    unsigned count;                    /* echoes kept */
-    const char *reject;                /* NULL when trusted, else why not */
+    unsigned count;     /* echoes kept */
+    const char *reject; /* NULL when trusted, else why not */
 } Task2WrapPrestartRange;
 
 #define TASK2_WRAP_MOVES 12U
 #define TASK2_WRAP_RANGE_SAMPLES 5U
 
-typedef enum {
-    TASK2_WRAP_RANGE1, TASK2_WRAP_APPROACH1, TASK2_WRAP_REMEASURE1, TASK2_WRAP_WAIT1, TASK2_WRAP_SWERVE,
-    TASK2_WRAP_RANGE2, TASK2_WRAP_STANDOFF, TASK2_WRAP_WAIT2, TASK2_WRAP_TURN_OUT, TASK2_WRAP_NEAR_PROBE,
-    TASK2_WRAP_NEAR_SEARCH, TASK2_WRAP_NEAR_SETTLE, TASK2_WRAP_UTURN, TASK2_WRAP_FAR_SEARCH,
-    TASK2_WRAP_FAR_SETTLE, TASK2_WRAP_TURN_HOME, TASK2_WRAP_HOME, TASK2_WRAP_PARK, TASK2_WRAP_PARK_FINISH,
-    TASK2_WRAP_FINISHED, TASK2_WRAP_ABORTED,
-    TASK2_WRAP_WAIT1_START,            /* O1 ranged, arrow 1 not yet read: wait where the camera reads it well */
-    TASK2_WRAP_STANDOFF_CHECK          /* at the standoff: range O2 again (accurate here) and correct the standoff */
+typedef enum
+{
+    TASK2_WRAP_RANGE1,
+    TASK2_WRAP_APPROACH1,
+    TASK2_WRAP_REMEASURE1,
+    TASK2_WRAP_WAIT1,
+    TASK2_WRAP_SWERVE,
+    TASK2_WRAP_RANGE2,
+    TASK2_WRAP_STANDOFF,
+    TASK2_WRAP_WAIT2,
+    TASK2_WRAP_TURN_OUT,
+    TASK2_WRAP_NEAR_PROBE,
+    TASK2_WRAP_NEAR_SEARCH,
+    TASK2_WRAP_NEAR_SETTLE,
+    TASK2_WRAP_UTURN,
+    TASK2_WRAP_FAR_SEARCH,
+    TASK2_WRAP_FAR_SETTLE,
+    TASK2_WRAP_TURN_HOME,
+    TASK2_WRAP_HOME,
+    TASK2_WRAP_PARK,
+    TASK2_WRAP_PARK_FINISH,
+    TASK2_WRAP_FINISHED,
+    TASK2_WRAP_ABORTED,
+    TASK2_WRAP_WAIT1_START, /* O1 ranged, arrow 1 not yet read: wait where the camera reads it well */
+    TASK2_WRAP_STANDOFF_CHECK /* at the standoff: range O2 again (accurate here) and correct the standoff */
 } Task2WrapPhase;
 
 /* ENTRY: into the car park at an angle if that fits from where the robot is when it runs. Otherwise, turn 2
@@ -117,17 +136,27 @@ typedef enum {
  * the home route is planned again from there. */
 /* DIAG: the diagonal S home, solved again from where the robot is when it runs (turn 1: to land exactly on the parking
  * spot, if that still fits; else home is planned again). */
-typedef enum { TASK2_WRAP_ARC_TO, TASK2_WRAP_STRAIGHT, TASK2_WRAP_TO_X, TASK2_WRAP_S_TO_Y, TASK2_WRAP_ENTRY,
-               TASK2_WRAP_DIAG } Task2WrapMoveKind;
-typedef struct {
-    uint8_t kind;      /* Task2WrapMoveKind */
-    int8_t turn;       /* ARC_TO: +1 anticlockwise, -1 clockwise. S_TO_Y: 0 heading +x, 1 heading -x. */
-    float value;       /* ARC_TO heading (rad); STRAIGHT signed distance; TO_X / S_TO_Y the target x / y. */
+typedef enum
+{
+    TASK2_WRAP_ARC_TO,
+    TASK2_WRAP_STRAIGHT,
+    TASK2_WRAP_TO_X,
+    TASK2_WRAP_S_TO_Y,
+    TASK2_WRAP_ENTRY,
+    TASK2_WRAP_DIAG
+} Task2WrapMoveKind;
+typedef struct
+{
+    uint8_t kind; /* Task2WrapMoveKind */
+    int8_t turn;  /* ARC_TO: +1 anticlockwise, -1 clockwise. S_TO_Y: 0 heading +x, 1 heading -x. */
+    float
+        value; /* ARC_TO heading (rad); STRAIGHT signed distance; TO_X / S_TO_Y the target x / y. */
     float speedMmps;
 } Task2WrapMove;
 
 /* Standing range: fresh readings in a window, or none by its deadline. */
-typedef struct {
+typedef struct
+{
     float values[TASK2_WRAP_RANGE_SAMPLES];
     unsigned count;
     uint32_t deadlineMs;
@@ -137,55 +166,67 @@ typedef struct {
 #define TASK2_WRAP_FACE_SAMPLES 5U
 /* A side-IR search along O2: the state wanted on three samples in a row, and where the first was taken.
  * A search for the face's end only counts once the face itself has been seen. */
-typedef struct {
-    bool want;         /* true: find the face; false: find where it ends */
-    int8_t direction;  /* +1 forward, -1 reverse */
-    unsigned run, faceRun;  /* the wanted state's run, and present samples in a row before the face counts */
+typedef struct
+{
+    bool want;        /* true: find the face; false: find where it ends */
+    int8_t direction; /* +1 forward, -1 reverse */
+    unsigned run,
+        faceRun; /* the wanted state's run, and present samples in a row before the face counts */
     float firstIrYMm, firstSpeedMmps;
     bool found, braking, slowed, seenFace, exhausted;
-    float slowAtYMm;   /* Axle y where a cruise search drops to search speed; NAN: none. */
-    float limitIrYMm;  /* The search gives up once the sensor passes this y along its motion; NAN: none. */
+    float slowAtYMm; /* Axle y where a cruise search drops to search speed; NAN: none. */
+    float
+        limitIrYMm; /* The search gives up once the sensor passes this y along its motion; NAN: none. */
     bool present;      /* Hysteresis state between the absent and present levels. */
     uint32_t lastIrMs; /* When the last valid sample arrived (or the search began). */
     bool noData;       /* Ran out because the IR gave no valid samples, not by distance. */
-    uint16_t faceAdc[TASK2_WRAP_FACE_SAMPLES];  /* The latest present samples on the face, for the level an end drops from. */
+    uint16_t faceAdc
+        [TASK2_WRAP_FACE_SAMPLES]; /* The latest present samples on the face, for the level an end drops from. */
     unsigned faceCount;
 } Task2WrapSearch;
 
-typedef struct {
+typedef struct
+{
     const Task2AppIo *io;
     Task2WrapPhase phase;
     const char *fault;
-    int arrow1, arrow2;              /* +1 left, -1 right, 0 not known yet */
+    int arrow1, arrow2; /* +1 left, -1 right, 0 not known yet */
     Task2RoutePose pose, motionOrigin;
     bool primitive;
     float previousDistanceMm, previousYawRad, pathMm;
-    float arcTargetRad;              /* Heading the running arc should end on; NAN for other moves. */
+    float arcTargetRad; /* Heading the running arc should end on; NAN for other moves. */
     Task2WrapMove moves[TASK2_WRAP_MOVES];
     unsigned moveCount, moveNext;
     Task2WrapRange range;
     Task2WrapSearch search;
     uint32_t phaseStartedMs, previousMs, activeMs;
     uint32_t ultrasonicSequence, irSequence;
-    struct { uint32_t ms; Task2RoutePose pose; } history[TASK2_APP_POSE_HISTORY];
+    struct
+    {
+        uint32_t ms;
+        Task2RoutePose pose;
+    } history[TASK2_APP_POSE_HISTORY];
     unsigned historyHead, historyCount;
     /* Measurements. */
     float startFrontXMm, o1RangeMm, o1FaceXMm, o2FaceXMm, nearEndYMm, farEndYMm;
-    float o2SideFaceXMm;              /* O2's face from the ultrasonic beside O1 mid-swerve (agreeing echoes); NAN: none */
-    float o2SideFaces[6];             /* each side echo's face */
+    float
+        o2SideFaceXMm; /* O2's face from the ultrasonic beside O1 mid-swerve (agreeing echoes); NAN: none */
+    float o2SideFaces[6]; /* each side echo's face */
     unsigned o2SideCount;
-    Task2WrapPrestartRange prestart;  /* O1's range from before START (count 0: none offered) */
-    float cameraO1Mm;                 /* O1's range from the front by the camera before START; NAN: none */
+    Task2WrapPrestartRange prestart; /* O1's range from before START (count 0: none offered) */
+    float cameraO1Mm; /* O1's range from the front by the camera before START; NAN: none */
     float lastUssMm;
     uint8_t lastUssStatus;
     uint32_t lastUssSequence, lastUssCapturedMs;
     unsigned guardRun, backoffSteps, probeSamples, probePresent, rangeTries;
-    bool guardBraked, remeasured, o2Assumed, sideStepped, nearExhausted, farExhausted, nearReacquired, singleS;
-    bool cameraRejected;             /* the camera's O2 depth was outside the rules: not waited for again */
-    bool standoffChecked;            /* O2 ranged again at the standoff */
-    bool swerveBraked;               /* the swerve's last arc braked short of O2 */
-    bool angled;                     /* parks at an angle: the last straight ends with the body centred in the car park */
-    unsigned replans;                /* home routes planned again because an early entry no longer fitted */
+    bool guardBraked, remeasured, o2Assumed, sideStepped, nearExhausted, farExhausted,
+        nearReacquired, singleS;
+    bool cameraRejected;  /* the camera's O2 depth was outside the rules: not waited for again */
+    bool standoffChecked; /* O2 ranged again at the standoff */
+    bool swerveBraked;    /* the swerve's last arc braked short of O2 */
+    bool
+        angled; /* parks at an angle: the last straight ends with the body centred in the car park */
+    unsigned replans; /* home routes planned again because an early entry no longer fitted */
     uint16_t irAdc[2];
     uint16_t irHistoryAdc[TASK2_DIAG_IR_HISTORY];
     unsigned irHistoryCount, arcMisses;

@@ -6,12 +6,12 @@
 static const char *CheckReading(const UltrasonicReading *reading, uint32_t now)
 {
     if (reading == NULL || reading->status == SENSOR_NOT_READY) return "US_NOT_READY";
-    if ((uint32_t)(now - reading->capturedMs) > ULTRASONIC_APPROACH_MAX_AGE_MS)
-        return "US_STALE";
+    if ((uint32_t)(now - reading->capturedMs) > ULTRASONIC_APPROACH_MAX_AGE_MS) return "US_STALE";
     if (reading->status == SENSOR_TIMEOUT) return "US_ECHO";
     if (reading->status != SENSOR_OK) return "US_SENSOR";
     if (!isfinite(reading->distanceMm) || reading->distanceMm <= 0.0f ||
-        reading->distanceMm > SENSOR_ULTRASONIC_MAX_MM) return "US_SENSOR";
+        reading->distanceMm > SENSOR_ULTRASONIC_MAX_MM)
+        return "US_SENSOR";
     return NULL;
 }
 
@@ -22,23 +22,34 @@ static UltrasonicApproachAction Fail(UltrasonicApproach *state, const char *reas
     return state->action;
 }
 
-const char *UltrasonicApproach_Start(UltrasonicApproach *state, float targetMm,
-                                    const UltrasonicReading *reading, uint32_t now)
+const char *UltrasonicApproach_Start(UltrasonicApproach *state,
+                                     float targetMm,
+                                     const UltrasonicReading *reading,
+                                     uint32_t now)
 {
-    *state = (UltrasonicApproach){ .targetMm = targetMm, .startedMs = now,
-        .action = ULTRASONIC_APPROACH_DRIVE };
+    *state = (UltrasonicApproach){
+        .targetMm = targetMm, .startedMs = now, .action = ULTRASONIC_APPROACH_DRIVE};
     const char *fault = CheckReading(reading, now);
     if (!isfinite(targetMm) || targetMm < ULTRASONIC_APPROACH_MIN_TARGET_MM ||
-        targetMm > ULTRASONIC_APPROACH_MAX_TARGET_MM) fault = "US_TARGET";
-    if (fault != NULL) { Fail(state, fault); return fault; }
+        targetMm > ULTRASONIC_APPROACH_MAX_TARGET_MM)
+        fault = "US_TARGET";
+    if (fault != NULL)
+    {
+        Fail(state, fault);
+        return fault;
+    }
     float gap = reading->distanceMm - targetMm;
     if (gap < -ULTRASONIC_APPROACH_TOLERANCE_MM) fault = "US_TOO_CLOSE";
     if (gap > ULTRASONIC_APPROACH_MAX_TRAVEL_MM - ULTRASONIC_APPROACH_TRAVEL_MARGIN_MM)
         fault = "US_TRAVEL";
-    if (fault != NULL) { Fail(state, fault); return fault; }
+    if (fault != NULL)
+    {
+        Fail(state, fault);
+        return fault;
+    }
     /* A bound based on the initial range: never chase a receding target. */
-    state->travelLimitMm = fmaxf(ULTRASONIC_APPROACH_TRAVEL_MARGIN_MM,
-        gap + ULTRASONIC_APPROACH_TRAVEL_MARGIN_MM);
+    state->travelLimitMm =
+        fmaxf(ULTRASONIC_APPROACH_TRAVEL_MARGIN_MM, gap + ULTRASONIC_APPROACH_TRAVEL_MARGIN_MM);
     /* The command starts stationary; the initial snapshot needs no travel
      * compensation. New snapshots replace this endpoint while driving.
      */
@@ -48,11 +59,15 @@ const char *UltrasonicApproach_Start(UltrasonicApproach *state, float targetMm,
 }
 
 UltrasonicApproachAction UltrasonicApproach_Update(UltrasonicApproach *state,
-    const UltrasonicReading *reading, uint32_t now, float progressMm,
-    float speedMmps, bool controllerBusy, bool controllerBraking)
+                                                   const UltrasonicReading *reading,
+                                                   uint32_t now,
+                                                   float progressMm,
+                                                   float speedMmps,
+                                                   bool controllerBusy,
+                                                   bool controllerBraking)
 {
-    if (state->action == ULTRASONIC_APPROACH_FAULT ||
-        state->action == ULTRASONIC_APPROACH_DONE) return state->action;
+    if (state->action == ULTRASONIC_APPROACH_FAULT || state->action == ULTRASONIC_APPROACH_DONE)
+        return state->action;
     const char *fault = CheckReading(reading, now);
     if (fault != NULL) return Fail(state, fault);
     if ((uint32_t)(now - state->startedMs) >= ULTRASONIC_APPROACH_TIMEOUT_MS)
@@ -62,14 +77,16 @@ UltrasonicApproachAction UltrasonicApproach_Update(UltrasonicApproach *state,
 
     if (progressMm >= state->travelLimitMm) return Fail(state, "US_TRAVEL");
 
-    if (state->action == ULTRASONIC_APPROACH_BRAKE) {
+    if (state->action == ULTRASONIC_APPROACH_BRAKE)
+    {
         if (controllerBusy) return state->action;
         state->action = ULTRASONIC_APPROACH_VERIFY;
         state->stoppedMs = now;
         state->stoppedSequence = reading->sequence;
         return state->action;
     }
-    if (state->action == ULTRASONIC_APPROACH_VERIFY) {
+    if (state->action == ULTRASONIC_APPROACH_VERIFY)
+    {
         if (controllerBusy) return Fail(state, "US_STATE");
         if ((uint32_t)(now - state->stoppedMs) >= ULTRASONIC_APPROACH_VERIFY_MS)
             return Fail(state, "US_VERIFY");
@@ -81,25 +98,25 @@ UltrasonicApproachAction UltrasonicApproach_Update(UltrasonicApproach *state,
         if (error < -ULTRASONIC_APPROACH_TOLERANCE_MM) return Fail(state, "US_TOO_CLOSE");
         if (error > ULTRASONIC_APPROACH_TOLERANCE_MM) return Fail(state, "US_RANGE");
         state->stoppedSequence = reading->sequence;
-        if (++state->verifiedSamples < ULTRASONIC_APPROACH_VERIFY_SAMPLES)
-            return state->action;
+        if (++state->verifiedSamples < ULTRASONIC_APPROACH_VERIFY_SAMPLES) return state->action;
         state->action = ULTRASONIC_APPROACH_DONE;
         return state->action;
     }
 
-    if (progressMm >= state->travelLimitMm - 1.0f)
-        return Fail(state, "US_TRAVEL");
+    if (progressMm >= state->travelLimitMm - 1.0f) return Fail(state, "US_TRAVEL");
     /* The unchanged MotionProfile may have reached its endpoint in the last
      * control tick. Latch braking: later echoes must never restart this move.
      */
-    if (controllerBraking) {
+    if (controllerBraking)
+    {
         state->action = ULTRASONIC_APPROACH_BRAKE;
         return state->action;
     }
     if (!controllerBusy) return Fail(state, "US_STATE");
     float gap = reading->distanceMm - state->targetMm;
     if (gap < -ULTRASONIC_APPROACH_TOLERANCE_MM) return Fail(state, "US_TOO_CLOSE");
-    if (reading->sequence != state->sampleSequence) {
+    if (reading->sequence != state->sampleSequence)
+    {
         /* Range belongs to capture time, while progress belongs to the latest
          * control tick. Approximate intervening travel with encoder speed.
          * Between echoes the endpoint stays fixed and encoder odometry consumes
