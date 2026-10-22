@@ -4,12 +4,14 @@
 #include "Task2Estimate.h"
 #include "SensorReading.h"
 
-typedef struct {
+typedef struct
+{
     float distanceMm; /* Signed travel since primitive launch, including braking. */
-    float yawRad;    /* Relative to primitive launch. */
+    float yawRad;     /* Relative to primitive launch. */
     bool moving, braking;
 } Task2MotionReading;
-typedef struct {
+typedef struct
+{
     void *context;
     const char *(*moveStraight)(void *, float distanceMm, float speedCps);
     const char *(*moveArc)(void *, float distanceMm, float radiusMm, float speedCps);
@@ -24,14 +26,29 @@ typedef struct {
     float decelerationMmps2;
 } Task2AppIo;
 
-typedef enum {
-    TASK2_APP_RANGE1, TASK2_APP_APPROACH1, TASK2_APP_WAIT1, TASK2_APP_SWERVE1,
-    TASK2_APP_RANGE2, TASK2_APP_RECOGNITION2, TASK2_APP_WAIT2,
-    TASK2_APP_ACQUIRE2, TASK2_APP_ROUTE, TASK2_APP_FINISHED, TASK2_APP_ABORTED
+typedef enum
+{
+    TASK2_APP_RANGE1,
+    TASK2_APP_APPROACH1,
+    TASK2_APP_WAIT1,
+    TASK2_APP_SWERVE1,
+    TASK2_APP_RANGE2,
+    TASK2_APP_RECOGNITION2,
+    TASK2_APP_WAIT2,
+    TASK2_APP_ACQUIRE2,
+    TASK2_APP_ROUTE,
+    TASK2_APP_FINISHED,
+    TASK2_APP_ABORTED
 } Task2AppPhase;
-typedef enum { TASK2_APP_RUNNING, TASK2_APP_DONE, TASK2_APP_FAULT } Task2AppStatus;
+typedef enum
+{
+    TASK2_APP_RUNNING,
+    TASK2_APP_DONE,
+    TASK2_APP_FAULT
+} Task2AppStatus;
 #define TASK2_APP_POSE_HISTORY 32U
-typedef struct {
+typedef struct
+{
     const Task2AppIo *io;
     Task2AppPhase phase;
     const char *fault;
@@ -47,7 +64,11 @@ typedef struct {
     float pathMm, previousDistanceMm, previousYawRad;
     float faceWindow[TASK2_USS_HISTORY_CAPACITY];
     unsigned faceCount;
-    struct { uint32_t ms; Task2RoutePose pose; } history[TASK2_APP_POSE_HISTORY];
+    struct
+    {
+        uint32_t ms;
+        Task2RoutePose pose;
+    } history[TASK2_APP_POSE_HISTORY];
     unsigned historyHead, historyCount;
 } Task2App;
 

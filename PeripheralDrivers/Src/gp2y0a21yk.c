@@ -9,15 +9,10 @@
 
 #include <stddef.h>
 
-GP2Y0A21YK_Status GP2Y0A21YK_Init(
-    GP2Y0A21YK *sensor,
-    const GP2Y0A21YK_Config *config)
+GP2Y0A21YK_Status GP2Y0A21YK_Init(GP2Y0A21YK *sensor, const GP2Y0A21YK_Config *config)
 {
-    if ((sensor == NULL) ||
-        (config == NULL) ||
-        (config->hadc == NULL) ||
-        (config->adcReferenceVoltageV <= 0.0f) ||
-        (config->conversionTimeoutMs == 0U))
+    if ((sensor == NULL) || (config == NULL) || (config->hadc == NULL) ||
+        (config->adcReferenceVoltageV <= 0.0f) || (config->conversionTimeoutMs == 0U))
     {
         return GP2Y0A21YK_ERROR_INVALID_ARGUMENT;
     }
@@ -28,9 +23,7 @@ GP2Y0A21YK_Status GP2Y0A21YK_Init(
     return GP2Y0A21YK_OK;
 }
 
-GP2Y0A21YK_Status GP2Y0A21YK_Read(
-    GP2Y0A21YK *sensor,
-    GP2Y0A21YK_Measurement *measurement)
+GP2Y0A21YK_Status GP2Y0A21YK_Read(GP2Y0A21YK *sensor, GP2Y0A21YK_Measurement *measurement)
 {
     ADC_ChannelConfTypeDef channelConfig = {0};
     HAL_StatusTypeDef halStatus;
@@ -60,9 +53,7 @@ GP2Y0A21YK_Status GP2Y0A21YK_Read(
         return GP2Y0A21YK_ERROR_ADC_START;
     }
 
-    halStatus = HAL_ADC_PollForConversion(
-        sensor->config.hadc,
-        sensor->config.conversionTimeoutMs);
+    halStatus = HAL_ADC_PollForConversion(sensor->config.hadc, sensor->config.conversionTimeoutMs);
 
     if (halStatus == HAL_TIMEOUT)
     {
@@ -84,16 +75,12 @@ GP2Y0A21YK_Status GP2Y0A21YK_Read(
     }
 
     measurement->rawAdc = (uint16_t)rawAdc;
-    measurement->voltageV = GP2Y0A21YK_RawToVoltage(
-        sensor,
-        measurement->rawAdc);
+    measurement->voltageV = GP2Y0A21YK_RawToVoltage(sensor, measurement->rawAdc);
 
     return GP2Y0A21YK_OK;
 }
 
-float GP2Y0A21YK_RawToVoltage(
-    const GP2Y0A21YK *sensor,
-    uint16_t rawAdc)
+float GP2Y0A21YK_RawToVoltage(const GP2Y0A21YK *sensor, uint16_t rawAdc)
 {
     if ((sensor == NULL) || !sensor->initialized)
     {

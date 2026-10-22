@@ -36,7 +36,8 @@
 #define TASK2_COURSE_DRY_RUN 0
 #endif
 
-typedef enum {
+typedef enum
+{
     TASK2COURSE_RUNNING,
     TASK2COURSE_DONE,
     TASK2COURSE_FAULT,
@@ -44,18 +45,20 @@ typedef enum {
 
 typedef Task2AppIo Task2CourseIo;
 
-typedef struct {
+typedef struct
+{
     const Task2CourseIo *io;
     uint32_t stageStartedMs;
     Task2App app;
-    const char *fault;     /* static token when Update returns TASK2COURSE_FAULT */
+    const char *fault; /* static token when Update returns TASK2COURSE_FAULT */
 } Task2Course;
 
 /* Called once Task2Commands_Begin has run. NULL on success, else a fault token. */
-const char *Task2Course_Start(Task2Course *course, const Task2CourseIo *io,
-                              Task2Commands *commands, uint32_t nowMs);
-Task2CourseStatus Task2Course_Update(Task2Course *course, Task2Commands *commands,
-                                     uint32_t nowMs);
+const char *Task2Course_Start(Task2Course *course,
+                              const Task2CourseIo *io,
+                              Task2Commands *commands,
+                              uint32_t nowMs);
+Task2CourseStatus Task2Course_Update(Task2Course *course, Task2Commands *commands, uint32_t nowMs);
 /* MotionTask has braked (S or fault); forget the run. */
 void Task2Course_Abort(Task2Course *course);
 

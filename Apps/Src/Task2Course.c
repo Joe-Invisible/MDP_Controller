@@ -14,47 +14,49 @@
 #define DRY_ROUND2_MS 3500U
 #define DRY_HOME_MS 3000U
 
-static void Enter(Task2Course *c, Task2Commands *t, Task2Stage stage, uint32_t nowMs) {
+static void Enter(Task2Course *c, Task2Commands *t, Task2Stage stage, uint32_t nowMs)
+{
     Task2Commands_SetStage(t, stage);
     c->stageStartedMs = nowMs;
 }
 
-const char *Task2Course_Start(Task2Course *c, const Task2CourseIo *io,
-                              Task2Commands *t, uint32_t nowMs) {
+const char *
+Task2Course_Start(Task2Course *c, const Task2CourseIo *io, Task2Commands *t, uint32_t nowMs)
+{
     (void)t;
-    *c = (Task2Course){ .io = io, .stageStartedMs = nowMs };
+    *c = (Task2Course){.io = io, .stageStartedMs = nowMs};
     return NULL;
 }
 
-Task2CourseStatus Task2Course_Update(Task2Course *c, Task2Commands *t, uint32_t nowMs) {
+Task2CourseStatus Task2Course_Update(Task2Course *c, Task2Commands *t, uint32_t nowMs)
+{
     uint32_t elapsed = nowMs - c->stageStartedMs;
-    switch (t->stage) {
+    switch (t->stage)
+    {
     case TASK2_STAGE_APPROACH1:
         if (elapsed >= DRY_APPROACH1_MS)
-            Enter(c, t, Task2Commands_Arrow(t, 1U) ? TASK2_STAGE_SWERVE1 : TASK2_STAGE_WAIT1, nowMs);
+            Enter(
+                c, t, Task2Commands_Arrow(t, 1U) ? TASK2_STAGE_SWERVE1 : TASK2_STAGE_WAIT1, nowMs);
         break;
     case TASK2_STAGE_WAIT1:
-        if (Task2Commands_Arrow(t, 1U))
-            Enter(c, t, TASK2_STAGE_SWERVE1, nowMs);
+        if (Task2Commands_Arrow(t, 1U)) Enter(c, t, TASK2_STAGE_SWERVE1, nowMs);
         break;
     case TASK2_STAGE_SWERVE1:
-        if (elapsed >= DRY_SWERVE1_MS)
-            Enter(c, t, TASK2_STAGE_APPROACH2, nowMs);
+        if (elapsed >= DRY_SWERVE1_MS) Enter(c, t, TASK2_STAGE_APPROACH2, nowMs);
         break;
     case TASK2_STAGE_APPROACH2:
         if (elapsed >= DRY_APPROACH2_MS)
             Enter(c, t, Task2Commands_Arrow(t, 2U) ? TASK2_STAGE_ROUND2 : TASK2_STAGE_WAIT2, nowMs);
         break;
     case TASK2_STAGE_WAIT2:
-        if (Task2Commands_Arrow(t, 2U))
-            Enter(c, t, TASK2_STAGE_ROUND2, nowMs);
+        if (Task2Commands_Arrow(t, 2U)) Enter(c, t, TASK2_STAGE_ROUND2, nowMs);
         break;
     case TASK2_STAGE_ROUND2:
-        if (elapsed >= DRY_ROUND2_MS)
-            Enter(c, t, TASK2_STAGE_HOME, nowMs);
+        if (elapsed >= DRY_ROUND2_MS) Enter(c, t, TASK2_STAGE_HOME, nowMs);
         break;
     case TASK2_STAGE_HOME:
-        if (elapsed >= DRY_HOME_MS) {
+        if (elapsed >= DRY_HOME_MS)
+        {
             /* Nothing measured in a dry run; the span is not a width. */
             Task2Commands_Summary(t, NAN, NAN, NAN, NAN);
             return TASK2COURSE_DONE;
@@ -67,26 +69,32 @@ Task2CourseStatus Task2Course_Update(Task2Course *c, Task2Commands *t, uint32_t 
     return TASK2COURSE_RUNNING;
 }
 
-void Task2Course_Abort(Task2Course *c) {
+void Task2Course_Abort(Task2Course *c)
+{
     c->io = NULL;
 }
 
 #else
-const char *Task2Course_Start(Task2Course *c, const Task2CourseIo *io,
-                              Task2Commands *t, uint32_t nowMs) {
+const char *
+Task2Course_Start(Task2Course *c, const Task2CourseIo *io, Task2Commands *t, uint32_t nowMs)
+{
     (void)t;
     memset(c, 0, sizeof(*c));
-    c->io = io; c->stageStartedMs = nowMs;
+    c->io = io;
+    c->stageStartedMs = nowMs;
     c->fault = Task2App_Start(&c->app, io, nowMs);
     return c->fault;
 }
-Task2CourseStatus Task2Course_Update(Task2Course *c, Task2Commands *t, uint32_t nowMs) {
+Task2CourseStatus Task2Course_Update(Task2Course *c, Task2Commands *t, uint32_t nowMs)
+{
     Task2AppStatus status = Task2App_Update(&c->app, t, nowMs);
     c->fault = c->app.fault;
-    return status == TASK2_APP_DONE ? TASK2COURSE_DONE
-        : status == TASK2_APP_FAULT ? TASK2COURSE_FAULT : TASK2COURSE_RUNNING;
+    return status == TASK2_APP_DONE    ? TASK2COURSE_DONE
+           : status == TASK2_APP_FAULT ? TASK2COURSE_FAULT
+                                       : TASK2COURSE_RUNNING;
 }
-void Task2Course_Abort(Task2Course *c) {
+void Task2Course_Abort(Task2Course *c)
+{
     Task2App_Abort(&c->app);
     c->io = NULL;
 }

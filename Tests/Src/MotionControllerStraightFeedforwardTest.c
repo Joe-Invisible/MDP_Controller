@@ -21,64 +21,60 @@
 #include <stdint.h>
 #include <math.h>
 
-
 /* -------------------------------------------------------------------------- */
 /* Test configuration                                                         */
 /* -------------------------------------------------------------------------- */
 
-#define STRAIGHT_FF_TEST_DISTANCE_MM              (-500.0f)
-#define STRAIGHT_FF_TEST_RAW_COMMAND              (0.0f)
-#define STRAIGHT_FF_TEST_SPEED_CPS                (2000.0f)
+#define STRAIGHT_FF_TEST_DISTANCE_MM (-500.0f)
+#define STRAIGHT_FF_TEST_RAW_COMMAND (0.0f)
+#define STRAIGHT_FF_TEST_SPEED_CPS (2000.0f)
 
-#define STRAIGHT_FF_TEST_CONTROL_PERIOD_MS        (10U)
-#define STRAIGHT_FF_TEST_CONTROL_PERIOD_S         (0.010f)
+#define STRAIGHT_FF_TEST_CONTROL_PERIOD_MS (10U)
+#define STRAIGHT_FF_TEST_CONTROL_PERIOD_S (0.010f)
 
-#define STRAIGHT_FF_TEST_LOG_INTERVAL_MS          (20U)
-#define STRAIGHT_FF_TEST_TIMEOUT_MS               (10000U)
+#define STRAIGHT_FF_TEST_LOG_INTERVAL_MS (20U)
+#define STRAIGHT_FF_TEST_TIMEOUT_MS (10000U)
 
-#define STRAIGHT_FF_TEST_LOG_CAPACITY             (500U)
-
+#define STRAIGHT_FF_TEST_LOG_CAPACITY (500U)
 
 /*
  * Rear-wheel calibration used by the diagnostic distance integrator.
  */
-#define STRAIGHT_FF_TEST_ENCODER_CPR              (1560.0f)
-#define STRAIGHT_FF_TEST_WHEEL_DIAMETER_MM        (65.5f)
-
+#define STRAIGHT_FF_TEST_ENCODER_CPR (1560.0f)
+#define STRAIGHT_FF_TEST_WHEEL_DIAMETER_MM (65.5f)
 
 /*
  * Synchronisation controller.
  */
-#define STRAIGHT_FF_TEST_SYNC_KP_CPS_PER_MM       (10.0f)
-#define STRAIGHT_FF_TEST_SYNC_MAX_CORRECTION_CPS  (100.0f)
+#define STRAIGHT_FF_TEST_SYNC_KP_CPS_PER_MM (10.0f)
+#define STRAIGHT_FF_TEST_SYNC_MAX_CORRECTION_CPS (100.0f)
 
-#define FF_EXP	(0)
-#define STRAIGHT_FF_TEST_HEADING_KP               (0.0f)
-#define STRAIGHT_FF_TEST_HEADING_KI               (0.0f)
-#define STRAIGHT_FF_TEST_HEADING_KD               (0.0f)
-#define STRAIGHT_FF_TEST_HEADING_LIMIT_RAD        (0.015f)
+#define FF_EXP (0)
+#define STRAIGHT_FF_TEST_HEADING_KP (0.0f)
+#define STRAIGHT_FF_TEST_HEADING_KI (0.0f)
+#define STRAIGHT_FF_TEST_HEADING_KD (0.0f)
+#define STRAIGHT_FF_TEST_HEADING_LIMIT_RAD (0.015f)
 #if FF_EXP == 1
-#define STRAIGHT_FF_TEST_YAWRATE_KP               (0.0f)
-#define STRAIGHT_FF_TEST_YAWRATE_KI               (0.0f)
-#define STRAIGHT_FF_TEST_YAWRATE_KD               (0.0f)
-#define STRAIGHT_FF_TEST_YAWRATE_LIMIT_UNIT       (5.0f)
+#define STRAIGHT_FF_TEST_YAWRATE_KP (0.0f)
+#define STRAIGHT_FF_TEST_YAWRATE_KI (0.0f)
+#define STRAIGHT_FF_TEST_YAWRATE_KD (0.0f)
+#define STRAIGHT_FF_TEST_YAWRATE_LIMIT_UNIT (5.0f)
 #define STRAIGHT_FF_TEST_HEADING_OUTER_KP_PER_SEC (0.0f)
 #elif FF_EXP == 0
-#define STRAIGHT_FF_TEST_YAWRATE_KP               (370.0f)
-#define STRAIGHT_FF_TEST_YAWRATE_KI               (450.0f)
-#define STRAIGHT_FF_TEST_YAWRATE_KD               (0.0f)
-#define STRAIGHT_FF_TEST_YAWRATE_LIMIT_UNIT       (30.0f)
+#define STRAIGHT_FF_TEST_YAWRATE_KP (370.0f)
+#define STRAIGHT_FF_TEST_YAWRATE_KI (450.0f)
+#define STRAIGHT_FF_TEST_YAWRATE_KD (0.0f)
+#define STRAIGHT_FF_TEST_YAWRATE_LIMIT_UNIT (30.0f)
 #define STRAIGHT_FF_TEST_HEADING_OUTER_KP_PER_SEC (2.0f)
 #endif
 
 /*
  * Current motion-profile parameters.
  */
-#define STRAIGHT_FF_TEST_ACCELERATION_MMPS2       (500.0f)
-#define STRAIGHT_FF_TEST_DECELERATION_MMPS2       (250.0f)
+#define STRAIGHT_FF_TEST_ACCELERATION_MMPS2 (500.0f)
+#define STRAIGHT_FF_TEST_DECELERATION_MMPS2 (250.0f)
 
-static const MotionControllerConfig straightFeedforwardTestMotionConfig =
-{
+static const MotionControllerConfig straightFeedforwardTestMotionConfig = {
     .kinematics = &kinematics,
     .arcConfig = &arcMotionConfig,
 
@@ -119,21 +115,16 @@ static const MotionControllerConfig straightFeedforwardTestMotionConfig =
     .stopStableSampleCount = 3U,
 };
 
+#define STRAIGHT_FF_TEST_PI (3.14159265358979323846f)
 
-#define STRAIGHT_FF_TEST_PI                       (3.14159265358979323846f)
+#define STRAIGHT_FF_TEST_RAD_TO_DEG (180.0f / STRAIGHT_FF_TEST_PI)
 
-#define STRAIGHT_FF_TEST_RAD_TO_DEG               (180.0f / STRAIGHT_FF_TEST_PI)
+#define STRAIGHT_FF_TEST_MM_PER_COUNT                                                              \
+    (STRAIGHT_FF_TEST_PI * STRAIGHT_FF_TEST_WHEEL_DIAMETER_MM / STRAIGHT_FF_TEST_ENCODER_CPR)
 
-#define STRAIGHT_FF_TEST_MM_PER_COUNT \
-    (STRAIGHT_FF_TEST_PI * STRAIGHT_FF_TEST_WHEEL_DIAMETER_MM \
-    / STRAIGHT_FF_TEST_ENCODER_CPR)
+#define STRAIGHT_FF_TEST_CURVATURE_PER_MM (0.0f)
 
-#define STRAIGHT_FF_TEST_CURVATURE_PER_MM \
-    (0.0f)
-
-#define STRAIGHT_FF_TEST_NOMINAL_YAW_DEG \
-    (0.0f)
-
+#define STRAIGHT_FF_TEST_NOMINAL_YAW_DEG (0.0f)
 
 /* -------------------------------------------------------------------------- */
 /* Diagnostic state                                                           */
@@ -141,7 +132,6 @@ static const MotionControllerConfig straightFeedforwardTestMotionConfig =
 
 static float straightFeedforwardTestLeftDistanceMm = 0.0f;
 static float straightFeedforwardTestRightDistanceMm = 0.0f;
-
 
 /* Exported settings describe this test rather than production defaults. */
 volatile const float motionControllerStraightFeedforwardTestRequestedDistanceMm =
@@ -157,10 +147,9 @@ volatile MotionControllerStatus motionControllerStraightFeedforwardTestUpdateSta
  * Global debugger-visible log.
  */
 volatile MotionControllerStraightFeedforwardTestLogSample
-motionControllerStraightFeedforwardTestLog[STRAIGHT_FF_TEST_LOG_CAPACITY];
+    motionControllerStraightFeedforwardTestLog[STRAIGHT_FF_TEST_LOG_CAPACITY];
 
 volatile uint32_t motionControllerStraightFeedforwardTestLogCount = 0U;
-
 
 /*
  * Useful top-level experiment results.
@@ -171,34 +160,24 @@ volatile bool motionControllerStraightFeedforwardTestTimedOut = false;
  * State preserved at the instant the hard timeout is detected,
  * before timeout handling changes MotionController state.
  */
-volatile MotionControllerMode
-motionControllerStraightFeedforwardTestTimeoutMode =
+volatile MotionControllerMode motionControllerStraightFeedforwardTestTimeoutMode =
     MOTIONCONTROLLER_IDLE;
 
-volatile float
-motionControllerStraightFeedforwardTestTimeoutDistanceMm = 0.0f;
+volatile float motionControllerStraightFeedforwardTestTimeoutDistanceMm = 0.0f;
 
-volatile float
-motionControllerStraightFeedforwardTestTimeoutTargetDistanceMm = 0.0f;
+volatile float motionControllerStraightFeedforwardTestTimeoutTargetDistanceMm = 0.0f;
 
-volatile bool
-motionControllerStraightFeedforwardTestTimeoutProfileActive = false;
+volatile bool motionControllerStraightFeedforwardTestTimeoutProfileActive = false;
 
-volatile uint32_t
-motionControllerStraightFeedforwardTestTimeoutStationarySamples = 0U;
+volatile uint32_t motionControllerStraightFeedforwardTestTimeoutStationarySamples = 0U;
 
-volatile float
-motionControllerStraightFeedforwardTestTimeoutLeftCps = 0.0f;
+volatile float motionControllerStraightFeedforwardTestTimeoutLeftCps = 0.0f;
 
-volatile float
-motionControllerStraightFeedforwardTestTimeoutRightCps = 0.0f;
+volatile float motionControllerStraightFeedforwardTestTimeoutRightCps = 0.0f;
 
-volatile float
-motionControllerStraightFeedforwardTestTimeoutYawDeg = 0.0f;
+volatile float motionControllerStraightFeedforwardTestTimeoutYawDeg = 0.0f;
 
-volatile bool
-motionControllerStraightFeedforwardTestTimeoutMotionExitCaptured = false;
-
+volatile bool motionControllerStraightFeedforwardTestTimeoutMotionExitCaptured = false;
 
 /*
  * State captured at the instant STRAIGHT mode ends.
@@ -219,7 +198,6 @@ volatile float motionControllerStraightFeedforwardTestMotionExitIdealYawDeg = 0.
 volatile float motionControllerStraightFeedforwardTestMotionExitLeftDistanceMm = 0.0f;
 volatile float motionControllerStraightFeedforwardTestMotionExitRightDistanceMm = 0.0f;
 
-
 /*
  * Final stopped state.
  */
@@ -228,7 +206,6 @@ volatile float motionControllerStraightFeedforwardTestFinalDistanceMm = 0.0f;
 
 volatile float motionControllerStraightFeedforwardTestFinalLeftDistanceMm = 0.0f;
 volatile float motionControllerStraightFeedforwardTestFinalRightDistanceMm = 0.0f;
-
 
 /* -------------------------------------------------------------------------- */
 /* Logging helpers                                                            */
@@ -261,8 +238,7 @@ static void MotionControllerStraightFeedforwardTest_ResetLog(void)
     motionControllerStraightFeedforwardTestFinalLeftDistanceMm = 0.0f;
     motionControllerStraightFeedforwardTestFinalRightDistanceMm = 0.0f;
 
-    motionControllerStraightFeedforwardTestTimeoutMode =
-        MOTIONCONTROLLER_IDLE;
+    motionControllerStraightFeedforwardTestTimeoutMode = MOTIONCONTROLLER_IDLE;
 
     motionControllerStraightFeedforwardTestTimeoutDistanceMm = 0.0f;
     motionControllerStraightFeedforwardTestTimeoutTargetDistanceMm = 0.0f;
@@ -274,251 +250,172 @@ static void MotionControllerStraightFeedforwardTest_ResetLog(void)
     motionControllerStraightFeedforwardTestTimeoutMotionExitCaptured = false;
 }
 
-
-static void MotionControllerStraightFeedforwardTest_UpdateMeasurements(
-    RobotTestFixture *fixture)
+static void MotionControllerStraightFeedforwardTest_UpdateMeasurements(RobotTestFixture *fixture)
 {
-    MotionController *motionController =
-        &fixture->motionController;
+    MotionController *motionController = &fixture->motionController;
 
-    WheelSpeedController *leftWheel =
-        motionController->leftWheel;
+    WheelSpeedController *leftWheel = motionController->leftWheel;
 
-    WheelSpeedController *rightWheel =
-        motionController->rightWheel;
-
+    WheelSpeedController *rightWheel = motionController->rightWheel;
 
     /*
      * CPS * seconds = encoder counts
      * counts * mm/count = wheel travel
      */
-    straightFeedforwardTestLeftDistanceMm +=
-        leftWheel->measuredSpeedCps *
-        STRAIGHT_FF_TEST_CONTROL_PERIOD_S *
-        STRAIGHT_FF_TEST_MM_PER_COUNT;
+    straightFeedforwardTestLeftDistanceMm += leftWheel->measuredSpeedCps *
+                                             STRAIGHT_FF_TEST_CONTROL_PERIOD_S *
+                                             STRAIGHT_FF_TEST_MM_PER_COUNT;
 
-    straightFeedforwardTestRightDistanceMm +=
-        rightWheel->measuredSpeedCps *
-        STRAIGHT_FF_TEST_CONTROL_PERIOD_S *
-        STRAIGHT_FF_TEST_MM_PER_COUNT;
+    straightFeedforwardTestRightDistanceMm += rightWheel->measuredSpeedCps *
+                                              STRAIGHT_FF_TEST_CONTROL_PERIOD_S *
+                                              STRAIGHT_FF_TEST_MM_PER_COUNT;
 }
 
-
-static void MotionControllerStraightFeedforwardTest_LogSample(
-    RobotTestFixture *fixture,
-    uint32_t elapsedMs)
+static void MotionControllerStraightFeedforwardTest_LogSample(RobotTestFixture *fixture,
+                                                              uint32_t elapsedMs)
 {
-    if (motionControllerStraightFeedforwardTestLogCount >=
-        STRAIGHT_FF_TEST_LOG_CAPACITY)
+    if (motionControllerStraightFeedforwardTestLogCount >= STRAIGHT_FF_TEST_LOG_CAPACITY)
     {
         return;
     }
 
+    MotionController *motionController = &fixture->motionController;
 
-    MotionController *motionController =
-        &fixture->motionController;
+    WheelSpeedController *leftWheel = motionController->leftWheel;
 
-    WheelSpeedController *leftWheel =
-        motionController->leftWheel;
+    WheelSpeedController *rightWheel = motionController->rightWheel;
 
-    WheelSpeedController *rightWheel =
-        motionController->rightWheel;
-
-
-    uint32_t i =
-        motionControllerStraightFeedforwardTestLogCount;
-
+    uint32_t i = motionControllerStraightFeedforwardTestLogCount;
 
     MotionControllerStraightFeedforwardTestLogSample *sample =
-        (MotionControllerStraightFeedforwardTestLogSample *)
-        &motionControllerStraightFeedforwardTestLog[i];
+        (MotionControllerStraightFeedforwardTestLogSample
+             *)&motionControllerStraightFeedforwardTestLog[i];
 
+    sample->timeMs = elapsedMs;
 
-    sample->timeMs =
-        elapsedMs;
-
-    sample->state =
-        (uint32_t)motionController->mode;
-
+    sample->state = (uint32_t)motionController->mode;
 
     /* Motion profile */
-    sample->profileTargetSpeedCps =
-        motionController->targetSpeedCps;
+    sample->profileTargetSpeedCps = motionController->targetSpeedCps;
 
-    sample->travelledDistanceMm =
-        motionController->travelledDistanceMm;
-
+    sample->travelledDistanceMm = motionController->travelledDistanceMm;
 
     /* Geometric command */
-    sample->targetCurvaturePerMm =
-        motionController->targetCurvaturePerMm;
+    sample->targetCurvaturePerMm = motionController->targetCurvaturePerMm;
 
-    sample->feedforwardSteeringAngleRad =
-        motionController->targetSteeringAngleRad;
+    sample->feedforwardSteeringAngleRad = motionController->targetSteeringAngleRad;
 
     /* Geometric path command */
-    sample->targetCurvaturePerMm =
-        motionController->targetCurvaturePerMm;
+    sample->targetCurvaturePerMm = motionController->targetCurvaturePerMm;
 
-    sample->arcCommandedCurvaturePerMm =
-        motionController->arcCommandedCurvaturePerMm;
+    sample->arcCommandedCurvaturePerMm = motionController->arcCommandedCurvaturePerMm;
 
-    sample->feedforwardSteeringAngleRad =
-        motionController->targetSteeringAngleRad;
-
+    sample->feedforwardSteeringAngleRad = motionController->targetSteeringAngleRad;
 
     /* Legacy angle estimates are stale during raw control; see validity flag. */
     sample->steeringTargetAngleRad =
-        SteeringController_GetTargetEffectiveAngleRad(
-            motionController->steering);
+        SteeringController_GetTargetEffectiveAngleRad(motionController->steering);
 
     sample->effectiveSteeringAngleRad =
-        SteeringController_GetEffectiveAngleRad(
-            motionController->steering);
-
+        SteeringController_GetEffectiveAngleRad(motionController->steering);
 
     /*
      * Phase 2B: outer heading loop
      */
-    sample->arcDesiredYawRad =
-        motionController->arcDesiredYawRad;
+    sample->arcDesiredYawRad = motionController->arcDesiredYawRad;
 
-    sample->arcHeadingErrorRad =
-        motionController->arcHeadingErrorRad;
+    sample->arcHeadingErrorRad = motionController->arcHeadingErrorRad;
 
-    sample->arcFeedforwardYawRateRadPerSec =
-        motionController->arcFeedforwardYawRateRadPerSec;
+    sample->arcFeedforwardYawRateRadPerSec = motionController->arcFeedforwardYawRateRadPerSec;
 
     sample->arcHeadingYawRateCorrectionRadPerSec =
         motionController->arcHeadingYawRateCorrectionRadPerSec;
 
-
     /*
      * Phase 2A: inner yaw-rate loop
      */
-    sample->yawRateDps =
-        motionController->yawRateDps;
+    sample->yawRateDps = motionController->yawRateDps;
 
-    sample->filteredYawRateDps =
-        motionController->filteredYawRateDps;
+    sample->filteredYawRateDps = motionController->filteredYawRateDps;
 
-    sample->arcTargetYawRateRadPerSec =
-        motionController->arcTargetYawRateRadPerSec;
+    sample->arcTargetYawRateRadPerSec = motionController->arcTargetYawRateRadPerSec;
 
-    sample->arcYawRateErrorRadPerSec =
-        motionController->arcYawRateErrorRadPerSec;
+    sample->arcYawRateErrorRadPerSec = motionController->arcYawRateErrorRadPerSec;
 
-    sample->arcSteeringCorrectionCommand =
-        motionController->arcSteeringCorrectionCommand;
+    sample->arcSteeringCorrectionCommand = motionController->arcSteeringCorrectionCommand;
 
-    sample->arcSteeringTargetCommand =
-        motionController->arcSteeringTargetCommand;
+    sample->arcSteeringTargetCommand = motionController->arcSteeringTargetCommand;
 
     /*
      * Explicitly log the actual feedback quantity seen
      * by the inner PI.
      */
     sample->measuredYawRateRadPerSec =
-        motionController->filteredYawRateDps *
-        (STRAIGHT_FF_TEST_PI / 180.0f);
+        motionController->filteredYawRateDps * (STRAIGHT_FF_TEST_PI / 180.0f);
 
-    sample->steeringFeedforwardCommand =
-        motionController->arcSteeringFeedforwardCommand;
-    sample->effectiveAngleModelValid =
-        fixture->steeringController.effectiveAngleModelValid;
+    sample->steeringFeedforwardCommand = motionController->arcSteeringFeedforwardCommand;
+    sample->effectiveAngleModelValid = fixture->steeringController.effectiveAngleModelValid;
 
-    sample->steeringCommand =
-        SteeringController_GetCommand(
-            motionController->steering);
+    sample->steeringCommand = SteeringController_GetCommand(motionController->steering);
 
     /* Wheel-speed controllers */
-    sample->leftTargetCps =
-        leftWheel->targetSpeedCps;
+    sample->leftTargetCps = leftWheel->targetSpeedCps;
 
-    sample->rightTargetCps =
-        rightWheel->targetSpeedCps;
+    sample->rightTargetCps = rightWheel->targetSpeedCps;
 
-    sample->leftMeasuredCps =
-        leftWheel->measuredSpeedCps;
+    sample->leftMeasuredCps = leftWheel->measuredSpeedCps;
 
-    sample->rightMeasuredCps =
-        rightWheel->measuredSpeedCps;
+    sample->rightMeasuredCps = rightWheel->measuredSpeedCps;
 
-    sample->leftPwm =
-        leftWheel->outputPWM;
+    sample->leftPwm = leftWheel->outputPWM;
 
-    sample->rightPwm =
-        rightWheel->outputPWM;
-
+    sample->rightPwm = rightWheel->outputPWM;
 
     /* Independent wheel-distance integration */
-    sample->leftDistanceMm =
-        straightFeedforwardTestLeftDistanceMm;
+    sample->leftDistanceMm = straightFeedforwardTestLeftDistanceMm;
 
-    sample->rightDistanceMm =
-        straightFeedforwardTestRightDistanceMm;
-
+    sample->rightDistanceMm = straightFeedforwardTestRightDistanceMm;
 
     /* Synchronisation */
-    sample->wheelReferenceCurvaturePerMm =
-        motionController->wheelReferenceCurvaturePerMm;
+    sample->wheelReferenceCurvaturePerMm = motionController->wheelReferenceCurvaturePerMm;
 
-    sample->leftBaseTargetCps =
-        motionController->leftBaseTargetCps;
+    sample->leftBaseTargetCps = motionController->leftBaseTargetCps;
 
-    sample->rightBaseTargetCps =
-        motionController->rightBaseTargetCps;
+    sample->rightBaseTargetCps = motionController->rightBaseTargetCps;
 
-    sample->desiredWheelTravelDifferenceMm =
-        motionController->desiredWheelTravelDifferenceMm;
+    sample->desiredWheelTravelDifferenceMm = motionController->desiredWheelTravelDifferenceMm;
 
-    sample->wheelSyncErrorMm =
-        motionController->wheelSyncErrorMm;
+    sample->wheelSyncErrorMm = motionController->wheelSyncErrorMm;
 
-    sample->wheelSyncCorrectionCps =
-        motionController->wheelSyncCorrectionCps;
+    sample->wheelSyncCorrectionCps = motionController->wheelSyncCorrectionCps;
 
     /* Heading */
-    sample->yawDeg =
-        motionController->yawDeg;
+    sample->yawDeg = motionController->yawDeg;
 
-    sample->idealYawDeg =
-        motionController->travelledDistanceMm *
-        motionController->targetCurvaturePerMm *
-        STRAIGHT_FF_TEST_RAD_TO_DEG;
-
+    sample->idealYawDeg = motionController->travelledDistanceMm *
+                          motionController->targetCurvaturePerMm * STRAIGHT_FF_TEST_RAD_TO_DEG;
 
     /* Dynamic braking */
-    sample->leftActuatorMode =
-        leftWheel->actuatorMode;
+    sample->leftActuatorMode = leftWheel->actuatorMode;
 
-    sample->rightActuatorMode =
-        rightWheel->actuatorMode;
+    sample->rightActuatorMode = rightWheel->actuatorMode;
 
-    sample->leftBrakeDemand =
-        leftWheel->brakeDemand;
+    sample->leftBrakeDemand = leftWheel->brakeDemand;
 
-    sample->rightBrakeDemand =
-        rightWheel->brakeDemand;
+    sample->rightBrakeDemand = rightWheel->brakeDemand;
 
-    sample->leftBrakePWM =
-        leftWheel->brakePWM;
+    sample->leftBrakePWM = leftWheel->brakePWM;
 
-    sample->rightBrakePWM =
-        rightWheel->brakePWM;
-
+    sample->rightBrakePWM = rightWheel->brakePWM;
 
     motionControllerStraightFeedforwardTestLogCount++;
 }
 
-static void MotionControllerStraightFeedforwardTest_CaptureTimeout(
-    RobotTestFixture *fixture)
+static void MotionControllerStraightFeedforwardTest_CaptureTimeout(RobotTestFixture *fixture)
 {
-    MotionController *motionController =
-        &fixture->motionController;
+    MotionController *motionController = &fixture->motionController;
 
-    motionControllerStraightFeedforwardTestTimeoutMode =
-        motionController->mode;
+    motionControllerStraightFeedforwardTestTimeoutMode = motionController->mode;
 
     motionControllerStraightFeedforwardTestTimeoutDistanceMm =
         motionController->travelledDistanceMm;
@@ -527,8 +424,7 @@ static void MotionControllerStraightFeedforwardTest_CaptureTimeout(
         motionController->targetDistanceMm;
 
     motionControllerStraightFeedforwardTestTimeoutProfileActive =
-        MotionProfile_IsActive(
-            &motionController->motionProfile);
+        MotionProfile_IsActive(&motionController->motionProfile);
 
     motionControllerStraightFeedforwardTestTimeoutStationarySamples =
         motionController->stationarySamples;
@@ -539,41 +435,33 @@ static void MotionControllerStraightFeedforwardTest_CaptureTimeout(
     motionControllerStraightFeedforwardTestTimeoutRightCps =
         motionController->rightWheel->measuredSpeedCps;
 
-    motionControllerStraightFeedforwardTestTimeoutYawDeg =
-        motionController->yawDeg;
+    motionControllerStraightFeedforwardTestTimeoutYawDeg = motionController->yawDeg;
 
     motionControllerStraightFeedforwardTestTimeoutMotionExitCaptured =
         motionControllerStraightFeedforwardTestMotionExitCaptured;
 }
 
-static void MotionControllerStraightFeedforwardTest_CaptureMotionExit(
-    RobotTestFixture *fixture,
-    uint32_t elapsedMs)
+static void MotionControllerStraightFeedforwardTest_CaptureMotionExit(RobotTestFixture *fixture,
+                                                                      uint32_t elapsedMs)
 {
     if (motionControllerStraightFeedforwardTestMotionExitCaptured)
     {
         return;
     }
 
-
-    MotionController *motionController =
-        &fixture->motionController;
-
+    MotionController *motionController = &fixture->motionController;
 
     motionControllerStraightFeedforwardTestMotionExitCaptured = true;
 
-    motionControllerStraightFeedforwardTestMotionExitTimeMs =
-        elapsedMs;
+    motionControllerStraightFeedforwardTestMotionExitTimeMs = elapsedMs;
 
     motionControllerStraightFeedforwardTestMotionExitDistanceMm =
         motionController->travelledDistanceMm;
 
-    motionControllerStraightFeedforwardTestMotionExitYawDeg =
-        motionController->yawDeg;
+    motionControllerStraightFeedforwardTestMotionExitYawDeg = motionController->yawDeg;
 
     motionControllerStraightFeedforwardTestMotionExitIdealYawDeg =
-        motionController->travelledDistanceMm *
-        motionController->targetCurvaturePerMm *
+        motionController->travelledDistanceMm * motionController->targetCurvaturePerMm *
         STRAIGHT_FF_TEST_RAD_TO_DEG;
 
     motionControllerStraightFeedforwardTestMotionExitLeftDistanceMm =
@@ -583,31 +471,24 @@ static void MotionControllerStraightFeedforwardTest_CaptureMotionExit(
         straightFeedforwardTestRightDistanceMm;
 }
 
-
 /* -------------------------------------------------------------------------- */
 /* Initialisation                                                              */
 /* -------------------------------------------------------------------------- */
 
-static bool MotionControllerStraightFeedforwardTest_Init(
-    RobotTestFixture *fixture)
+static bool MotionControllerStraightFeedforwardTest_Init(RobotTestFixture *fixture)
 {
     OLED_Init();
 
     OLED_Clear();
     OLED_Refresh_Gram();
 
-
-    if (!RobotTestFixture_InitMotionController(
-        fixture,
-        &straightFeedforwardTestMotionConfig))
+    if (!RobotTestFixture_InitMotionController(fixture, &straightFeedforwardTestMotionConfig))
     {
         return false;
     }
 
-
     return true;
 }
-
 
 /* -------------------------------------------------------------------------- */
 /* Test                                                                        */
@@ -625,11 +506,12 @@ static void MotionControllerStraightFeedforwardTest_ShowFinal(void)
     {
         OLED_Printf(0, 0, "Command rejected");
     }
-    else if (motionControllerStraightFeedforwardTestUpdateStatus !=
-             MOTIONCONTROLLER_STATUS_OK)
+    else if (motionControllerStraightFeedforwardTestUpdateStatus != MOTIONCONTROLLER_STATUS_OK)
     {
-        OLED_Printf(0, 0, "Control error:%u",
-            (unsigned)motionControllerStraightFeedforwardTestUpdateStatus);
+        OLED_Printf(0,
+                    0,
+                    "Control error:%u",
+                    (unsigned)motionControllerStraightFeedforwardTestUpdateStatus);
     }
     else if (motionControllerStraightFeedforwardTestTimedOut)
     {
@@ -649,38 +531,31 @@ static void MotionControllerStraightFeedforwardTest_ShowFinal(void)
          * Exit = whether the normal STRAIGHT-exit transition
          *        had already been observed
          */
-        OLED_Printf(
-            0, 0,
-            "TIMEOUT M:%lu P:%u",
-            (unsigned long)
-                motionControllerStraightFeedforwardTestTimeoutMode,
-            motionControllerStraightFeedforwardTestTimeoutProfileActive
-                ? 1U : 0U);
+        OLED_Printf(0,
+                    0,
+                    "TIMEOUT M:%lu P:%u",
+                    (unsigned long)motionControllerStraightFeedforwardTestTimeoutMode,
+                    motionControllerStraightFeedforwardTestTimeoutProfileActive ? 1U : 0U);
 
-        OLED_Printf(
-            0, 1,
-            "D:%.1f/%.1f",
-            motionControllerStraightFeedforwardTestTimeoutDistanceMm,
-            motionControllerStraightFeedforwardTestTimeoutTargetDistanceMm);
+        OLED_Printf(0,
+                    1,
+                    "D:%.1f/%.1f",
+                    motionControllerStraightFeedforwardTestTimeoutDistanceMm,
+                    motionControllerStraightFeedforwardTestTimeoutTargetDistanceMm);
 
-        OLED_Printf(
-            0, 2,
-            "Stat:%lu Exit:%u",
-            (unsigned long)
-                motionControllerStraightFeedforwardTestTimeoutStationarySamples,
-            motionControllerStraightFeedforwardTestTimeoutMotionExitCaptured
-                ? 1U : 0U);
+        OLED_Printf(0,
+                    2,
+                    "Stat:%lu Exit:%u",
+                    (unsigned long)motionControllerStraightFeedforwardTestTimeoutStationarySamples,
+                    motionControllerStraightFeedforwardTestTimeoutMotionExitCaptured ? 1U : 0U);
 
-        OLED_Printf(
-            0, 3,
-            "L:%+.0f R:%+.0f",
-            motionControllerStraightFeedforwardTestTimeoutLeftCps,
-            motionControllerStraightFeedforwardTestTimeoutRightCps);
+        OLED_Printf(0,
+                    3,
+                    "L:%+.0f R:%+.0f",
+                    motionControllerStraightFeedforwardTestTimeoutLeftCps,
+                    motionControllerStraightFeedforwardTestTimeoutRightCps);
 
-        OLED_Printf(
-            0, 4,
-            "Yaw:%+.2f",
-            motionControllerStraightFeedforwardTestTimeoutYawDeg);
+        OLED_Printf(0, 4, "Yaw:%+.2f", motionControllerStraightFeedforwardTestTimeoutYawDeg);
     }
     else
     {
@@ -688,46 +563,28 @@ static void MotionControllerStraightFeedforwardTest_ShowFinal(void)
          * Normal successful result screen.
          */
         OLED_Printf(
-            0, 0,
-            "Move Exit:%+.2f",
-            motionControllerStraightFeedforwardTestMotionExitYawDeg);
+            0, 0, "Move Exit:%+.2f", motionControllerStraightFeedforwardTestMotionExitYawDeg);
 
         OLED_Printf(
-            0, 1,
-            "Ideal:%+.2f",
-            motionControllerStraightFeedforwardTestMotionExitIdealYawDeg);
+            0, 1, "Ideal:%+.2f", motionControllerStraightFeedforwardTestMotionExitIdealYawDeg);
 
-        OLED_Printf(
-            0, 2,
-            "Final:%+.2f",
-            motionControllerStraightFeedforwardTestFinalYawDeg);
+        OLED_Printf(0, 2, "Final:%+.2f", motionControllerStraightFeedforwardTestFinalYawDeg);
 
-        OLED_Printf(
-            0, 3,
-            "Dist:%6.1f",
-            motionControllerStraightFeedforwardTestFinalDistanceMm);
+        OLED_Printf(0, 3, "Dist:%6.1f", motionControllerStraightFeedforwardTestFinalDistanceMm);
 
-        OLED_Printf(
-            0, 4,
-            "N:%lu",
-            motionControllerStraightFeedforwardTestLogCount);
+        OLED_Printf(0, 4, "N:%lu", motionControllerStraightFeedforwardTestLogCount);
     }
 
     OLED_Refresh_Gram();
-
-
 }
 
 void MotionControllerStraightFeedforwardTestRun(void)
 {
-    RobotTestFixture fixture = { 0 };
+    RobotTestFixture fixture = {0};
     /* Read exported volatile settings so section GC retains their symbols. */
-    const float requestedDistanceMm =
-        motionControllerStraightFeedforwardTestRequestedDistanceMm;
-    const float requestedSpeedCps =
-        motionControllerStraightFeedforwardTestRequestedSpeedCps;
+    const float requestedDistanceMm = motionControllerStraightFeedforwardTestRequestedDistanceMm;
+    const float requestedSpeedCps = motionControllerStraightFeedforwardTestRequestedSpeedCps;
     const float rawCommand = motionControllerStraightFeedforwardTestRawCommand;
-
 
     if (!MotionControllerStraightFeedforwardTest_Init(&fixture))
     {
@@ -738,69 +595,44 @@ void MotionControllerStraightFeedforwardTestRun(void)
         return;
     }
 
+    OLED_Printf(0, 0, "Straight FF Test");
 
-    OLED_Printf(
-        0, 0,
-        "Straight FF Test");
+    OLED_Printf(0, 1, "Raw:%+.3f S:%.0f", rawCommand, requestedDistanceMm);
 
-    OLED_Printf(
-        0, 1,
-        "Raw:%+.3f S:%.0f",
-        rawCommand,
-        requestedDistanceMm);
+    OLED_Printf(0, 2, "Speed: %.0f CPS", requestedSpeedCps);
 
-    OLED_Printf(
-        0, 2,
-        "Speed: %.0f CPS",
-        requestedSpeedCps);
+    OLED_Printf(0, 3, "Ideal yaw:%+.2f", STRAIGHT_FF_TEST_NOMINAL_YAW_DEG);
 
-    OLED_Printf(
-        0, 3,
-        "Ideal yaw:%+.2f",
-        STRAIGHT_FF_TEST_NOMINAL_YAW_DEG);
-
-    OLED_Printf(
-        0, 4,
-        "Start: SW1");
+    OLED_Printf(0, 4, "Start: SW1");
 
     OLED_Refresh_Gram();
 
-
     SW1_WaitForPressAndRelease();
 
-
     OLED_Clear();
-
 
     /*
      * Allow finger to clear the robot.
      */
     HAL_Delay(400U);
 
-
     /*
      * Deterministically centre steering before every run.
      */
-    SteeringController_StartCentre(
-        &fixture.steeringController);
+    SteeringController_StartCentre(&fixture.steeringController);
 
-    while (!SteeringController_UpdateCentre(
-        &fixture.steeringController,
-        STRAIGHT_FF_TEST_CONTROL_PERIOD_S))
+    while (!SteeringController_UpdateCentre(&fixture.steeringController,
+                                            STRAIGHT_FF_TEST_CONTROL_PERIOD_S))
     {
-        HAL_Delay(
-            STRAIGHT_FF_TEST_CONTROL_PERIOD_MS);
+        HAL_Delay(STRAIGHT_FF_TEST_CONTROL_PERIOD_MS);
     }
-
 
     /*
      * Allow centre position to settle mechanically.
      */
     HAL_Delay(100U);
 
-
     OLED_Refresh_Gram();
-
 
     /*
      * Only reset the motion-test log after pre-steering.
@@ -810,11 +642,8 @@ void MotionControllerStraightFeedforwardTestRun(void)
      */
     MotionControllerStraightFeedforwardTest_ResetLog();
 
-
     /* Do not let Servo_SetSteering silently clamp a calibration candidate. */
-    if (!isfinite(rawCommand) ||
-        rawCommand < SERVO_STEER_MIN ||
-        rawCommand > SERVO_STEER_MAX)
+    if (!isfinite(rawCommand) || rawCommand < SERVO_STEER_MIN || rawCommand > SERVO_STEER_MAX)
     {
         MotionControllerStraightFeedforwardTest_ShowFinal();
         SW1_WhileNotPressed();
@@ -826,12 +655,9 @@ void MotionControllerStraightFeedforwardTestRun(void)
      * raw feedforward before the 500 ms preparation interval.
      */
     motionControllerStraightFeedforwardTestCommandAccepted =
-        MotionController_MoveStraight(
-            &fixture.motionController,
-            requestedDistanceMm,
-            requestedSpeedCps) ==
-        MOTIONCONTROLLER_STATUS_OK;
-
+        MotionController_MoveStraight(&fixture.motionController,
+                                      requestedDistanceMm,
+                                      requestedSpeedCps) == MOTIONCONTROLLER_STATUS_OK;
 
     if (!motionControllerStraightFeedforwardTestCommandAccepted)
     {
@@ -843,77 +669,54 @@ void MotionControllerStraightFeedforwardTestRun(void)
     /*
      * Capture state before the first control update.
      */
-    MotionControllerStraightFeedforwardTest_LogSample(
-        &fixture,
-        0U);
+    MotionControllerStraightFeedforwardTest_LogSample(&fixture, 0U);
 
+    uint32_t startTick = HAL_GetTick();
 
-    uint32_t startTick =
-        HAL_GetTick();
+    uint32_t lastControlTick = startTick;
 
-    uint32_t lastControlTick =
-        startTick;
+    uint32_t lastLogTick = startTick;
 
-    uint32_t lastLogTick =
-        startTick;
-
-
-    while (fixture.motionController.mode !=
-           MOTIONCONTROLLER_IDLE)
+    while (fixture.motionController.mode != MOTIONCONTROLLER_IDLE)
     {
-        uint32_t now =
-            HAL_GetTick();
-
+        uint32_t now = HAL_GetTick();
 
         /*
          * Hard timeout.
          */
-        if ((now - startTick) >=
-            STRAIGHT_FF_TEST_TIMEOUT_MS)
+        if ((now - startTick) >= STRAIGHT_FF_TEST_TIMEOUT_MS)
         {
             /*
              * Preserve the state that caused the timeout before
              * MotionController_Brake() changes the controller mode
              * and motion-profile state.
              */
-            MotionControllerStraightFeedforwardTest_CaptureTimeout(
-                &fixture);
+            MotionControllerStraightFeedforwardTest_CaptureTimeout(&fixture);
 
             motionControllerStraightFeedforwardTestTimedOut = true;
 
-            MotionController_Brake(
-                &fixture.motionController);
+            MotionController_Brake(&fixture.motionController);
 
             break;
         }
 
-
         /*
          * 100 Hz controller.
          */
-        if ((now - lastControlTick) >=
-            STRAIGHT_FF_TEST_CONTROL_PERIOD_MS)
+        if ((now - lastControlTick) >= STRAIGHT_FF_TEST_CONTROL_PERIOD_MS)
         {
-            lastControlTick +=
-                STRAIGHT_FF_TEST_CONTROL_PERIOD_MS;
+            lastControlTick += STRAIGHT_FF_TEST_CONTROL_PERIOD_MS;
 
-
-            MotionControllerMode previousMode =
-                fixture.motionController.mode;
-
+            MotionControllerMode previousMode = fixture.motionController.mode;
 
             MotionControllerStatus updateStatus = MotionController_Update(
-                &fixture.motionController,
-                STRAIGHT_FF_TEST_CONTROL_PERIOD_S);
+                &fixture.motionController, STRAIGHT_FF_TEST_CONTROL_PERIOD_S);
             if (updateStatus != MOTIONCONTROLLER_STATUS_OK)
             {
                 motionControllerStraightFeedforwardTestUpdateStatus = updateStatus;
             }
 
-
-            MotionControllerStraightFeedforwardTest_UpdateMeasurements(
-                &fixture);
-
+            MotionControllerStraightFeedforwardTest_UpdateMeasurements(&fixture);
 
             /*
              * Capture the first transition out of STRAIGHT mode.
@@ -921,32 +724,23 @@ void MotionControllerStraightFeedforwardTestRun(void)
              * Normally this will be STRAIGHT -> BRAKING.
              */
             if ((previousMode == MOTIONCONTROLLER_STRAIGHT) &&
-                (fixture.motionController.mode !=
-                 MOTIONCONTROLLER_STRAIGHT))
+                (fixture.motionController.mode != MOTIONCONTROLLER_STRAIGHT))
             {
-                MotionControllerStraightFeedforwardTest_CaptureMotionExit(
-                    &fixture,
-                    now - startTick);
+                MotionControllerStraightFeedforwardTest_CaptureMotionExit(&fixture,
+                                                                          now - startTick);
             }
         }
-
 
         /*
          * 50 Hz debugger log.
          */
-        if ((now - lastLogTick) >=
-            STRAIGHT_FF_TEST_LOG_INTERVAL_MS)
+        if ((now - lastLogTick) >= STRAIGHT_FF_TEST_LOG_INTERVAL_MS)
         {
-            lastLogTick +=
-                STRAIGHT_FF_TEST_LOG_INTERVAL_MS;
+            lastLogTick += STRAIGHT_FF_TEST_LOG_INTERVAL_MS;
 
-
-            MotionControllerStraightFeedforwardTest_LogSample(
-                &fixture,
-                now - startTick);
+            MotionControllerStraightFeedforwardTest_LogSample(&fixture, now - startTick);
         }
     }
-
 
     /*
      * If timeout initiated braking, continue stepping the
@@ -954,58 +748,37 @@ void MotionControllerStraightFeedforwardTestRun(void)
      */
     if (motionControllerStraightFeedforwardTestTimedOut)
     {
-        uint32_t brakeStartTick =
-            HAL_GetTick();
+        uint32_t brakeStartTick = HAL_GetTick();
 
-
-        while ((fixture.motionController.mode !=
-                MOTIONCONTROLLER_IDLE) &&
-               ((HAL_GetTick() - brakeStartTick) <
-                3000U))
+        while ((fixture.motionController.mode != MOTIONCONTROLLER_IDLE) &&
+               ((HAL_GetTick() - brakeStartTick) < 3000U))
         {
-            uint32_t now =
-                HAL_GetTick();
+            uint32_t now = HAL_GetTick();
 
-
-            if ((now - lastControlTick) >=
-                STRAIGHT_FF_TEST_CONTROL_PERIOD_MS)
+            if ((now - lastControlTick) >= STRAIGHT_FF_TEST_CONTROL_PERIOD_MS)
             {
-                lastControlTick +=
-                    STRAIGHT_FF_TEST_CONTROL_PERIOD_MS;
+                lastControlTick += STRAIGHT_FF_TEST_CONTROL_PERIOD_MS;
 
+                MotionController_Update(&fixture.motionController,
+                                        STRAIGHT_FF_TEST_CONTROL_PERIOD_S);
 
-                MotionController_Update(
-                    &fixture.motionController,
-                    STRAIGHT_FF_TEST_CONTROL_PERIOD_S);
-
-
-                MotionControllerStraightFeedforwardTest_UpdateMeasurements(
-                    &fixture);
+                MotionControllerStraightFeedforwardTest_UpdateMeasurements(&fixture);
             }
 
-
-            if ((now - lastLogTick) >=
-                STRAIGHT_FF_TEST_LOG_INTERVAL_MS)
+            if ((now - lastLogTick) >= STRAIGHT_FF_TEST_LOG_INTERVAL_MS)
             {
-                lastLogTick +=
-                    STRAIGHT_FF_TEST_LOG_INTERVAL_MS;
+                lastLogTick += STRAIGHT_FF_TEST_LOG_INTERVAL_MS;
 
-
-                MotionControllerStraightFeedforwardTest_LogSample(
-                    &fixture,
-                    now - startTick);
+                MotionControllerStraightFeedforwardTest_LogSample(&fixture, now - startTick);
             }
         }
-
 
         /*
          * Last-resort stop.
          */
-        if (fixture.motionController.mode !=
-            MOTIONCONTROLLER_IDLE)
+        if (fixture.motionController.mode != MOTIONCONTROLLER_IDLE)
         {
-            MotionController_Stop(
-                &fixture.motionController);
+            MotionController_Stop(&fixture.motionController);
         }
     }
 
@@ -1014,13 +787,9 @@ void MotionControllerStraightFeedforwardTestRun(void)
     /*
      * Guaranteed final sample.
      */
-    MotionControllerStraightFeedforwardTest_LogSample(
-        &fixture,
-        HAL_GetTick() - startTick);
+    MotionControllerStraightFeedforwardTest_LogSample(&fixture, HAL_GetTick() - startTick);
 
-
-    motionControllerStraightFeedforwardTestFinalYawDeg =
-        fixture.motionController.yawDeg;
+    motionControllerStraightFeedforwardTestFinalYawDeg = fixture.motionController.yawDeg;
 
     motionControllerStraightFeedforwardTestFinalDistanceMm =
         fixture.motionController.travelledDistanceMm;
@@ -1030,7 +799,6 @@ void MotionControllerStraightFeedforwardTestRun(void)
 
     motionControllerStraightFeedforwardTestFinalRightDistanceMm =
         straightFeedforwardTestRightDistanceMm;
-
 
     MotionControllerStraightFeedforwardTest_ShowFinal();
 

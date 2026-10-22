@@ -37,14 +37,15 @@
 #define TASK2COMMANDS_REPLY_SIZE 48U
 #define TASK2COMMANDS_OUTBOX 8U
 
-typedef enum {
+typedef enum
+{
     TASK2_STAGE_IDLE,
     TASK2_STAGE_APPROACH1,
     TASK2_STAGE_WAIT1,
     TASK2_STAGE_SWERVE1,
     TASK2_STAGE_APPROACH2, /* only once the camera is past obstacle 1's face */
     TASK2_STAGE_WAIT2,
-    TASK2_STAGE_ROUND2,    /* committed to the way round obstacle 2 */
+    TASK2_STAGE_ROUND2, /* committed to the way round obstacle 2 */
     TASK2_STAGE_HOME,
     TASK2_STAGE_DONE,
     TASK2_STAGE_STOPPED,
@@ -52,18 +53,20 @@ typedef enum {
 } Task2Stage;
 
 /* Same values as Task2Route's Task2Arrow, so the course can cast. */
-typedef enum {
+typedef enum
+{
     TASK2_COMMAND_ARROW_RIGHT = -1,
     TASK2_COMMAND_ARROW_NONE = 0,
     TASK2_COMMAND_ARROW_LEFT = 1,
 } Task2CommandArrow;
 
-typedef struct {
-    bool started;          /* a run has begun since boot */
+typedef struct
+{
+    bool started; /* a run has begun since boot */
     uint8_t run;
     Task2Stage stage;
     Task2CommandArrow arrows[2];
-    Task2CommandArrow preview;   /* arrow 1 seen before the run: for planning, never committed */
+    Task2CommandArrow preview; /* arrow 1 seen before the run: for planning, never committed */
     bool hasSpan;
     uint16_t obstacle2SpanMm;
     /* Events waiting to be sent, oldest first. MotionTask drains it every tick. */
@@ -82,7 +85,8 @@ void Task2Commands_Begin(Task2Commands *t, uint8_t run, Task2CommandArrow arrow1
  * Handles "A ...", "W ..." and "Q T". Returns false for any other line,
  * leaving it to CommandSession. When true, reply holds the line to send.
  */
-bool Task2Commands_Receive(Task2Commands *t, const char *line,
+bool Task2Commands_Receive(Task2Commands *t,
+                           const char *line,
                            char reply[TASK2COMMANDS_REPLY_SIZE]);
 
 /* Records the stage; queues the event for APPROACHn, WAITn and ROUND2 when it changes. */
@@ -101,8 +105,11 @@ Task2CommandArrow Task2Commands_Preview(const Task2Commands *t);
 bool Task2Commands_Span(const Task2Commands *t, uint16_t *spanMm);
 
 /* Queues "EV r SUMMARY ..." for the log, just before DONE. NAN prints "-". */
-void Task2Commands_Summary(Task2Commands *t, float obstacle1FaceMm,
-                           float obstacle2FaceMm, float obstacle2WidthMm, float pathMm);
+void Task2Commands_Summary(Task2Commands *t,
+                           float obstacle1FaceMm,
+                           float obstacle2FaceMm,
+                           float obstacle2WidthMm,
+                           float pathMm);
 
 /* Drops unsent events, e.g. stage events overtaken by a stop or fault. */
 void Task2Commands_ClearEvents(Task2Commands *t);

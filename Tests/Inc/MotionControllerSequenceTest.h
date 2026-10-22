@@ -13,14 +13,12 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-
 typedef enum
 {
     MOTION_SEQUENCE_TEST_STRAIGHT = 0,
     MOTION_SEQUENCE_TEST_ARC
 
 } MotionControllerSequenceTestCommandType;
-
 
 typedef struct
 {
@@ -42,7 +40,6 @@ typedef struct
     float speedCps;
 
 } MotionControllerSequenceTestCommand;
-
 
 typedef struct
 {
@@ -136,7 +133,6 @@ typedef struct
 
 } MotionControllerSequenceTestLogSample;
 
-
 typedef struct
 {
     bool commandAccepted;
@@ -177,8 +173,6 @@ typedef struct
 
 } MotionControllerSequenceTestResult;
 
-
 void MotionControllerSequenceTestRun(void);
-
 
 #endif /* INC_MOTIONCONTROLLERSEQUENCETEST_H_ */
