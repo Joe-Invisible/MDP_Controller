@@ -21,38 +21,35 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-
 /* -------------------------------------------------------------------------- */
 /* Test configuration                                                         */
 /* -------------------------------------------------------------------------- */
 
-#define ARC_TEST_DISTANCE_MM              (1000.0f)
-#define ARC_TEST_RADIUS_MM                (2000.0f)
-#define ARC_TEST_SPEED_CPS                (5000.0f)
+#define ARC_TEST_DISTANCE_MM (1000.0f)
+#define ARC_TEST_RADIUS_MM (2000.0f)
+#define ARC_TEST_SPEED_CPS (5000.0f)
 
-#define ARC_TEST_CONTROL_PERIOD_MS        (10U)
-#define ARC_TEST_CONTROL_PERIOD_S         (0.010f)
+#define ARC_TEST_CONTROL_PERIOD_MS (10U)
+#define ARC_TEST_CONTROL_PERIOD_S (0.010f)
 
-#define ARC_TEST_LOG_INTERVAL_MS          (20U)
-#define ARC_TEST_TIMEOUT_MS               (10000U)
+#define ARC_TEST_LOG_INTERVAL_MS (20U)
+#define ARC_TEST_TIMEOUT_MS (10000U)
 
-#define ARC_TEST_LOG_CAPACITY             (500U)
-
+#define ARC_TEST_LOG_CAPACITY (500U)
 
 /*
  * Rear-wheel calibration used by the diagnostic distance integrator.
  */
-#define ARC_TEST_ENCODER_CPR              (1560.0f)
-#define ARC_TEST_WHEEL_DIAMETER_MM        (65.5f)
-
+#define ARC_TEST_ENCODER_CPR (1560.0f)
+#define ARC_TEST_WHEEL_DIAMETER_MM (65.5f)
 
 /*
  * Synchronisation controller.
  */
-#define ARC_TEST_SYNC_KP_CPS_PER_MM       (10.0f)
-#define ARC_TEST_SYNC_MAX_CORRECTION_CPS  (100.0f)
+#define ARC_TEST_SYNC_KP_CPS_PER_MM (10.0f)
+#define ARC_TEST_SYNC_MAX_CORRECTION_CPS (100.0f)
 
-#define ARC_TEST_FF_EXP	(1)
+#define ARC_TEST_FF_EXP (1)
 
 /*
  * Heading PID is deliberately not used during ARC mode.
@@ -63,37 +60,36 @@
  * Legacy heading parameters are retained for optional straight A/B tests;
  * the unified path controller uses the yaw-rate and outer-heading settings.
  */
-#define ARC_TEST_HEADING_KP               (1.2f)
-#define ARC_TEST_HEADING_KI               (0.05f)
-#define ARC_TEST_HEADING_KD               (0.0f)
-#define ARC_TEST_HEADING_LIMIT_RAD        (0.015f)
+#define ARC_TEST_HEADING_KP (1.2f)
+#define ARC_TEST_HEADING_KI (0.05f)
+#define ARC_TEST_HEADING_KD (0.0f)
+#define ARC_TEST_HEADING_LIMIT_RAD (0.015f)
 
 #if ARC_TEST_FF_EXP == 0
-#define ARC_TEST_YAWRATE_KP              (10.0f)
-#define ARC_TEST_YAWRATE_KI              (0.0f)
-#define ARC_TEST_YAWRATE_KD              (0.0f)
-#define ARC_TEST_YAWRATE_LIMIT_UNIT      (5.0f)
+#define ARC_TEST_YAWRATE_KP (10.0f)
+#define ARC_TEST_YAWRATE_KI (0.0f)
+#define ARC_TEST_YAWRATE_KD (0.0f)
+#define ARC_TEST_YAWRATE_LIMIT_UNIT (5.0f)
 
 #define ARC_TEST_HEADING_OUTER_KP_PER_SEC (1.0f)
 
-#else	/* Disable feedback */
+#else /* Disable feedback */
 
-#define ARC_TEST_YAWRATE_KP				 	(0.0f)
-#define ARC_TEST_YAWRATE_KI				 	(0.0f)
-#define ARC_TEST_YAWRATE_KD				 	(0.0f)
-#define ARC_TEST_YAWRATE_LIMIT_UNIT		 	(20.0f)
+#define ARC_TEST_YAWRATE_KP (0.0f)
+#define ARC_TEST_YAWRATE_KI (0.0f)
+#define ARC_TEST_YAWRATE_KD (0.0f)
+#define ARC_TEST_YAWRATE_LIMIT_UNIT (20.0f)
 
-#define ARC_TEST_HEADING_OUTER_KP_PER_SEC	(0.0f)
-#endif	/* ARC_TEST_FF_EXP */
+#define ARC_TEST_HEADING_OUTER_KP_PER_SEC (0.0f)
+#endif /* ARC_TEST_FF_EXP */
 
 /*
  * Current motion-profile parameters.
  */
-#define ARC_TEST_ACCELERATION_MMPS2       (2000.0f)
-#define ARC_TEST_DECELERATION_MMPS2       (2000.0f)
+#define ARC_TEST_ACCELERATION_MMPS2 (2000.0f)
+#define ARC_TEST_DECELERATION_MMPS2 (2000.0f)
 
-static const MotionControllerConfig arcTestMotionConfig =
-{
+static const MotionControllerConfig arcTestMotionConfig = {
     .kinematics = &kinematics,
     .arcConfig = &arcMotionConfig,
 
@@ -125,22 +121,15 @@ static const MotionControllerConfig arcTestMotionConfig =
     .stopStableSampleCount = 3U,
 };
 
+#define ARC_TEST_PI (3.14159265358979323846f)
 
-#define ARC_TEST_PI                       (3.14159265358979323846f)
+#define ARC_TEST_RAD_TO_DEG (180.0f / ARC_TEST_PI)
 
-#define ARC_TEST_RAD_TO_DEG               (180.0f / ARC_TEST_PI)
+#define ARC_TEST_MM_PER_COUNT (ARC_TEST_PI * ARC_TEST_WHEEL_DIAMETER_MM / ARC_TEST_ENCODER_CPR)
 
-#define ARC_TEST_MM_PER_COUNT \
-    (ARC_TEST_PI * ARC_TEST_WHEEL_DIAMETER_MM \
-    / ARC_TEST_ENCODER_CPR)
+#define ARC_TEST_CURVATURE_PER_MM (1.0f / ARC_TEST_RADIUS_MM)
 
-#define ARC_TEST_CURVATURE_PER_MM \
-    (1.0f / ARC_TEST_RADIUS_MM)
-
-#define ARC_TEST_NOMINAL_YAW_DEG \
-    ((ARC_TEST_DISTANCE_MM / ARC_TEST_RADIUS_MM) \
-    * ARC_TEST_RAD_TO_DEG)
-
+#define ARC_TEST_NOMINAL_YAW_DEG ((ARC_TEST_DISTANCE_MM / ARC_TEST_RADIUS_MM) * ARC_TEST_RAD_TO_DEG)
 
 /* -------------------------------------------------------------------------- */
 /* Diagnostic state                                                           */
@@ -154,15 +143,12 @@ volatile float motionControllerArcTestPreparedRawCommand;
 static float arcTestLeftDistanceMm = 0.0f;
 static float arcTestRightDistanceMm = 0.0f;
 
-
 /*
  * Global debugger-visible log.
  */
-volatile MotionControllerArcTestLogSample
-motionControllerArcTestLog[ARC_TEST_LOG_CAPACITY];
+volatile MotionControllerArcTestLogSample motionControllerArcTestLog[ARC_TEST_LOG_CAPACITY];
 
 volatile uint32_t motionControllerArcTestLogCount = 0U;
-
 
 /*
  * Useful top-level experiment results.
@@ -173,34 +159,23 @@ volatile bool motionControllerArcTestTimedOut = false;
  * State preserved at the instant the hard timeout is detected,
  * before timeout handling changes MotionController state.
  */
-volatile MotionControllerMode
-motionControllerArcTestTimeoutMode =
-    MOTIONCONTROLLER_IDLE;
+volatile MotionControllerMode motionControllerArcTestTimeoutMode = MOTIONCONTROLLER_IDLE;
 
-volatile float
-motionControllerArcTestTimeoutDistanceMm = 0.0f;
+volatile float motionControllerArcTestTimeoutDistanceMm = 0.0f;
 
-volatile float
-motionControllerArcTestTimeoutTargetDistanceMm = 0.0f;
+volatile float motionControllerArcTestTimeoutTargetDistanceMm = 0.0f;
 
-volatile bool
-motionControllerArcTestTimeoutProfileActive = false;
+volatile bool motionControllerArcTestTimeoutProfileActive = false;
 
-volatile uint32_t
-motionControllerArcTestTimeoutStationarySamples = 0U;
+volatile uint32_t motionControllerArcTestTimeoutStationarySamples = 0U;
 
-volatile float
-motionControllerArcTestTimeoutLeftCps = 0.0f;
+volatile float motionControllerArcTestTimeoutLeftCps = 0.0f;
 
-volatile float
-motionControllerArcTestTimeoutRightCps = 0.0f;
+volatile float motionControllerArcTestTimeoutRightCps = 0.0f;
 
-volatile float
-motionControllerArcTestTimeoutYawDeg = 0.0f;
+volatile float motionControllerArcTestTimeoutYawDeg = 0.0f;
 
-volatile bool
-motionControllerArcTestTimeoutArcExitCaptured = false;
-
+volatile bool motionControllerArcTestTimeoutArcExitCaptured = false;
 
 /*
  * State captured at the instant ARC mode ends.
@@ -221,7 +196,6 @@ volatile float motionControllerArcTestArcExitIdealYawDeg = 0.0f;
 volatile float motionControllerArcTestArcExitLeftDistanceMm = 0.0f;
 volatile float motionControllerArcTestArcExitRightDistanceMm = 0.0f;
 
-
 /*
  * Final stopped state.
  */
@@ -231,11 +205,9 @@ volatile float motionControllerArcTestFinalDistanceMm = 0.0f;
 volatile float motionControllerArcTestFinalLeftDistanceMm = 0.0f;
 volatile float motionControllerArcTestFinalRightDistanceMm = 0.0f;
 
-
 volatile const char *motionControllerArcTestInfo =
     "Distance completion; fixed nominal wheel ratio; deterministic centring; "
     "use pre-braking exit yaw/distance for curvature";
-
 
 /* -------------------------------------------------------------------------- */
 /* Logging helpers                                                            */
@@ -268,8 +240,7 @@ static void MotionControllerArcTest_ResetLog(void)
     motionControllerArcTestFinalLeftDistanceMm = 0.0f;
     motionControllerArcTestFinalRightDistanceMm = 0.0f;
 
-    motionControllerArcTestTimeoutMode =
-        MOTIONCONTROLLER_IDLE;
+    motionControllerArcTestTimeoutMode = MOTIONCONTROLLER_IDLE;
 
     motionControllerArcTestTimeoutDistanceMm = 0.0f;
     motionControllerArcTestTimeoutTargetDistanceMm = 0.0f;
@@ -281,340 +252,232 @@ static void MotionControllerArcTest_ResetLog(void)
     motionControllerArcTestTimeoutArcExitCaptured = false;
 }
 
-
-static void MotionControllerArcTest_UpdateMeasurements(
-    RobotTestFixture *fixture)
+static void MotionControllerArcTest_UpdateMeasurements(RobotTestFixture *fixture)
 {
-    MotionController *motionController =
-        &fixture->motionController;
+    MotionController *motionController = &fixture->motionController;
 
-    WheelSpeedController *leftWheel =
-        motionController->leftWheel;
+    WheelSpeedController *leftWheel = motionController->leftWheel;
 
-    WheelSpeedController *rightWheel =
-        motionController->rightWheel;
-
+    WheelSpeedController *rightWheel = motionController->rightWheel;
 
     /*
      * CPS * seconds = encoder counts
      * counts * mm/count = wheel travel
      */
     arcTestLeftDistanceMm +=
-        leftWheel->measuredSpeedCps *
-        ARC_TEST_CONTROL_PERIOD_S *
-        ARC_TEST_MM_PER_COUNT;
+        leftWheel->measuredSpeedCps * ARC_TEST_CONTROL_PERIOD_S * ARC_TEST_MM_PER_COUNT;
 
     arcTestRightDistanceMm +=
-        rightWheel->measuredSpeedCps *
-        ARC_TEST_CONTROL_PERIOD_S *
-        ARC_TEST_MM_PER_COUNT;
+        rightWheel->measuredSpeedCps * ARC_TEST_CONTROL_PERIOD_S * ARC_TEST_MM_PER_COUNT;
 }
 
-
-static void MotionControllerArcTest_LogSample(
-    RobotTestFixture *fixture,
-    uint32_t elapsedMs)
+static void MotionControllerArcTest_LogSample(RobotTestFixture *fixture, uint32_t elapsedMs)
 {
-    if (motionControllerArcTestLogCount >=
-        ARC_TEST_LOG_CAPACITY)
+    if (motionControllerArcTestLogCount >= ARC_TEST_LOG_CAPACITY)
     {
         return;
     }
 
+    MotionController *motionController = &fixture->motionController;
 
-    MotionController *motionController =
-        &fixture->motionController;
+    WheelSpeedController *leftWheel = motionController->leftWheel;
 
-    WheelSpeedController *leftWheel =
-        motionController->leftWheel;
+    WheelSpeedController *rightWheel = motionController->rightWheel;
 
-    WheelSpeedController *rightWheel =
-        motionController->rightWheel;
-
-
-    uint32_t i =
-        motionControllerArcTestLogCount;
-
+    uint32_t i = motionControllerArcTestLogCount;
 
     MotionControllerArcTestLogSample *sample =
-        (MotionControllerArcTestLogSample *)
-        &motionControllerArcTestLog[i];
+        (MotionControllerArcTestLogSample *)&motionControllerArcTestLog[i];
 
+    sample->timeMs = elapsedMs;
 
-    sample->timeMs =
-        elapsedMs;
-
-    sample->state =
-        (uint32_t)motionController->mode;
-
+    sample->state = (uint32_t)motionController->mode;
 
     /* Motion profile */
-    sample->profileTargetSpeedCps =
-        motionController->targetSpeedCps;
+    sample->profileTargetSpeedCps = motionController->targetSpeedCps;
 
-    sample->travelledDistanceMm =
-        motionController->travelledDistanceMm;
-
+    sample->travelledDistanceMm = motionController->travelledDistanceMm;
 
     /* Geometric command */
-    sample->targetCurvaturePerMm =
-        motionController->targetCurvaturePerMm;
+    sample->targetCurvaturePerMm = motionController->targetCurvaturePerMm;
 
-    sample->feedforwardSteeringAngleRad =
-        motionController->targetSteeringAngleRad;
+    sample->feedforwardSteeringAngleRad = motionController->targetSteeringAngleRad;
 
     /* Geometric path command */
-    sample->targetCurvaturePerMm =
-        motionController->targetCurvaturePerMm;
+    sample->targetCurvaturePerMm = motionController->targetCurvaturePerMm;
 
-    sample->arcCommandedCurvaturePerMm =
-        motionController->arcCommandedCurvaturePerMm;
+    sample->arcCommandedCurvaturePerMm = motionController->arcCommandedCurvaturePerMm;
 
-    sample->feedforwardSteeringAngleRad =
-        motionController->targetSteeringAngleRad;
-
+    sample->feedforwardSteeringAngleRad = motionController->targetSteeringAngleRad;
 
     /* Steering controller */
     sample->steeringTargetAngleRad =
-        SteeringController_GetTargetEffectiveAngleRad(
-            motionController->steering);
+        SteeringController_GetTargetEffectiveAngleRad(motionController->steering);
 
     sample->effectiveSteeringAngleRad =
-        SteeringController_GetEffectiveAngleRad(
-            motionController->steering);
+        SteeringController_GetEffectiveAngleRad(motionController->steering);
 
     /* Steering controller */
     sample->steeringTargetAngleRad =
-        SteeringController_GetTargetEffectiveAngleRad(
-            motionController->steering);
+        SteeringController_GetTargetEffectiveAngleRad(motionController->steering);
 
     sample->effectiveSteeringAngleRad =
-        SteeringController_GetEffectiveAngleRad(
-            motionController->steering);
-
+        SteeringController_GetEffectiveAngleRad(motionController->steering);
 
     /*
      * Phase 2B: outer heading loop
      */
-    sample->arcDesiredYawRad =
-        motionController->arcDesiredYawRad;
+    sample->arcDesiredYawRad = motionController->arcDesiredYawRad;
 
-    sample->arcHeadingErrorRad =
-        motionController->arcHeadingErrorRad;
+    sample->arcHeadingErrorRad = motionController->arcHeadingErrorRad;
 
-    sample->arcFeedforwardYawRateRadPerSec =
-        motionController->arcFeedforwardYawRateRadPerSec;
+    sample->arcFeedforwardYawRateRadPerSec = motionController->arcFeedforwardYawRateRadPerSec;
 
     sample->arcHeadingYawRateCorrectionRadPerSec =
         motionController->arcHeadingYawRateCorrectionRadPerSec;
 
-
     /*
      * Phase 2A: inner yaw-rate loop
      */
-    sample->yawRateDps =
-        motionController->yawRateDps;
+    sample->yawRateDps = motionController->yawRateDps;
 
-    sample->filteredYawRateDps =
-        motionController->filteredYawRateDps;
+    sample->filteredYawRateDps = motionController->filteredYawRateDps;
 
-    sample->arcTargetYawRateRadPerSec =
-        motionController->arcTargetYawRateRadPerSec;
+    sample->arcTargetYawRateRadPerSec = motionController->arcTargetYawRateRadPerSec;
 
-    sample->arcYawRateErrorRadPerSec =
-        motionController->arcYawRateErrorRadPerSec;
+    sample->arcYawRateErrorRadPerSec = motionController->arcYawRateErrorRadPerSec;
 
-    sample->arcSteeringCorrectionCommand =
-        motionController->arcSteeringCorrectionCommand;
+    sample->arcSteeringCorrectionCommand = motionController->arcSteeringCorrectionCommand;
 
-    sample->arcSteeringTargetCommand =
-        motionController->arcSteeringTargetCommand;
+    sample->arcSteeringTargetCommand = motionController->arcSteeringTargetCommand;
 
     /*
      * Explicitly log the actual feedback quantity seen
      * by the inner PI.
      */
     sample->measuredYawRateRadPerSec =
-        motionController->filteredYawRateDps *
-        (ARC_TEST_PI / 180.0f);
+        motionController->filteredYawRateDps * (ARC_TEST_PI / 180.0f);
 
-    sample->steeringCommand =
-        SteeringController_GetCommand(
-            motionController->steering);
+    sample->steeringCommand = SteeringController_GetCommand(motionController->steering);
 
     /* Wheel-speed controllers */
-    sample->leftTargetCps =
-        leftWheel->targetSpeedCps;
+    sample->leftTargetCps = leftWheel->targetSpeedCps;
 
-    sample->rightTargetCps =
-        rightWheel->targetSpeedCps;
+    sample->rightTargetCps = rightWheel->targetSpeedCps;
 
-    sample->leftMeasuredCps =
-        leftWheel->measuredSpeedCps;
+    sample->leftMeasuredCps = leftWheel->measuredSpeedCps;
 
-    sample->rightMeasuredCps =
-        rightWheel->measuredSpeedCps;
+    sample->rightMeasuredCps = rightWheel->measuredSpeedCps;
 
-    sample->leftPwm =
-        leftWheel->outputPWM;
+    sample->leftPwm = leftWheel->outputPWM;
 
-    sample->rightPwm =
-        rightWheel->outputPWM;
-
+    sample->rightPwm = rightWheel->outputPWM;
 
     /* Independent wheel-distance integration */
-    sample->leftDistanceMm =
-        arcTestLeftDistanceMm;
+    sample->leftDistanceMm = arcTestLeftDistanceMm;
 
-    sample->rightDistanceMm =
-        arcTestRightDistanceMm;
-
+    sample->rightDistanceMm = arcTestRightDistanceMm;
 
     /* Synchronisation */
-    sample->wheelReferenceCurvaturePerMm =
-        motionController->wheelReferenceCurvaturePerMm;
+    sample->wheelReferenceCurvaturePerMm = motionController->wheelReferenceCurvaturePerMm;
 
-    sample->leftBaseTargetCps =
-        motionController->leftBaseTargetCps;
+    sample->leftBaseTargetCps = motionController->leftBaseTargetCps;
 
-    sample->rightBaseTargetCps =
-        motionController->rightBaseTargetCps;
+    sample->rightBaseTargetCps = motionController->rightBaseTargetCps;
 
-    sample->desiredWheelTravelDifferenceMm =
-        motionController->desiredWheelTravelDifferenceMm;
+    sample->desiredWheelTravelDifferenceMm = motionController->desiredWheelTravelDifferenceMm;
 
-    sample->wheelSyncErrorMm =
-        motionController->wheelSyncErrorMm;
+    sample->wheelSyncErrorMm = motionController->wheelSyncErrorMm;
 
-    sample->wheelSyncCorrectionCps =
-        motionController->wheelSyncCorrectionCps;
+    sample->wheelSyncCorrectionCps = motionController->wheelSyncCorrectionCps;
 
     /* Heading */
-    sample->yawDeg =
-        motionController->yawDeg;
+    sample->yawDeg = motionController->yawDeg;
 
-    sample->idealYawDeg =
-        motionController->travelledDistanceMm *
-        motionController->targetCurvaturePerMm *
-        ARC_TEST_RAD_TO_DEG;
-
+    sample->idealYawDeg = motionController->travelledDistanceMm *
+                          motionController->targetCurvaturePerMm * ARC_TEST_RAD_TO_DEG;
 
     /* Dynamic braking */
-    sample->leftActuatorMode =
-        leftWheel->actuatorMode;
+    sample->leftActuatorMode = leftWheel->actuatorMode;
 
-    sample->rightActuatorMode =
-        rightWheel->actuatorMode;
+    sample->rightActuatorMode = rightWheel->actuatorMode;
 
-    sample->leftBrakeDemand =
-        leftWheel->brakeDemand;
+    sample->leftBrakeDemand = leftWheel->brakeDemand;
 
-    sample->rightBrakeDemand =
-        rightWheel->brakeDemand;
+    sample->rightBrakeDemand = rightWheel->brakeDemand;
 
-    sample->leftBrakePWM =
-        leftWheel->brakePWM;
+    sample->leftBrakePWM = leftWheel->brakePWM;
 
-    sample->rightBrakePWM =
-        rightWheel->brakePWM;
-
+    sample->rightBrakePWM = rightWheel->brakePWM;
 
     motionControllerArcTestLogCount++;
 }
 
-static void MotionControllerArcTest_CaptureTimeout(
-    RobotTestFixture *fixture)
+static void MotionControllerArcTest_CaptureTimeout(RobotTestFixture *fixture)
 {
-    MotionController *motionController =
-        &fixture->motionController;
+    MotionController *motionController = &fixture->motionController;
 
-    motionControllerArcTestTimeoutMode =
-        motionController->mode;
+    motionControllerArcTestTimeoutMode = motionController->mode;
 
-    motionControllerArcTestTimeoutDistanceMm =
-        motionController->travelledDistanceMm;
+    motionControllerArcTestTimeoutDistanceMm = motionController->travelledDistanceMm;
 
-    motionControllerArcTestTimeoutTargetDistanceMm =
-        motionController->targetDistanceMm;
+    motionControllerArcTestTimeoutTargetDistanceMm = motionController->targetDistanceMm;
 
     motionControllerArcTestTimeoutProfileActive =
-        MotionProfile_IsActive(
-            &motionController->motionProfile);
+        MotionProfile_IsActive(&motionController->motionProfile);
 
-    motionControllerArcTestTimeoutStationarySamples =
-        motionController->stationarySamples;
+    motionControllerArcTestTimeoutStationarySamples = motionController->stationarySamples;
 
-    motionControllerArcTestTimeoutLeftCps =
-        motionController->leftWheel->measuredSpeedCps;
+    motionControllerArcTestTimeoutLeftCps = motionController->leftWheel->measuredSpeedCps;
 
-    motionControllerArcTestTimeoutRightCps =
-        motionController->rightWheel->measuredSpeedCps;
+    motionControllerArcTestTimeoutRightCps = motionController->rightWheel->measuredSpeedCps;
 
-    motionControllerArcTestTimeoutYawDeg =
-        motionController->yawDeg;
+    motionControllerArcTestTimeoutYawDeg = motionController->yawDeg;
 
-    motionControllerArcTestTimeoutArcExitCaptured =
-        motionControllerArcTestArcExitCaptured;
+    motionControllerArcTestTimeoutArcExitCaptured = motionControllerArcTestArcExitCaptured;
 }
 
-static void MotionControllerArcTest_CaptureArcExit(
-    RobotTestFixture *fixture,
-    uint32_t elapsedMs)
+static void MotionControllerArcTest_CaptureArcExit(RobotTestFixture *fixture, uint32_t elapsedMs)
 {
     if (motionControllerArcTestArcExitCaptured)
     {
         return;
     }
 
-
-    MotionController *motionController =
-        &fixture->motionController;
-
+    MotionController *motionController = &fixture->motionController;
 
     motionControllerArcTestArcExitCaptured = true;
 
-    motionControllerArcTestArcExitTimeMs =
-        elapsedMs;
+    motionControllerArcTestArcExitTimeMs = elapsedMs;
 
-    motionControllerArcTestArcExitDistanceMm =
-        motionController->travelledDistanceMm;
+    motionControllerArcTestArcExitDistanceMm = motionController->travelledDistanceMm;
 
-    motionControllerArcTestArcExitYawDeg =
-        motionController->yawDeg;
+    motionControllerArcTestArcExitYawDeg = motionController->yawDeg;
 
-    motionControllerArcTestArcExitIdealYawDeg =
-        motionController->travelledDistanceMm *
-        motionController->targetCurvaturePerMm *
-        ARC_TEST_RAD_TO_DEG;
+    motionControllerArcTestArcExitIdealYawDeg = motionController->travelledDistanceMm *
+                                                motionController->targetCurvaturePerMm *
+                                                ARC_TEST_RAD_TO_DEG;
 
-    motionControllerArcTestArcExitLeftDistanceMm =
-        arcTestLeftDistanceMm;
+    motionControllerArcTestArcExitLeftDistanceMm = arcTestLeftDistanceMm;
 
-    motionControllerArcTestArcExitRightDistanceMm =
-        arcTestRightDistanceMm;
+    motionControllerArcTestArcExitRightDistanceMm = arcTestRightDistanceMm;
 }
-
 
 /* -------------------------------------------------------------------------- */
 /* Initialisation                                                              */
 /* -------------------------------------------------------------------------- */
 
-static bool MotionControllerArcTest_Init(
-    RobotTestFixture *fixture)
+static bool MotionControllerArcTest_Init(RobotTestFixture *fixture)
 {
     OLED_Init();
 
     OLED_Clear();
     OLED_Refresh_Gram();
 
-
-    if (!RobotTestFixture_InitMotionController(
-        fixture,
-        &arcTestMotionConfig))
+    if (!RobotTestFixture_InitMotionController(fixture, &arcTestMotionConfig))
     {
         return false;
     }
-
 
     /* Match the wheel-speed feedback used by the fusion experiments. */
     fixture->leftWheelController.pid.kp = 0.03f;
@@ -627,7 +490,7 @@ static bool MotionControllerArcTest_Init(
 __attribute__((noinline)) void MotionControllerArcTestFinished(void)
 {
     /* Export breakpoint after final results have been captured. */
-    __asm__ volatile ("" ::: "memory");
+    __asm__ volatile("" ::: "memory");
 }
 
 /* -------------------------------------------------------------------------- */
@@ -636,11 +499,10 @@ __attribute__((noinline)) void MotionControllerArcTestFinished(void)
 
 void MotionControllerArcTestRun(void)
 {
-    RobotTestFixture fixture = { 0 };
+    RobotTestFixture fixture = {0};
     const float requestedDistanceMm = motionControllerArcTestRequestedDistanceMm;
     const float requestedRadiusMm = motionControllerArcTestRequestedRadiusMm;
     const float requestedSpeedCps = motionControllerArcTestRequestedSpeedCps;
-
 
     if (!MotionControllerArcTest_Init(&fixture))
     {
@@ -651,73 +513,51 @@ void MotionControllerArcTestRun(void)
         return;
     }
 
+    OLED_Printf(0, 0, "Arc FF distance");
 
-    OLED_Printf(
-        0, 0,
-        "Arc FF distance");
+    OLED_Printf(0, 1, "R:%+.0f S:%.0f", requestedRadiusMm, requestedDistanceMm);
 
-    OLED_Printf(
-        0, 1,
-        "R:%+.0f S:%.0f",
-        requestedRadiusMm,
-        requestedDistanceMm);
+    OLED_Printf(0, 2, "Speed: %.0f CPS", requestedSpeedCps);
 
-    OLED_Printf(
-        0, 2,
-        "Speed: %.0f CPS",
-        requestedSpeedCps);
+    OLED_Printf(0, 3, "Ideal yaw:%+.2f", ARC_TEST_NOMINAL_YAW_DEG);
 
-    OLED_Printf(
-        0, 3,
-        "Ideal yaw:%+.2f",
-        ARC_TEST_NOMINAL_YAW_DEG);
-
-    OLED_Printf(
-        0, 4,
-        "Start: SW1");
+    OLED_Printf(0, 4, "Start: SW1");
 
     OLED_Refresh_Gram();
 
-
-    OLED_Printf(0, 5, "P%g I%g D%g H%g", (double)arcTestMotionConfig.arcYawRateKp,
-                (double)arcTestMotionConfig.arcYawRateKi, (double)arcTestMotionConfig.arcYawRateKd,
+    OLED_Printf(0,
+                5,
+                "P%g I%g D%g H%g",
+                (double)arcTestMotionConfig.arcYawRateKp,
+                (double)arcTestMotionConfig.arcYawRateKi,
+                (double)arcTestMotionConfig.arcYawRateKd,
                 (double)arcTestMotionConfig.arcHeadingKpPerSec);
     OLED_Refresh_Gram();
     SW1_WaitForPressAndRelease();
 
-
     OLED_Clear();
-
 
     /*
      * Allow finger to clear the robot.
      */
     HAL_Delay(400U);
 
-
     /*
      * Deterministically centre steering before every run.
      */
-    SteeringController_StartCentre(
-        &fixture.steeringController);
+    SteeringController_StartCentre(&fixture.steeringController);
 
-    while (!SteeringController_UpdateCentre(
-        &fixture.steeringController,
-        ARC_TEST_CONTROL_PERIOD_S))
+    while (!SteeringController_UpdateCentre(&fixture.steeringController, ARC_TEST_CONTROL_PERIOD_S))
     {
-        HAL_Delay(
-            ARC_TEST_CONTROL_PERIOD_MS);
+        HAL_Delay(ARC_TEST_CONTROL_PERIOD_MS);
     }
-
 
     /*
      * Allow centre position to settle mechanically.
      */
     HAL_Delay(100U);
 
-
     OLED_Refresh_Gram();
-
 
     /*
      * Only reset the motion-test log after pre-steering.
@@ -727,29 +567,19 @@ void MotionControllerArcTestRun(void)
      */
     MotionControllerArcTest_ResetLog();
 
-
     /*
      * Start the constant-curvature motion.
      */
     motionControllerArcTestCommandAccepted =
         MotionController_MoveArc(
-            &fixture.motionController,
-            requestedDistanceMm,
-            requestedRadiusMm,
-            requestedSpeedCps) ==
+            &fixture.motionController, requestedDistanceMm, requestedRadiusMm, requestedSpeedCps) ==
         MOTIONCONTROLLER_STATUS_OK;
-
 
     if (!motionControllerArcTestCommandAccepted)
     {
-        OLED_Printf(
-            0, 0,
-            "MoveArc rejected");
+        OLED_Printf(0, 0, "MoveArc rejected");
 
-        OLED_Printf(
-            0, 1,
-            "R:%+.0f mm",
-            ARC_TEST_RADIUS_MM);
+        OLED_Printf(0, 1, "R:%+.0f mm", ARC_TEST_RADIUS_MM);
 
         OLED_Refresh_Gram();
 
@@ -763,73 +593,49 @@ void MotionControllerArcTestRun(void)
     /*
      * Capture state before the first control update.
      */
-    MotionControllerArcTest_LogSample(
-        &fixture,
-        0U);
+    MotionControllerArcTest_LogSample(&fixture, 0U);
 
+    uint32_t startTick = HAL_GetTick();
 
-    uint32_t startTick =
-        HAL_GetTick();
+    uint32_t lastControlTick = startTick;
 
-    uint32_t lastControlTick =
-        startTick;
+    uint32_t lastLogTick = startTick;
 
-    uint32_t lastLogTick =
-        startTick;
-
-
-    while (fixture.motionController.mode !=
-           MOTIONCONTROLLER_IDLE)
+    while (fixture.motionController.mode != MOTIONCONTROLLER_IDLE)
     {
-        uint32_t now =
-            HAL_GetTick();
-
+        uint32_t now = HAL_GetTick();
 
         /*
          * Hard timeout.
          */
-        if ((now - startTick) >=
-            ARC_TEST_TIMEOUT_MS)
+        if ((now - startTick) >= ARC_TEST_TIMEOUT_MS)
         {
             /*
              * Preserve the state that caused the timeout before
              * MotionController_Brake() changes the controller mode
              * and motion-profile state.
              */
-            MotionControllerArcTest_CaptureTimeout(
-                &fixture);
+            MotionControllerArcTest_CaptureTimeout(&fixture);
 
             motionControllerArcTestTimedOut = true;
 
-            MotionController_Brake(
-                &fixture.motionController);
+            MotionController_Brake(&fixture.motionController);
 
             break;
         }
 
-
         /*
          * 100 Hz controller.
          */
-        if ((now - lastControlTick) >=
-            ARC_TEST_CONTROL_PERIOD_MS)
+        if ((now - lastControlTick) >= ARC_TEST_CONTROL_PERIOD_MS)
         {
-            lastControlTick +=
-                ARC_TEST_CONTROL_PERIOD_MS;
+            lastControlTick += ARC_TEST_CONTROL_PERIOD_MS;
 
+            MotionControllerMode previousMode = fixture.motionController.mode;
 
-            MotionControllerMode previousMode =
-                fixture.motionController.mode;
+            MotionController_Update(&fixture.motionController, ARC_TEST_CONTROL_PERIOD_S);
 
-
-            MotionController_Update(
-                &fixture.motionController,
-                ARC_TEST_CONTROL_PERIOD_S);
-
-
-            MotionControllerArcTest_UpdateMeasurements(
-                &fixture);
-
+            MotionControllerArcTest_UpdateMeasurements(&fixture);
 
             /*
              * Capture the first transition out of ARC mode.
@@ -837,32 +643,22 @@ void MotionControllerArcTestRun(void)
              * Normally this will be ARC -> BRAKING.
              */
             if ((previousMode == MOTIONCONTROLLER_ARC) &&
-                (fixture.motionController.mode !=
-                 MOTIONCONTROLLER_ARC))
+                (fixture.motionController.mode != MOTIONCONTROLLER_ARC))
             {
-                MotionControllerArcTest_CaptureArcExit(
-                    &fixture,
-                    now - startTick);
+                MotionControllerArcTest_CaptureArcExit(&fixture, now - startTick);
             }
         }
-
 
         /*
          * 50 Hz debugger log.
          */
-        if ((now - lastLogTick) >=
-            ARC_TEST_LOG_INTERVAL_MS)
+        if ((now - lastLogTick) >= ARC_TEST_LOG_INTERVAL_MS)
         {
-            lastLogTick +=
-                ARC_TEST_LOG_INTERVAL_MS;
+            lastLogTick += ARC_TEST_LOG_INTERVAL_MS;
 
-
-            MotionControllerArcTest_LogSample(
-                &fixture,
-                now - startTick);
+            MotionControllerArcTest_LogSample(&fixture, now - startTick);
         }
     }
-
 
     /*
      * If timeout initiated braking, continue stepping the
@@ -870,58 +666,36 @@ void MotionControllerArcTestRun(void)
      */
     if (motionControllerArcTestTimedOut)
     {
-        uint32_t brakeStartTick =
-            HAL_GetTick();
+        uint32_t brakeStartTick = HAL_GetTick();
 
-
-        while ((fixture.motionController.mode !=
-                MOTIONCONTROLLER_IDLE) &&
-               ((HAL_GetTick() - brakeStartTick) <
-                3000U))
+        while ((fixture.motionController.mode != MOTIONCONTROLLER_IDLE) &&
+               ((HAL_GetTick() - brakeStartTick) < 3000U))
         {
-            uint32_t now =
-                HAL_GetTick();
+            uint32_t now = HAL_GetTick();
 
-
-            if ((now - lastControlTick) >=
-                ARC_TEST_CONTROL_PERIOD_MS)
+            if ((now - lastControlTick) >= ARC_TEST_CONTROL_PERIOD_MS)
             {
-                lastControlTick +=
-                    ARC_TEST_CONTROL_PERIOD_MS;
+                lastControlTick += ARC_TEST_CONTROL_PERIOD_MS;
 
+                MotionController_Update(&fixture.motionController, ARC_TEST_CONTROL_PERIOD_S);
 
-                MotionController_Update(
-                    &fixture.motionController,
-                    ARC_TEST_CONTROL_PERIOD_S);
-
-
-                MotionControllerArcTest_UpdateMeasurements(
-                    &fixture);
+                MotionControllerArcTest_UpdateMeasurements(&fixture);
             }
 
-
-            if ((now - lastLogTick) >=
-                ARC_TEST_LOG_INTERVAL_MS)
+            if ((now - lastLogTick) >= ARC_TEST_LOG_INTERVAL_MS)
             {
-                lastLogTick +=
-                    ARC_TEST_LOG_INTERVAL_MS;
+                lastLogTick += ARC_TEST_LOG_INTERVAL_MS;
 
-
-                MotionControllerArcTest_LogSample(
-                    &fixture,
-                    now - startTick);
+                MotionControllerArcTest_LogSample(&fixture, now - startTick);
             }
         }
-
 
         /*
          * Last-resort stop.
          */
-        if (fixture.motionController.mode !=
-            MOTIONCONTROLLER_IDLE)
+        if (fixture.motionController.mode != MOTIONCONTROLLER_IDLE)
         {
-            MotionController_Stop(
-                &fixture.motionController);
+            MotionController_Stop(&fixture.motionController);
         }
     }
 
@@ -930,23 +704,15 @@ void MotionControllerArcTestRun(void)
     /*
      * Guaranteed final sample.
      */
-    MotionControllerArcTest_LogSample(
-        &fixture,
-        HAL_GetTick() - startTick);
+    MotionControllerArcTest_LogSample(&fixture, HAL_GetTick() - startTick);
 
+    motionControllerArcTestFinalYawDeg = fixture.motionController.yawDeg;
 
-    motionControllerArcTestFinalYawDeg =
-        fixture.motionController.yawDeg;
+    motionControllerArcTestFinalDistanceMm = fixture.motionController.travelledDistanceMm;
 
-    motionControllerArcTestFinalDistanceMm =
-        fixture.motionController.travelledDistanceMm;
+    motionControllerArcTestFinalLeftDistanceMm = arcTestLeftDistanceMm;
 
-    motionControllerArcTestFinalLeftDistanceMm =
-        arcTestLeftDistanceMm;
-
-    motionControllerArcTestFinalRightDistanceMm =
-        arcTestRightDistanceMm;
-
+    motionControllerArcTestFinalRightDistanceMm = arcTestRightDistanceMm;
 
     /*
      * Results.
@@ -969,72 +735,49 @@ void MotionControllerArcTestRun(void)
          * Exit = whether the normal ARC-exit transition
          *        had already been observed
          */
-        OLED_Printf(
-            0, 0,
-            "TIMEOUT M:%lu P:%u",
-            (unsigned long)
-                motionControllerArcTestTimeoutMode,
-            motionControllerArcTestTimeoutProfileActive
-                ? 1U : 0U);
+        OLED_Printf(0,
+                    0,
+                    "TIMEOUT M:%lu P:%u",
+                    (unsigned long)motionControllerArcTestTimeoutMode,
+                    motionControllerArcTestTimeoutProfileActive ? 1U : 0U);
 
-        OLED_Printf(
-            0, 1,
-            "D:%.1f/%.1f",
-            motionControllerArcTestTimeoutDistanceMm,
-            motionControllerArcTestTimeoutTargetDistanceMm);
+        OLED_Printf(0,
+                    1,
+                    "D:%.1f/%.1f",
+                    motionControllerArcTestTimeoutDistanceMm,
+                    motionControllerArcTestTimeoutTargetDistanceMm);
 
-        OLED_Printf(
-            0, 2,
-            "Stat:%lu Exit:%u",
-            (unsigned long)
-                motionControllerArcTestTimeoutStationarySamples,
-            motionControllerArcTestTimeoutArcExitCaptured
-                ? 1U : 0U);
+        OLED_Printf(0,
+                    2,
+                    "Stat:%lu Exit:%u",
+                    (unsigned long)motionControllerArcTestTimeoutStationarySamples,
+                    motionControllerArcTestTimeoutArcExitCaptured ? 1U : 0U);
 
-        OLED_Printf(
-            0, 3,
-            "L:%+.0f R:%+.0f",
-            motionControllerArcTestTimeoutLeftCps,
-            motionControllerArcTestTimeoutRightCps);
+        OLED_Printf(0,
+                    3,
+                    "L:%+.0f R:%+.0f",
+                    motionControllerArcTestTimeoutLeftCps,
+                    motionControllerArcTestTimeoutRightCps);
 
-        OLED_Printf(
-            0, 4,
-            "Yaw:%+.2f",
-            motionControllerArcTestTimeoutYawDeg);
+        OLED_Printf(0, 4, "Yaw:%+.2f", motionControllerArcTestTimeoutYawDeg);
     }
     else
     {
         /*
          * Normal successful result screen.
          */
-        OLED_Printf(
-            0, 0,
-            "Arc Exit:%+.2f",
-            motionControllerArcTestArcExitYawDeg);
+        OLED_Printf(0, 0, "Arc Exit:%+.2f", motionControllerArcTestArcExitYawDeg);
 
-        OLED_Printf(
-            0, 1,
-            "Ideal:%+.2f",
-            motionControllerArcTestArcExitIdealYawDeg);
+        OLED_Printf(0, 1, "Ideal:%+.2f", motionControllerArcTestArcExitIdealYawDeg);
 
-        OLED_Printf(
-            0, 2,
-            "Final:%+.2f",
-            motionControllerArcTestFinalYawDeg);
+        OLED_Printf(0, 2, "Final:%+.2f", motionControllerArcTestFinalYawDeg);
 
-        OLED_Printf(
-            0, 3,
-            "Dist:%6.1f",
-            motionControllerArcTestFinalDistanceMm);
+        OLED_Printf(0, 3, "Dist:%6.1f", motionControllerArcTestFinalDistanceMm);
 
-        OLED_Printf(
-            0, 4,
-            "N:%lu",
-            motionControllerArcTestLogCount);
+        OLED_Printf(0, 4, "N:%lu", motionControllerArcTestLogCount);
     }
 
     OLED_Refresh_Gram();
-
 
     /*
      * Preserve all data in RAM for debugger export.

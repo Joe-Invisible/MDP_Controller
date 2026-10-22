@@ -12,7 +12,7 @@
 
 #define MOTION_PI 3.14159265358979323846f
 
-#define MOTIONCONTROLLER_TIME_EPSILON_SEC                (1.0e-6f)
+#define MOTIONCONTROLLER_TIME_EPSILON_SEC (1.0e-6f)
 
 /*
  * TEMPORARY hardware-regression exemption.
@@ -28,25 +28,21 @@
  */
 #define MOTIONCONTROLLER_TEST_ALLOW_LIMITED_ARC_HEADROOM (1)
 
-static float MotionController_GetMmPerCount(
-    const MotionController *controller)
+static float MotionController_GetMmPerCount(const MotionController *controller)
 {
     /*
      * Why are we recomputing a constant each time?
      * Does the wheel grow as the robot moves?
      * Relativistic physics?
      */
-    return MOTION_PI *
-        controller->config->kinematics->rearWheelDiameterMm /
-        (float)controller->config->kinematics->rearEncoderCountsPerRev;
+    return MOTION_PI * controller->config->kinematics->rearWheelDiameterMm /
+           (float)controller->config->kinematics->rearEncoderCountsPerRev;
 }
 
-static float MotionController_GetWheelReferenceCurvaturePerMm(
-    const MotionController *controller)
+static float MotionController_GetWheelReferenceCurvaturePerMm(const MotionController *controller)
 {
     /* Braking centres steering and no longer requests path curvature. */
-    if (controller->mode == MOTIONCONTROLLER_BRAKING ||
-        controller->mode == MOTIONCONTROLLER_IDLE)
+    if (controller->mode == MOTIONCONTROLLER_BRAKING || controller->mode == MOTIONCONTROLLER_IDLE)
     {
         return 0.0f;
     }
@@ -55,12 +51,9 @@ static float MotionController_GetWheelReferenceCurvaturePerMm(
     if (controller->mode == MOTIONCONTROLLER_STRAIGHT &&
         controller->config->useLegacyStraightSteering)
     {
-        float steeringAngleRad =
-            SteeringController_GetEffectiveAngleRad(controller->steering);
+        float steeringAngleRad = SteeringController_GetEffectiveAngleRad(controller->steering);
 
-        return RobotKinematics_GetCurvaturePerMm(
-            controller->config->kinematics,
-            steeringAngleRad);
+        return RobotKinematics_GetCurvaturePerMm(controller->config->kinematics, steeringAngleRad);
     }
 
     /* Both unified paths coordinate wheels from the same IMU motion request. */
@@ -68,9 +61,7 @@ static float MotionController_GetWheelReferenceCurvaturePerMm(
 }
 
 static bool MotionController_ValidateArcFeedforwardBranch(
-    const MotionControllerArcFeedforwardPoint *points,
-    uint32_t pointCount,
-    bool negativeCurvature)
+    const MotionControllerArcFeedforwardPoint *points, uint32_t pointCount, bool negativeCurvature)
 {
     if (points == NULL || pointCount == 0U)
     {
@@ -79,27 +70,21 @@ static bool MotionController_ValidateArcFeedforwardBranch(
 
     for (uint32_t i = 0U; i < pointCount; ++i)
     {
-        if (!isfinite(points[i].curvaturePerMm) ||
-            !isfinite(points[i].rawSteeringCommand) ||
+        if (!isfinite(points[i].curvaturePerMm) || !isfinite(points[i].rawSteeringCommand) ||
             points[i].rawSteeringCommand < SERVO_STEER_MIN ||
             points[i].rawSteeringCommand > SERVO_STEER_MAX)
         {
             return false;
         }
 
-        if ((negativeCurvature &&
-             points[i].curvaturePerMm >= 0.0f) ||
-            (!negativeCurvature &&
-             points[i].curvaturePerMm <= 0.0f))
+        if ((negativeCurvature && points[i].curvaturePerMm >= 0.0f) ||
+            (!negativeCurvature && points[i].curvaturePerMm <= 0.0f))
         {
             return false;
         }
 
-        if (i > 0U &&
-            (points[i].curvaturePerMm <=
-                 points[i - 1U].curvaturePerMm ||
-             points[i].rawSteeringCommand >=
-                 points[i - 1U].rawSteeringCommand))
+        if (i > 0U && (points[i].curvaturePerMm <= points[i - 1U].curvaturePerMm ||
+                       points[i].rawSteeringCommand >= points[i - 1U].rawSteeringCommand))
         {
             return false;
         }
@@ -108,35 +93,27 @@ static bool MotionController_ValidateArcFeedforwardBranch(
     return true;
 }
 
-static bool MotionController_ValidateArcConfig(
-    const MotionControllerArcConfig *config)
+static bool MotionController_ValidateArcConfig(const MotionControllerArcConfig *config)
 {
-    if (config == NULL ||
-        !isfinite(config->steeringSettlingTimeSec) ||
+    if (config == NULL || !isfinite(config->steeringSettlingTimeSec) ||
         config->steeringSettlingTimeSec < 0.0f)
     {
         return false;
     }
 
     return MotionController_ValidateArcFeedforwardBranch(
-            config->negativePoints,
-            config->negativePointCount,
-            true) &&
-        MotionController_ValidateArcFeedforwardBranch(
-            config->positivePoints,
-            config->positivePointCount,
-            false);
+               config->negativePoints, config->negativePointCount, true) &&
+           MotionController_ValidateArcFeedforwardBranch(
+               config->positivePoints, config->positivePointCount, false);
 }
 
-static bool MotionController_InterpolateArcFeedforwardBranch(
-    const MotionControllerArcFeedforwardPoint *points,
-    uint32_t pointCount,
-    float curvaturePerMm,
-    float *rawSteeringCommand)
+static bool
+MotionController_InterpolateArcFeedforwardBranch(const MotionControllerArcFeedforwardPoint *points,
+                                                 uint32_t pointCount,
+                                                 float curvaturePerMm,
+                                                 float *rawSteeringCommand)
 {
-    if (points == NULL ||
-        pointCount == 0U ||
-        rawSteeringCommand == NULL ||
+    if (points == NULL || pointCount == 0U || rawSteeringCommand == NULL ||
         curvaturePerMm < points[0].curvaturePerMm ||
         curvaturePerMm > points[pointCount - 1U].curvaturePerMm)
     {
@@ -156,22 +133,17 @@ static bool MotionController_InterpolateArcFeedforwardBranch(
 
     for (uint32_t i = 0U; i + 1U < pointCount; ++i)
     {
-        const MotionControllerArcFeedforwardPoint *lower =
-            &points[i];
-        const MotionControllerArcFeedforwardPoint *upper =
-            &points[i + 1U];
+        const MotionControllerArcFeedforwardPoint *lower = &points[i];
+        const MotionControllerArcFeedforwardPoint *upper = &points[i + 1U];
 
         if (curvaturePerMm <= upper->curvaturePerMm)
         {
-            float fraction =
-                (curvaturePerMm - lower->curvaturePerMm) /
-                (upper->curvaturePerMm - lower->curvaturePerMm);
+            float fraction = (curvaturePerMm - lower->curvaturePerMm) /
+                             (upper->curvaturePerMm - lower->curvaturePerMm);
 
             *rawSteeringCommand =
                 lower->rawSteeringCommand +
-                fraction *
-                (upper->rawSteeringCommand -
-                 lower->rawSteeringCommand);
+                fraction * (upper->rawSteeringCommand - lower->rawSteeringCommand);
 
             return true;
         }
@@ -180,14 +152,11 @@ static bool MotionController_InterpolateArcFeedforwardBranch(
     return false;
 }
 
-static bool MotionController_GetPathSteeringFeedforwardCommand(
-    const MotionController *controller,
-    float curvaturePerMm,
-    float *rawSteeringCommand)
+static bool MotionController_GetPathSteeringFeedforwardCommand(const MotionController *controller,
+                                                               float curvaturePerMm,
+                                                               float *rawSteeringCommand)
 {
-    if (controller == NULL ||
-        controller->config == NULL ||
-        controller->config->arcConfig == NULL ||
+    if (controller == NULL || controller->config == NULL || controller->config->arcConfig == NULL ||
         rawSteeringCommand == NULL)
     {
         return false;
@@ -197,8 +166,7 @@ static bool MotionController_GetPathSteeringFeedforwardCommand(
     {
         /* Caller has just centred the axle using the validated return logic.
          * Capture that raw centre; never interpolate across the table gap. */
-        *rawSteeringCommand =
-            SteeringController_GetCommand(controller->steering);
+        *rawSteeringCommand = SteeringController_GetCommand(controller->steering);
         return true;
     }
 
@@ -217,8 +185,7 @@ static bool MotionController_GetPathSteeringFeedforwardCommand(
         curvaturePerMm,
         rawSteeringCommand);
 }
-static void MotionController_ResetOdometry(
-    MotionController *controller)
+static void MotionController_ResetOdometry(MotionController *controller)
 {
     controller->leftTravelMm = 0.0f;
     controller->rightTravelMm = 0.0f;
@@ -227,52 +194,40 @@ static void MotionController_ResetOdometry(
     controller->desiredWheelTravelDifferenceMm = 0.0f;
     controller->wheelSyncErrorMm = 0.0f;
 
-    controller->previousLeftEncoderCount =
-        DCMotor_GetEncoderCount(controller->leftWheel->motor);
+    controller->previousLeftEncoderCount = DCMotor_GetEncoderCount(controller->leftWheel->motor);
 
-    controller->previousRightEncoderCount =
-        DCMotor_GetEncoderCount(controller->rightWheel->motor);
+    controller->previousRightEncoderCount = DCMotor_GetEncoderCount(controller->rightWheel->motor);
 }
 
-
-static void MotionController_UpdateOdometry(
-    MotionController *controller)
+static void MotionController_UpdateOdometry(MotionController *controller)
 {
-    int16_t currentLeft =
-        DCMotor_GetEncoderCount(controller->leftWheel->motor);
+    int16_t currentLeft = DCMotor_GetEncoderCount(controller->leftWheel->motor);
 
-    int16_t currentRight =
-        DCMotor_GetEncoderCount(controller->rightWheel->motor);
+    int16_t currentRight = DCMotor_GetEncoderCount(controller->rightWheel->motor);
 
     /*
      * Use the same wrap-safe subtraction used by
      * WheelSpeedController.
      */
-    int16_t deltaLeft = (int16_t)(
-        (uint16_t)currentLeft -
-        (uint16_t)controller->previousLeftEncoderCount);
+    int16_t deltaLeft =
+        (int16_t)((uint16_t)currentLeft - (uint16_t)controller->previousLeftEncoderCount);
 
-    int16_t deltaRight = (int16_t)(
-        (uint16_t)currentRight -
-        (uint16_t)controller->previousRightEncoderCount);
+    int16_t deltaRight =
+        (int16_t)((uint16_t)currentRight - (uint16_t)controller->previousRightEncoderCount);
 
     controller->previousLeftEncoderCount = currentLeft;
     controller->previousRightEncoderCount = currentRight;
 
-    float mmPerCount =
-        MotionController_GetMmPerCount(controller);
+    float mmPerCount = MotionController_GetMmPerCount(controller);
 
-    float deltaLeftMm =
-        (float)deltaLeft * mmPerCount;
+    float deltaLeftMm = (float)deltaLeft * mmPerCount;
 
-    float deltaRightMm =
-        (float)deltaRight * mmPerCount;
+    float deltaRightMm = (float)deltaRight * mmPerCount;
 
     /*
      * Signed displacement of the rear-axle centre.
      */
-    float deltaCentreMm =
-        0.5f * (deltaLeftMm + deltaRightMm);
+    float deltaCentreMm = 0.5f * (deltaLeftMm + deltaRightMm);
 
     /*
      * The encoder increments measured here correspond
@@ -281,9 +236,7 @@ static void MotionController_UpdateOdometry(
      * that commanded curvature directly; only the legacy straight baseline
      * uses the effective-angle estimate.
      */
-    float curvaturePerMm =
-        MotionController_GetWheelReferenceCurvaturePerMm(
-            controller);
+    float curvaturePerMm = MotionController_GetWheelReferenceCurvaturePerMm(controller);
 
     /*
      * Bicycle-model rear-wheel relationship:
@@ -294,17 +247,12 @@ static void MotionController_UpdateOdometry(
      * commanded path curvature.
      */
     controller->desiredWheelTravelDifferenceMm +=
-        controller->config->kinematics->rearTrackWidthMm *
-        curvaturePerMm *
-        deltaCentreMm;
+        controller->config->kinematics->rearTrackWidthMm * curvaturePerMm * deltaCentreMm;
 
     controller->leftTravelMm += deltaLeftMm;
     controller->rightTravelMm += deltaRightMm;
 
-    controller->travelledDistanceMm =
-        0.5f *
-        (controller->leftTravelMm +
-            controller->rightTravelMm);
+    controller->travelledDistanceMm = 0.5f * (controller->leftTravelMm + controller->rightTravelMm);
 
     /*
      * Compare actual rear-wheel relationship with
@@ -316,15 +264,11 @@ static void MotionController_UpdateOdometry(
      * Negative error:
      *     right traveled less far than required.
      */
-    controller->wheelSyncErrorMm =
-        (controller->rightTravelMm -
-            controller->leftTravelMm)
-        - controller->desiredWheelTravelDifferenceMm;
+    controller->wheelSyncErrorMm = (controller->rightTravelMm - controller->leftTravelMm) -
+                                   controller->desiredWheelTravelDifferenceMm;
 }
 
-
-static void MotionController_BeginBraking(
-    MotionController *controller)
+static void MotionController_BeginBraking(MotionController *controller)
 {
     WheelSpeedController_SetTarget(controller->leftWheel, 0.0f);
     WheelSpeedController_SetTarget(controller->rightWheel, 0.0f);
@@ -349,13 +293,11 @@ static void MotionController_BeginBraking(
     controller->mode = MOTIONCONTROLLER_BRAKING;
 }
 
-
 /**
  * Stops wheel speed controller and allow the robot
  * to coast once it is stationary.
  */
-static void MotionController_FinishBraking(
-    MotionController *controller)
+static void MotionController_FinishBraking(MotionController *controller)
 {
     /*
      * Resynchronise the wheel speed controller encoder references
@@ -370,24 +312,16 @@ static void MotionController_FinishBraking(
     controller->mode = MOTIONCONTROLLER_IDLE;
 }
 
-MotionControllerStatus MotionController_Init(
-    MotionController *controller,
-    WheelSpeedController *leftWheel,
-    WheelSpeedController *rightWheel,
-    SteeringController *steering,
-    ICM20948 *imu,
-    const MotionControllerConfig *config)
+MotionControllerStatus MotionController_Init(MotionController *controller,
+                                             WheelSpeedController *leftWheel,
+                                             WheelSpeedController *rightWheel,
+                                             SteeringController *steering,
+                                             ICM20948 *imu,
+                                             const MotionControllerConfig *config)
 {
-	if (controller == NULL ||
-	    leftWheel == NULL ||
-	    rightWheel == NULL ||
-	    leftWheel->motor == NULL ||
-	    rightWheel->motor == NULL ||
-	    steering == NULL ||
-	    imu == NULL ||
-	    config == NULL ||
-	    config->kinematics == NULL ||
-	    config->arcConfig == NULL)
+    if (controller == NULL || leftWheel == NULL || rightWheel == NULL || leftWheel->motor == NULL ||
+        rightWheel->motor == NULL || steering == NULL || imu == NULL || config == NULL ||
+        config->kinematics == NULL || config->arcConfig == NULL)
     {
         return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
     }
@@ -397,68 +331,50 @@ MotionControllerStatus MotionController_Init(
         !isfinite(config->kinematics->wheelbaseMm) ||
         !isfinite(config->kinematics->rearTrackWidthMm) ||
         config->kinematics->rearWheelDiameterMm <= 0.0f ||
-        config->kinematics->wheelbaseMm <= 0.0f ||
-        config->kinematics->rearTrackWidthMm <= 0.0f)
+        config->kinematics->wheelbaseMm <= 0.0f || config->kinematics->rearTrackWidthMm <= 0.0f)
     {
         return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
     }
 
-    if (!isfinite(config->straightSteeringSettlingTimeSec) ||
-        !isfinite(config->arcYawRateKp) ||
-        !isfinite(config->arcYawRateKi) ||
-        !isfinite(config->arcYawRateKd) ||
+    if (!isfinite(config->straightSteeringSettlingTimeSec) || !isfinite(config->arcYawRateKp) ||
+        !isfinite(config->arcYawRateKi) || !isfinite(config->arcYawRateKd) ||
         !isfinite(config->maxArcSteeringCommandCorrection) ||
         !isfinite(config->arcHeadingKpPerSec) ||
         !isfinite(config->maxPathCorrectionCurvaturePerMm) ||
-        !isfinite(config->wheelSyncKpCpsPerMm) ||
-        !isfinite(config->maxWheelSyncCorrectionCps) ||
-        !isfinite(config->motionAccelerationMmps2) ||
-        !isfinite(config->motionDecelerationMmps2) ||
-        !isfinite(config->motionCompletionToleranceMm) ||
-        !isfinite(config->arcYawRateFilterTauSec))
+        !isfinite(config->wheelSyncKpCpsPerMm) || !isfinite(config->maxWheelSyncCorrectionCps) ||
+        !isfinite(config->motionAccelerationMmps2) || !isfinite(config->motionDecelerationMmps2) ||
+        !isfinite(config->motionCompletionToleranceMm) || !isfinite(config->arcYawRateFilterTauSec))
     {
         return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
     }
 
     if (config->useLegacyStraightSteering)
     {
-        if (!isfinite(config->headingKp) ||
-            !isfinite(config->headingKi) ||
-            !isfinite(config->headingKd) ||
-            !isfinite(config->maxHeadingSteeringAngleRad))
+        if (!isfinite(config->headingKp) || !isfinite(config->headingKi) ||
+            !isfinite(config->headingKd) || !isfinite(config->maxHeadingSteeringAngleRad))
         {
             return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
         }
 
-        float minEffectiveAngleRad =
-            SteeringController_GetMinEffectiveAngleRad(
-                steering);
+        float minEffectiveAngleRad = SteeringController_GetMinEffectiveAngleRad(steering);
 
-        float maxEffectiveAngleRad =
-            SteeringController_GetMaxEffectiveAngleRad(
-                steering);
+        float maxEffectiveAngleRad = SteeringController_GetMaxEffectiveAngleRad(steering);
 
         /*
          * Straight-line heading control must be able to correct
          * in either direction, so use only the range available
          * symmetrically about zero.
          */
-        if (!isfinite(minEffectiveAngleRad) ||
-            !isfinite(maxEffectiveAngleRad) ||
-            minEffectiveAngleRad >= 0.0f ||
-            maxEffectiveAngleRad <= 0.0f)
+        if (!isfinite(minEffectiveAngleRad) || !isfinite(maxEffectiveAngleRad) ||
+            minEffectiveAngleRad >= 0.0f || maxEffectiveAngleRad <= 0.0f)
         {
             return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
         }
 
-        float maxSymmetricSteeringAngleRad =
-            fminf(
-                -minEffectiveAngleRad,
-                maxEffectiveAngleRad);
+        float maxSymmetricSteeringAngleRad = fminf(-minEffectiveAngleRad, maxEffectiveAngleRad);
 
         if (config->maxHeadingSteeringAngleRad <= 0.0f ||
-            config->maxHeadingSteeringAngleRad >
-                maxSymmetricSteeringAngleRad)
+            config->maxHeadingSteeringAngleRad > maxSymmetricSteeringAngleRad)
         {
             return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
         }
@@ -469,17 +385,14 @@ MotionControllerStatus MotionController_Init(
         return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
     }
 
-    if (config->wheelSyncKpCpsPerMm < 0.0f ||
-        config->maxWheelSyncCorrectionCps < 0.0f)
+    if (config->wheelSyncKpCpsPerMm < 0.0f || config->maxWheelSyncCorrectionCps < 0.0f)
     {
         return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
     }
 
-    if (config->straightSteeringSettlingTimeSec < 0.0f ||
-        config->arcHeadingKpPerSec < 0.0f ||
+    if (config->straightSteeringSettlingTimeSec < 0.0f || config->arcHeadingKpPerSec < 0.0f ||
         config->maxPathCorrectionCurvaturePerMm < 0.0f ||
-        config->motionCompletionToleranceMm <= 0.0f ||
-        config->arcYawRateFilterTauSec < 0.0f ||
+        config->motionCompletionToleranceMm <= 0.0f || config->arcYawRateFilterTauSec < 0.0f ||
         config->stopStableSampleCount == 0U)
     {
         return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
@@ -500,35 +413,31 @@ MotionControllerStatus MotionController_Init(
 
     controller->mode = MOTIONCONTROLLER_IDLE;
 
-    if (!MotionProfile_Init(
-            &controller->motionProfile,
-            config->motionAccelerationMmps2,
-            config->motionDecelerationMmps2,
-			config->motionCompletionToleranceMm))
+    if (!MotionProfile_Init(&controller->motionProfile,
+                            config->motionAccelerationMmps2,
+                            config->motionDecelerationMmps2,
+                            config->motionCompletionToleranceMm))
     {
         return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
     }
-
 
     if (config->useLegacyStraightSteering &&
-        !PIDController_Init(
-            &controller->headingPID,
-            config->headingKp,
-            config->headingKi,
-            config->headingKd,
-            -config->maxHeadingSteeringAngleRad,
-            +config->maxHeadingSteeringAngleRad))
+        !PIDController_Init(&controller->headingPID,
+                            config->headingKp,
+                            config->headingKi,
+                            config->headingKd,
+                            -config->maxHeadingSteeringAngleRad,
+                            +config->maxHeadingSteeringAngleRad))
     {
         return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
     }
 
-    if (!PIDController_Init(
-            &controller->arcYawRatePID,
-            config->arcYawRateKp,
-            config->arcYawRateKi,
-            config->arcYawRateKd,
-            -config->maxArcSteeringCommandCorrection,
-            +config->maxArcSteeringCommandCorrection))
+    if (!PIDController_Init(&controller->arcYawRatePID,
+                            config->arcYawRateKp,
+                            config->arcYawRateKi,
+                            config->arcYawRateKd,
+                            -config->maxArcSteeringCommandCorrection,
+                            +config->maxArcSteeringCommandCorrection))
     {
         return MOTIONCONTROLLER_STATUS_INVALID_CONFIGURATION;
     }
@@ -539,27 +448,20 @@ MotionControllerStatus MotionController_Init(
 }
 
 static MotionControllerStatus MotionController_ValidateMotionRequest(
-    const MotionController *controller,
-    float distanceMm,
-    float speedCps,
-    bool *motionRequired)
+    const MotionController *controller, float distanceMm, float speedCps, bool *motionRequired)
 {
     if (controller == NULL || motionRequired == NULL)
         return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
 
     *motionRequired = false;
 
-    if (!controller->initialized)
-        return MOTIONCONTROLLER_STATUS_NOT_INITIALIZED;
+    if (!controller->initialized) return MOTIONCONTROLLER_STATUS_NOT_INITIALIZED;
 
-    if (controller->mode != MOTIONCONTROLLER_IDLE)
-        return MOTIONCONTROLLER_STATUS_BUSY;
+    if (controller->mode != MOTIONCONTROLLER_IDLE) return MOTIONCONTROLLER_STATUS_BUSY;
 
-    if (!isfinite(distanceMm))
-        return MOTIONCONTROLLER_STATUS_INVALID_DISTANCE;
+    if (!isfinite(distanceMm)) return MOTIONCONTROLLER_STATUS_INVALID_DISTANCE;
 
-    if (!isfinite(speedCps) || speedCps <= 0.0f)
-        return MOTIONCONTROLLER_STATUS_INVALID_SPEED;
+    if (!isfinite(speedCps) || speedCps <= 0.0f) return MOTIONCONTROLLER_STATUS_INVALID_SPEED;
 
     *motionRequired = distanceMm != 0.0f;
 
@@ -570,24 +472,16 @@ static MotionControllerStatus MotionController_ValidateMotionRequest(
  * Initialise state shared by straight and arc commands after the complete
  * request has been validated. This helper deliberately does not steer.
  */
-static MotionControllerStatus MotionController_StartMotion(
-	MotionController *controller,
-	float distanceMm,
-	float speedCps)
+static MotionControllerStatus
+MotionController_StartMotion(MotionController *controller, float distanceMm, float speedCps)
 {
-    float mmPerCount =
-        MotionController_GetMmPerCount(controller);
+    float mmPerCount = MotionController_GetMmPerCount(controller);
 
-    float targetDistanceMm =
-        fabsf(distanceMm);
+    float targetDistanceMm = fabsf(distanceMm);
 
-    float maxSpeedMmps =
-        speedCps * mmPerCount;
+    float maxSpeedMmps = speedCps * mmPerCount;
 
-    if (!MotionProfile_Start(
-            &controller->motionProfile,
-            targetDistanceMm,
-            maxSpeedMmps))
+    if (!MotionProfile_Start(&controller->motionProfile, targetDistanceMm, maxSpeedMmps))
     {
         return MOTIONCONTROLLER_STATUS_PROFILE_ERROR;
     }
@@ -635,44 +529,29 @@ static MotionControllerStatus MotionController_StartMotion(
 
     MotionController_ResetOdometry(controller);
 
-    WheelSpeedController_SetTarget(
-        controller->leftWheel,
-        0.0f);
+    WheelSpeedController_SetTarget(controller->leftWheel, 0.0f);
 
-    WheelSpeedController_SetTarget(
-        controller->rightWheel,
-        0.0f);
+    WheelSpeedController_SetTarget(controller->rightWheel, 0.0f);
 
     return MOTIONCONTROLLER_STATUS_OK;
 }
 
-MotionControllerStatus MotionController_MoveStraight(
-    MotionController *controller,
-    float distanceMm,
-    float speedCps)
+MotionControllerStatus
+MotionController_MoveStraight(MotionController *controller, float distanceMm, float speedCps)
 {
-    if (controller == NULL)
-        return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
+    if (controller == NULL) return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
 
     bool motionRequired = false;
 
     MotionControllerStatus status =
-        MotionController_ValidateMotionRequest(
-			controller,
-			distanceMm,
-			speedCps,
-			&motionRequired);
+        MotionController_ValidateMotionRequest(controller, distanceMm, speedCps, &motionRequired);
 
-    if (status != MOTIONCONTROLLER_STATUS_OK ||
-        !motionRequired)
+    if (status != MOTIONCONTROLLER_STATUS_OK || !motionRequired)
     {
-			return status;
+        return status;
     }
 
-    status = MotionController_StartMotion(
-        controller,
-        distanceMm,
-        speedCps);
+    status = MotionController_StartMotion(controller, distanceMm, speedCps);
 
     if (status != MOTIONCONTROLLER_STATUS_OK)
     {
@@ -688,25 +567,20 @@ MotionControllerStatus MotionController_MoveStraight(
 
     /* Zero curvature uses the actual prepared centre, not raw zero. */
     MotionController_GetPathSteeringFeedforwardCommand(
-        controller,
-        0.0f,
-        &controller->arcSteeringFeedforwardCommand);
-    controller->arcSteeringTargetCommand =
-        controller->arcSteeringFeedforwardCommand;
+        controller, 0.0f, &controller->arcSteeringFeedforwardCommand);
+    controller->arcSteeringTargetCommand = controller->arcSteeringFeedforwardCommand;
 
-    controller->mode =
-        controller->config->straightSteeringSettlingTimeSec > 0.0f
-            ? MOTIONCONTROLLER_STRAIGHT_PREPARING
-            : MOTIONCONTROLLER_STRAIGHT;
+    controller->mode = controller->config->straightSteeringSettlingTimeSec > 0.0f
+                           ? MOTIONCONTROLLER_STRAIGHT_PREPARING
+                           : MOTIONCONTROLLER_STRAIGHT;
 
     return MOTIONCONTROLLER_STATUS_OK;
 }
 
-MotionControllerStatus MotionController_MoveArc(
-    MotionController *controller,
-    float distanceMm,
-    float radiusMm,
-    float speedCps)
+MotionControllerStatus MotionController_MoveArc(MotionController *controller,
+                                                float distanceMm,
+                                                float radiusMm,
+                                                float speedCps)
 {
     if (controller == NULL)
     {
@@ -728,14 +602,9 @@ MotionControllerStatus MotionController_MoveArc(
     bool motionRequired = false;
 
     MotionControllerStatus status =
-        MotionController_ValidateMotionRequest(
-            controller,
-            distanceMm,
-            speedCps,
-            &motionRequired);
+        MotionController_ValidateMotionRequest(controller, distanceMm, speedCps, &motionRequired);
 
-    if (status != MOTIONCONTROLLER_STATUS_OK ||
-        !motionRequired)
+    if (status != MOTIONCONTROLLER_STATUS_OK || !motionRequired)
     {
         return status;
     }
@@ -743,78 +612,61 @@ MotionControllerStatus MotionController_MoveArc(
     float feedforwardCommand;
 
     if (!MotionController_GetPathSteeringFeedforwardCommand(
-            controller,
-            curvaturePerMm,
-            &feedforwardCommand))
+            controller, curvaturePerMm, &feedforwardCommand))
     {
         return MOTIONCONTROLLER_STATUS_UNSUPPORTED_CURVATURE;
     }
 
 #if !MOTIONCONTROLLER_TEST_ALLOW_LIMITED_ARC_HEADROOM
-    float maximumCorrectionCommand =
-        fmaxf(
-            fabsf(controller->arcYawRatePID.outputMin),
-            fabsf(controller->arcYawRatePID.outputMax));
+    float maximumCorrectionCommand = fmaxf(fabsf(controller->arcYawRatePID.outputMin),
+                                           fabsf(controller->arcYawRatePID.outputMax));
 
-    if (feedforwardCommand - maximumCorrectionCommand <
-            SERVO_STEER_MIN ||
-        feedforwardCommand + maximumCorrectionCommand >
-            SERVO_STEER_MAX)
+    if (feedforwardCommand - maximumCorrectionCommand < SERVO_STEER_MIN ||
+        feedforwardCommand + maximumCorrectionCommand > SERVO_STEER_MAX)
     {
         return MOTIONCONTROLLER_STATUS_UNSUPPORTED_CURVATURE;
     }
 #endif
 
-    status = MotionController_StartMotion(
-        controller,
-        distanceMm,
-        speedCps);
+    status = MotionController_StartMotion(controller, distanceMm, speedCps);
 
     if (status != MOTIONCONTROLLER_STATUS_OK)
     {
         return status;
     }
 
-    controller->targetCurvaturePerMm =
-        curvaturePerMm;
+    controller->targetCurvaturePerMm = curvaturePerMm;
 
-    controller->arcCommandedCurvaturePerMm =
-        controller->targetCurvaturePerMm;
+    controller->arcCommandedCurvaturePerMm = controller->targetCurvaturePerMm;
 
-    controller->arcSteeringFeedforwardCommand =
-        feedforwardCommand;
-    controller->arcSteeringTargetCommand =
-        feedforwardCommand;
+    controller->arcSteeringFeedforwardCommand = feedforwardCommand;
+    controller->arcSteeringTargetCommand = feedforwardCommand;
 
     /*
      * Preserve the experimentally accepted abrupt prepositioning behavior.
      * MotionController now owns both the physical command and the matching
      * SteeringController raw-command state.
      */
-    SteeringController_SetRawCommand(
-        controller->steering,
-        feedforwardCommand);
+    SteeringController_SetRawCommand(controller->steering, feedforwardCommand);
 
-    controller->mode =
-        controller->config->arcConfig->steeringSettlingTimeSec > 0.0f
-            ? MOTIONCONTROLLER_ARC_PREPARING
-            : MOTIONCONTROLLER_ARC;
+    controller->mode = controller->config->arcConfig->steeringSettlingTimeSec > 0.0f
+                           ? MOTIONCONTROLLER_ARC_PREPARING
+                           : MOTIONCONTROLLER_ARC;
 
     return MOTIONCONTROLLER_STATUS_OK;
 }
 
-MotionControllerStatus MotionController_Brake(
-    MotionController *controller)
+MotionControllerStatus MotionController_Brake(MotionController *controller)
 {
-	if (controller == NULL)
-	{
+    if (controller == NULL)
+    {
         return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
     }
 
-    if (!controller->initialized)
-        return MOTIONCONTROLLER_STATUS_NOT_INITIALIZED;
+    if (!controller->initialized) return MOTIONCONTROLLER_STATUS_NOT_INITIALIZED;
 
-    if (controller->mode == MOTIONCONTROLLER_BRAKING) {
+    if (controller->mode == MOTIONCONTROLLER_BRAKING)
+    {
         return MOTIONCONTROLLER_STATUS_OK;
     }
 
@@ -823,15 +675,11 @@ MotionControllerStatus MotionController_Brake(
     return MOTIONCONTROLLER_STATUS_OK;
 }
 
-static bool MotionController_UpdateYawEstimate(
-    MotionController *controller,
-    float dt)
+static bool MotionController_UpdateYawEstimate(MotionController *controller, float dt)
 {
     ICM20948Measurement measurement;
 
-    if (!ICM20948_ReadMeasurement(
-            controller->imu,
-            &measurement))
+    if (!ICM20948_ReadMeasurement(controller->imu, &measurement))
     {
         return false;
     }
@@ -841,11 +689,9 @@ static bool MotionController_UpdateYawEstimate(
      *
      * Keep this unfiltered for yaw integration.
      */
-    controller->yawRateDps =
-        measurement.gyroDps.z;
+    controller->yawRateDps = measurement.gyroDps.z;
 
-    controller->yawDeg +=
-        controller->yawRateDps * dt;
+    controller->yawDeg += controller->yawRateDps * dt;
 
     /*
      * First-order low-pass filter used only by
@@ -853,60 +699,43 @@ static bool MotionController_UpdateYawEstimate(
      *
      * alpha = dt / (tau + dt)
      */
-    const float tau =
-        controller->config->arcYawRateFilterTauSec;
+    const float tau = controller->config->arcYawRateFilterTauSec;
 
-    float alpha =
-        dt / (tau + dt);
+    float alpha = dt / (tau + dt);
 
     controller->filteredYawRateDps +=
-        alpha *
-        (controller->yawRateDps -
-         controller->filteredYawRateDps);
+        alpha * (controller->yawRateDps - controller->filteredYawRateDps);
 
     return true;
 }
 
-static float MotionController_Clamp(
-    float value,
-    float min,
-    float max)
+static float MotionController_Clamp(float value, float min, float max)
 {
-    if (value > max)
-        return max;
+    if (value > max) return max;
 
-    if (value < min)
-        return min;
+    if (value < min) return min;
 
     return value;
 }
 
-
-static void MotionController_UpdateWheelSynchronisation(
-    MotionController *controller)
+static void MotionController_UpdateWheelSynchronisation(MotionController *controller)
 {
-	float curvaturePerMm =
-	    MotionController_GetWheelReferenceCurvaturePerMm(
-	        controller);
+    float curvaturePerMm = MotionController_GetWheelReferenceCurvaturePerMm(controller);
 
-	controller->wheelReferenceCurvaturePerMm =
-	    curvaturePerMm;
+    controller->wheelReferenceCurvaturePerMm = curvaturePerMm;
 
     float leftBaseTargetCps;
     float rightBaseTargetCps;
 
-    RobotKinematics_GetRearWheelSpeedTargets(
-        controller->config->kinematics,
-        controller->targetSpeedCps,
-        curvaturePerMm,
-        &leftBaseTargetCps,
-        &rightBaseTargetCps);
+    RobotKinematics_GetRearWheelSpeedTargets(controller->config->kinematics,
+                                             controller->targetSpeedCps,
+                                             curvaturePerMm,
+                                             &leftBaseTargetCps,
+                                             &rightBaseTargetCps);
 
-    controller->leftBaseTargetCps =
-        leftBaseTargetCps;
+    controller->leftBaseTargetCps = leftBaseTargetCps;
 
-    controller->rightBaseTargetCps =
-        rightBaseTargetCps;
+    controller->rightBaseTargetCps = rightBaseTargetCps;
 
     /*
      * --------------------------------------------------------
@@ -916,10 +745,8 @@ static void MotionController_UpdateWheelSynchronisation(
      * e_sync =
      *     actual(R-L) - desired(R-L)
      */
-    controller->wheelSyncErrorMm =
-        (controller->rightTravelMm -
-            controller->leftTravelMm)
-        - controller->desiredWheelTravelDifferenceMm;
+    controller->wheelSyncErrorMm = (controller->rightTravelMm - controller->leftTravelMm) -
+                                   controller->desiredWheelTravelDifferenceMm;
 
     /*
      * P-only outer synchronization controller.
@@ -927,9 +754,7 @@ static void MotionController_UpdateWheelSynchronisation(
      * Units:
      *     [CPS/mm] * [mm] = [CPS]
      */
-    float correctionCps =
-        controller->config->wheelSyncKpCpsPerMm *
-        controller->wheelSyncErrorMm;
+    float correctionCps = controller->config->wheelSyncKpCpsPerMm * controller->wheelSyncErrorMm;
 
     /*
      * Prevent the synchronizer from overwhelming the
@@ -939,56 +764,36 @@ static void MotionController_UpdateWheelSynchronisation(
      * the smaller base-target magnitude is the limiting one.
      */
     float smallestBaseTargetMagnitudeCps =
-        fminf(
-            fabsf(leftBaseTargetCps),
-            fabsf(rightBaseTargetCps));
+        fminf(fabsf(leftBaseTargetCps), fabsf(rightBaseTargetCps));
 
     float correctionLimitCps =
-        fminf(
-            controller->config->maxWheelSyncCorrectionCps,
-            smallestBaseTargetMagnitudeCps);
+        fminf(controller->config->maxWheelSyncCorrectionCps, smallestBaseTargetMagnitudeCps);
 
-    correctionCps =
-        MotionController_Clamp(
-            correctionCps,
-            -correctionLimitCps,
-            correctionLimitCps);
+    correctionCps = MotionController_Clamp(correctionCps, -correctionLimitCps, correctionLimitCps);
 
-    controller->wheelSyncCorrectionCps =
-        correctionCps;
+    controller->wheelSyncCorrectionCps = correctionCps;
 
     /*
      * Geometry determines the nominal left/right relationship.
      * The synchronizer only corrects deviations from it.
      */
-    WheelSpeedController_SetTarget(
-        controller->leftWheel,
-        leftBaseTargetCps + correctionCps);
+    WheelSpeedController_SetTarget(controller->leftWheel, leftBaseTargetCps + correctionCps);
 
-    WheelSpeedController_SetTarget(
-        controller->rightWheel,
-        rightBaseTargetCps - correctionCps);
+    WheelSpeedController_SetTarget(controller->rightWheel, rightBaseTargetCps - correctionCps);
 }
 
 static MotionControllerStatus MotionController_UpdateSteeringPreparation(
-    MotionController *controller,
-    float dt,
-    float settlingTimeSec,
-    MotionControllerMode activeMode)
+    MotionController *controller, float dt, float settlingTimeSec, MotionControllerMode activeMode)
 {
-    float remainingSettlingTimeSec =
-        settlingTimeSec -
-        controller->steeringPreparationElapsedSec;
+    float remainingSettlingTimeSec = settlingTimeSec - controller->steeringPreparationElapsedSec;
 
-    if (dt + MOTIONCONTROLLER_TIME_EPSILON_SEC <
-        remainingSettlingTimeSec)
+    if (dt + MOTIONCONTROLLER_TIME_EPSILON_SEC < remainingSettlingTimeSec)
     {
         controller->steeringPreparationElapsedSec += dt;
         return MOTIONCONTROLLER_STATUS_OK;
     }
 
-    controller->steeringPreparationElapsedSec =
-        settlingTimeSec;
+    controller->steeringPreparationElapsedSec = settlingTimeSec;
 
     /*
      * Establish the motion origin after the mechanical hold so any
@@ -1008,10 +813,7 @@ static MotionControllerStatus MotionController_UpdateSteeringPreparation(
     return MOTIONCONTROLLER_STATUS_OK;
 }
 
-
-static MotionControllerStatus MotionController_UpdateBraking(
-    MotionController *controller,
-    float dt)
+static MotionControllerStatus MotionController_UpdateBraking(MotionController *controller, float dt)
 {
     /* Keep odometry running so endpoint overshoot is captured. */
     MotionController_UpdateOdometry(controller);
@@ -1021,29 +823,22 @@ static MotionControllerStatus MotionController_UpdateBraking(
      * before handling the zero target, which lets us determine when the
      * chassis has actually stopped.
      */
-    WheelSpeedController_Update(
-        controller->leftWheel,
-        dt);
+    WheelSpeedController_Update(controller->leftWheel, dt);
 
-    WheelSpeedController_Update(
-        controller->rightWheel,
-        dt);
+    WheelSpeedController_Update(controller->rightWheel, dt);
 
     /* Retain yaw caused by asymmetric braking for diagnostics. */
     MotionController_UpdateYawEstimate(controller, dt);
 
-    bool leftStationary = WheelSpeedController_IsStationary(
-        controller->leftWheel);
+    bool leftStationary = WheelSpeedController_IsStationary(controller->leftWheel);
 
-    bool rightStationary = WheelSpeedController_IsStationary(
-        controller->rightWheel);
+    bool rightStationary = WheelSpeedController_IsStationary(controller->rightWheel);
 
     if (leftStationary && rightStationary)
     {
         controller->stationarySamples++;
 
-        if (controller->stationarySamples >=
-            controller->config->stopStableSampleCount)
+        if (controller->stationarySamples >= controller->config->stopStableSampleCount)
         {
             MotionController_FinishBraking(controller);
         }
@@ -1056,46 +851,28 @@ static MotionControllerStatus MotionController_UpdateBraking(
     return MOTIONCONTROLLER_STATUS_OK;
 }
 
-
-static void MotionController_UpdateLegacyStraightSteering(
-    MotionController *controller,
-    float dt)
+static void MotionController_UpdateLegacyStraightSteering(MotionController *controller, float dt)
 {
     /* Straight-line heading feedback. Desired relative yaw = 0. */
-    float headingErrorRad =
-        -controller->yawDeg *
-        (MOTION_PI / 180.0f);
+    float headingErrorRad = -controller->yawDeg * (MOTION_PI / 180.0f);
 
     float steeringAngleCorrectionRad =
-        PIDController_Update(
-            &controller->headingPID,
-            headingErrorRad,
-            dt);
+        PIDController_Update(&controller->headingPID, headingErrorRad, dt);
 
     /*
      * Reverse motion reverses the yaw response produced by a given
      * physical steering angle.
      */
-    float targetSteeringAngleRad =
-        steeringAngleCorrectionRad *
-        (float)controller->motionDirection;
+    float targetSteeringAngleRad = steeringAngleCorrectionRad * (float)controller->motionDirection;
 
-    SteeringController_SetEffectiveAngleRad(
-        controller->steering,
-        targetSteeringAngleRad,
-        dt);
+    SteeringController_SetEffectiveAngleRad(controller->steering, targetSteeringAngleRad, dt);
 }
 
-
-static void MotionController_UpdatePathSteering(
-    MotionController *controller,
-    float dt,
-    float mmPerCount)
+static void
+MotionController_UpdatePathSteering(MotionController *controller, float dt, float mmPerCount)
 {
     /* Signed rear-axle-centre profiled reference speed. */
-    float signedReferenceSpeedMmps =
-        controller->targetSpeedCps *
-        mmPerCount;
+    float signedReferenceSpeedMmps = controller->targetSpeedCps * mmPerCount;
 
     /*
      * Most recent encoder-derived rear-axle-centre speed. Wheel speed
@@ -1104,8 +881,7 @@ static void MotionController_UpdatePathSteering(
      */
     controller->measuredCentreSpeedMmps =
         0.5f *
-        (controller->leftWheel->measuredSpeedCps +
-         controller->rightWheel->measuredSpeedCps) *
+        (controller->leftWheel->measuredSpeedCps + controller->rightWheel->measuredSpeedCps) *
         mmPerCount;
 
     /*
@@ -1113,16 +889,13 @@ static void MotionController_UpdatePathSteering(
      * rate used by the inner loop. With tau = 0, alpha = 1 and the speed
      * feedforward remains effectively unfiltered.
      */
-    const float speedFilterTau =
-        controller->config->arcYawRateFilterTauSec;
+    const float speedFilterTau = controller->config->arcYawRateFilterTauSec;
 
-    float speedFilterAlpha =
-        dt / (speedFilterTau + dt);
+    float speedFilterAlpha = dt / (speedFilterTau + dt);
 
     controller->filteredMeasuredCentreSpeedMmps +=
         speedFilterAlpha *
-        (controller->measuredCentreSpeedMmps -
-         controller->filteredMeasuredCentreSpeedMmps);
+        (controller->measuredCentreSpeedMmps - controller->filteredMeasuredCentreSpeedMmps);
 
     /*
      * --------------------------------------------------------
@@ -1136,17 +909,11 @@ static void MotionController_UpdatePathSteering(
      * travelledDistanceMm is signed, so reverse motion is naturally
      * handled here.
      */
-    float desiredYawRad =
-        controller->targetCurvaturePerMm *
-        controller->travelledDistanceMm;
+    float desiredYawRad = controller->targetCurvaturePerMm * controller->travelledDistanceMm;
 
-    float measuredYawRad =
-        controller->yawDeg *
-        (MOTION_PI / 180.0f);
+    float measuredYawRad = controller->yawDeg * (MOTION_PI / 180.0f);
 
-    float headingErrorRad =
-        desiredYawRad -
-        measuredYawRad;
+    float headingErrorRad = desiredYawRad - measuredYawRad;
 
     /*
      * Nominal geometric yaw-rate feedforward:
@@ -1158,8 +925,7 @@ static void MotionController_UpdatePathSteering(
      * comparable bandwidth during acceleration and deceleration.
      */
     float feedforwardYawRateRadPerSec =
-        controller->targetCurvaturePerMm *
-        controller->filteredMeasuredCentreSpeedMmps;
+        controller->targetCurvaturePerMm * controller->filteredMeasuredCentreSpeedMmps;
 
     /*
      * Heading error directly biases the requested yaw rate:
@@ -1167,8 +933,7 @@ static void MotionController_UpdatePathSteering(
      *     omega_heading = K_heading * e_heading
      */
     float headingYawRateCorrectionRadPerSec =
-        controller->config->arcHeadingKpPerSec *
-        headingErrorRad;
+        controller->config->arcHeadingKpPerSec * headingErrorRad;
 
     /*
      * Keep the feedback-generated curvature bounded as the profile
@@ -1178,19 +943,14 @@ static void MotionController_UpdatePathSteering(
      * heading authority is unchanged by the new feedforward measurement.
      */
     float headingCorrectionLimitRadPerSec =
-        fabsf(signedReferenceSpeedMmps) *
-        controller->config->maxPathCorrectionCurvaturePerMm;
+        fabsf(signedReferenceSpeedMmps) * controller->config->maxPathCorrectionCurvaturePerMm;
 
-    headingYawRateCorrectionRadPerSec =
-        MotionController_Clamp(
-            headingYawRateCorrectionRadPerSec,
-            -headingCorrectionLimitRadPerSec,
-            +headingCorrectionLimitRadPerSec);
+    headingYawRateCorrectionRadPerSec = MotionController_Clamp(headingYawRateCorrectionRadPerSec,
+                                                               -headingCorrectionLimitRadPerSec,
+                                                               +headingCorrectionLimitRadPerSec);
 
     /* Final yaw-rate request seen by the inner Phase-2A loop. */
-    float targetYawRateRadPerSec =
-        feedforwardYawRateRadPerSec +
-        headingYawRateCorrectionRadPerSec;
+    float targetYawRateRadPerSec = feedforwardYawRateRadPerSec + headingYawRateCorrectionRadPerSec;
 
     /*
      * Rear-wheel geometry retains the requested nominal path curvature.
@@ -1198,14 +958,11 @@ static void MotionController_UpdatePathSteering(
      * curvature term. This avoids flattening the wheel geometry when measured
      * speed temporarily lags the motion-profile reference during acceleration.
      */
-    float commandedCurvaturePerMm =
-        controller->targetCurvaturePerMm;
+    float commandedCurvaturePerMm = controller->targetCurvaturePerMm;
 
     if (signedReferenceSpeedMmps != 0.0f)
     {
-        commandedCurvaturePerMm +=
-            headingYawRateCorrectionRadPerSec /
-            signedReferenceSpeedMmps;
+        commandedCurvaturePerMm += headingYawRateCorrectionRadPerSec / signedReferenceSpeedMmps;
     }
 
     /*
@@ -1213,69 +970,46 @@ static void MotionController_UpdatePathSteering(
      * PHASE 2A: INNER YAW-RATE LOOP
      * --------------------------------------------------------
      */
-    float measuredYawRateRadPerSec =
-        controller->filteredYawRateDps *
-        (MOTION_PI / 180.0f);
+    float measuredYawRateRadPerSec = controller->filteredYawRateDps * (MOTION_PI / 180.0f);
 
-    float yawRateErrorRadPerSec =
-        targetYawRateRadPerSec -
-        measuredYawRateRadPerSec;
+    float yawRateErrorRadPerSec = targetYawRateRadPerSec - measuredYawRateRadPerSec;
 
     float steeringCorrectionCommand =
-        PIDController_Update(
-            &controller->arcYawRatePID,
-            yawRateErrorRadPerSec,
-            dt);
+        PIDController_Update(&controller->arcYawRatePID, yawRateErrorRadPerSec, dt);
 
     /*
      * Raw steering correction is relative to calibrated
      * command-to-curvature feedforward. Increasing raw command produces
      * negative steering.
      */
-    float targetCommand =
-        controller->arcSteeringFeedforwardCommand -
-        (float)controller->motionDirection *
-        steeringCorrectionCommand;
+    float targetCommand = controller->arcSteeringFeedforwardCommand -
+                          (float)controller->motionDirection * steeringCorrectionCommand;
 
     /* Phase-2B diagnostics. */
-    controller->arcDesiredYawRad =
-        desiredYawRad;
+    controller->arcDesiredYawRad = desiredYawRad;
 
-    controller->arcHeadingErrorRad =
-        headingErrorRad;
+    controller->arcHeadingErrorRad = headingErrorRad;
 
-    controller->arcFeedforwardYawRateRadPerSec =
-        feedforwardYawRateRadPerSec;
+    controller->arcFeedforwardYawRateRadPerSec = feedforwardYawRateRadPerSec;
 
-    controller->arcHeadingYawRateCorrectionRadPerSec =
-        headingYawRateCorrectionRadPerSec;
+    controller->arcHeadingYawRateCorrectionRadPerSec = headingYawRateCorrectionRadPerSec;
 
-    controller->arcTargetYawRateRadPerSec =
-        targetYawRateRadPerSec;
+    controller->arcTargetYawRateRadPerSec = targetYawRateRadPerSec;
 
-    controller->arcCommandedCurvaturePerMm =
-        commandedCurvaturePerMm;
+    controller->arcCommandedCurvaturePerMm = commandedCurvaturePerMm;
 
     /* Phase-2A diagnostics. */
-    controller->arcYawRateErrorRadPerSec =
-        yawRateErrorRadPerSec;
+    controller->arcYawRateErrorRadPerSec = yawRateErrorRadPerSec;
 
-    controller->arcSteeringCorrectionCommand =
-        steeringCorrectionCommand;
+    controller->arcSteeringCorrectionCommand = steeringCorrectionCommand;
 
-    controller->arcSteeringTargetCommand =
-        targetCommand;
+    controller->arcSteeringTargetCommand = targetCommand;
 
-    SteeringController_SetRawCommandRateLimited(
-        controller->steering,
-        targetCommand,
-        dt);
+    SteeringController_SetRawCommandRateLimited(controller->steering, targetCommand, dt);
 }
 
-
-static MotionControllerStatus MotionController_UpdateActiveMotion(
-    MotionController *controller,
-    float dt)
+static MotionControllerStatus MotionController_UpdateActiveMotion(MotionController *controller,
+                                                                  float dt)
 {
     /* Keep odometry running so endpoint overshoot is captured. */
     MotionController_UpdateOdometry(controller);
@@ -1286,15 +1020,9 @@ static MotionControllerStatus MotionController_UpdateActiveMotion(
      * --------------------------------------------------------
      */
 
-    float progressMm =
-        (float)controller->motionDirection *
-        controller->travelledDistanceMm;
+    float progressMm = (float)controller->motionDirection * controller->travelledDistanceMm;
 
-    float targetSpeedMmps =
-        MotionProfile_Update(
-            &controller->motionProfile,
-            progressMm,
-            dt);
+    float targetSpeedMmps = MotionProfile_Update(&controller->motionProfile, progressMm, dt);
 
     /*
      * MotionProfile becomes inactive once the requested
@@ -1303,8 +1031,7 @@ static MotionControllerStatus MotionController_UpdateActiveMotion(
      * Enter the existing braking state so that zero velocity
      * is actively enforced until both wheels are stationary.
      */
-    if (!MotionProfile_IsActive(
-            &controller->motionProfile))
+    if (!MotionProfile_IsActive(&controller->motionProfile))
     {
         MotionController_BeginBraking(controller);
         return MOTIONCONTROLLER_STATUS_OK;
@@ -1314,15 +1041,12 @@ static MotionControllerStatus MotionController_UpdateActiveMotion(
      * Convert vehicle-speed magnitude back to encoder CPS
      * and restore the commanded motion direction.
      */
-    float mmPerCount =
-        MotionController_GetMmPerCount(controller);
+    float mmPerCount = MotionController_GetMmPerCount(controller);
 
-    controller->targetSpeedCps =
-        (float)controller->motionDirection *
-        targetSpeedMmps /
-        mmPerCount;
+    controller->targetSpeedCps = (float)controller->motionDirection * targetSpeedMmps / mmPerCount;
 
-    if (!MotionController_UpdateYawEstimate(controller, dt)) {
+    if (!MotionController_UpdateYawEstimate(controller, dt))
+    {
         /*
          * Heading feedback has failed.
          * Stop rather than continuing open-loop.
@@ -1360,112 +1084,88 @@ static MotionControllerStatus MotionController_UpdateActiveMotion(
     /*
      * Low-level speed loops remain responsible for motor PWM.
      */
-    WheelSpeedController_Update(
-        controller->leftWheel,
-        dt);
+    WheelSpeedController_Update(controller->leftWheel, dt);
 
-    WheelSpeedController_Update(
-        controller->rightWheel,
-        dt);
+    WheelSpeedController_Update(controller->rightWheel, dt);
 
     return MOTIONCONTROLLER_STATUS_OK;
 }
 
-
-MotionControllerStatus MotionController_Update(
-    MotionController *controller,
-    float dt)
+MotionControllerStatus MotionController_Update(MotionController *controller, float dt)
 {
-    if (controller == NULL)
-        return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
+    if (controller == NULL) return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
 
-    if (!controller->initialized)
-        return MOTIONCONTROLLER_STATUS_NOT_INITIALIZED;
+    if (!controller->initialized) return MOTIONCONTROLLER_STATUS_NOT_INITIALIZED;
 
-    if (!isfinite(dt) || dt <= 0.0f)
-        return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
+    if (!isfinite(dt) || dt <= 0.0f) return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
 
     switch (controller->mode)
     {
-        case MOTIONCONTROLLER_IDLE:
-            return MOTIONCONTROLLER_STATUS_OK;
+    case MOTIONCONTROLLER_IDLE:
+        return MOTIONCONTROLLER_STATUS_OK;
 
-        case MOTIONCONTROLLER_STRAIGHT_PREPARING:
+    case MOTIONCONTROLLER_STRAIGHT_PREPARING:
+    {
+        MotionControllerStatus status = MotionController_UpdateSteeringPreparation(
+            controller,
+            dt,
+            controller->config->straightSteeringSettlingTimeSec,
+            MOTIONCONTROLLER_STRAIGHT);
+
+        if (status != MOTIONCONTROLLER_STATUS_OK ||
+            controller->mode == MOTIONCONTROLLER_STRAIGHT_PREPARING)
         {
-            MotionControllerStatus status =
-                MotionController_UpdateSteeringPreparation(
-                    controller,
-                    dt,
-                    controller->config->straightSteeringSettlingTimeSec,
-                    MOTIONCONTROLLER_STRAIGHT);
+            return status;
+        }
 
-            if (status != MOTIONCONTROLLER_STATUS_OK ||
-                controller->mode == MOTIONCONTROLLER_STRAIGHT_PREPARING)
-            {
-                return status;
-            }
-
-            /*
+        /*
              * Match ARC_PREPARING boundary behaviour: the update that
              * completes preparation also executes the first active
              * straight-motion control cycle.
              */
-            return MotionController_UpdateActiveMotion(
-                controller,
-                dt);
+        return MotionController_UpdateActiveMotion(controller, dt);
+    }
+
+    case MOTIONCONTROLLER_ARC_PREPARING:
+    {
+        MotionControllerStatus status = MotionController_UpdateSteeringPreparation(
+            controller,
+            dt,
+            controller->config->arcConfig->steeringSettlingTimeSec,
+            MOTIONCONTROLLER_ARC);
+
+        if (status != MOTIONCONTROLLER_STATUS_OK ||
+            controller->mode == MOTIONCONTROLLER_ARC_PREPARING)
+        {
+            return status;
         }
 
-        case MOTIONCONTROLLER_ARC_PREPARING:
-        {
-            MotionControllerStatus status =
-                MotionController_UpdateSteeringPreparation(
-                    controller,
-                    dt,
-                    controller->config->arcConfig->steeringSettlingTimeSec,
-                    MOTIONCONTROLLER_ARC);
-
-            if (status != MOTIONCONTROLLER_STATUS_OK ||
-                controller->mode == MOTIONCONTROLLER_ARC_PREPARING)
-            {
-                return status;
-            }
-
-            /*
+        /*
              * Preserve the existing boundary behavior: the update that
              * completes preparation also executes the first active arc
              * control cycle.
              */
-            return MotionController_UpdateActiveMotion(
-                controller,
-                dt);
-        }
+        return MotionController_UpdateActiveMotion(controller, dt);
+    }
 
-        case MOTIONCONTROLLER_STRAIGHT:
-        case MOTIONCONTROLLER_ARC:
-            return MotionController_UpdateActiveMotion(
-                controller,
-                dt);
+    case MOTIONCONTROLLER_STRAIGHT:
+    case MOTIONCONTROLLER_ARC:
+        return MotionController_UpdateActiveMotion(controller, dt);
 
-        case MOTIONCONTROLLER_BRAKING:
-            return MotionController_UpdateBraking(
-                controller,
-                dt);
+    case MOTIONCONTROLLER_BRAKING:
+        return MotionController_UpdateBraking(controller, dt);
 
-        default:
-            MotionController_Stop(controller);
-            return MOTIONCONTROLLER_STATUS_INVALID_STATE;
+    default:
+        MotionController_Stop(controller);
+        return MOTIONCONTROLLER_STATUS_INVALID_STATE;
     }
 }
 
-
-MotionControllerStatus MotionController_Stop(
-    MotionController *controller)
+MotionControllerStatus MotionController_Stop(MotionController *controller)
 {
-    if (controller == NULL)
-        return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
+    if (controller == NULL) return MOTIONCONTROLLER_STATUS_INVALID_ARGUMENT;
 
-    if (!controller->initialized)
-        return MOTIONCONTROLLER_STATUS_NOT_INITIALIZED;
+    if (!controller->initialized) return MOTIONCONTROLLER_STATUS_NOT_INITIALIZED;
 
     WheelSpeedController_Stop(controller->leftWheel);
     WheelSpeedController_Stop(controller->rightWheel);
@@ -1480,13 +1180,9 @@ MotionControllerStatus MotionController_Stop(
     return MOTIONCONTROLLER_STATUS_OK;
 }
 
-
-bool MotionController_IsBusy(
-    const MotionController *controller)
+bool MotionController_IsBusy(const MotionController *controller)
 {
-    if (controller == NULL)
-        return false;
+    if (controller == NULL) return false;
 
-    return controller->initialized &&
-        controller->mode != MOTIONCONTROLLER_IDLE;
+    return controller->initialized && controller->mode != MOTIONCONTROLLER_IDLE;
 }
