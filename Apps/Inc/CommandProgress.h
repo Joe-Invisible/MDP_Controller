@@ -5,7 +5,8 @@
 
 #define COMMANDPROGRESS_REPLY_SIZE 192U
 
-typedef enum {
+typedef enum
+{
     COMMANDPROGRESS_NOT_STARTED,
     COMMANDPROGRESS_ACTIVE,
     COMMANDPROGRESS_BRAKING,
@@ -15,7 +16,8 @@ typedef enum {
 /* Only the current/latest command, not a history. Owned by MotionTask.
  * Distances/heading are relative to this command's start, never a global pose.
  */
-typedef struct {
+typedef struct
+{
     unsigned step; /* 1-based attempted command, 0 before any attempt. */
     Command command;
     CommandProgressPhase phase;
@@ -24,12 +26,15 @@ typedef struct {
     float yawDeg;
 } CommandProgress;
 
-void CommandProgress_Attempt(CommandProgress *progress, unsigned step,
-                              const Command *command);
-void CommandProgress_Sample(CommandProgress *progress, float travelMm,
-                            float yawDeg, CommandProgressPhase phase);
+void CommandProgress_Attempt(CommandProgress *progress, unsigned step, const Command *command);
+void CommandProgress_Sample(CommandProgress *progress,
+                            float travelMm,
+                            float yawDeg,
+                            CommandProgressPhase phase);
 /* Format only when explicitly queried; invalid measurements are '-'. */
 void CommandProgress_Format(const CommandSession *session,
-    const CommandProgress *progress, char *reply, size_t size);
+                            const CommandProgress *progress,
+                            char *reply,
+                            size_t size);
 
 #endif

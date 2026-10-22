@@ -26,19 +26,21 @@
 #include "oled.h"
 #include "led3.h"
 
-void InvokeTest() {
-	OLED_Init();
-	OLED_Clear();
+void InvokeTest()
+{
+    OLED_Init();
+    OLED_Clear();
 
-	LED_On();
+    LED_On();
 
-	/* Select this separate harness for straight feedforward calibration:
+    /* Select this separate harness for straight feedforward calibration:
 	 * MotionControllerStraightFeedforwardTestRun();
 	 * The original arc harness retains the pending raw +95 setup.
 	 * Stationary ultrasonic bring-up (no button needed): HCSR04TestRun(); */
-	MotionControllerSequenceTestRun();
+    MotionControllerSequenceTestRun();
 
-	while (1) {
-		// Test ended. Loop forever.
-	}
+    while (1)
+    {
+        // Test ended. Loop forever.
+    }
 }

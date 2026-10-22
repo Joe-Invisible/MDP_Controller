@@ -5,43 +5,35 @@
  *      Author: Joe
  */
 
-
 #include "MotionProfile.h"
 
 #include <math.h>
 #include <stddef.h>
 
-static float MotionProfile_Min3(
-    float a,
-    float b,
-    float c)
+static float MotionProfile_Min3(float a, float b, float c)
 {
     float min = a;
 
-    if (b < min)
-        min = b;
+    if (b < min) min = b;
 
-    if (c < min)
-        min = c;
+    if (c < min) min = c;
 
     return min;
 }
 
-bool MotionProfile_Init(
-    MotionProfile *profile,
-    float accelerationMmps2,
-    float decelerationMmps2,
-	float completionToleranceMm)
+bool MotionProfile_Init(MotionProfile *profile,
+                        float accelerationMmps2,
+                        float decelerationMmps2,
+                        float completionToleranceMm)
 {
-    if (profile == NULL ||
-        accelerationMmps2 <= 0.0f ||
-        decelerationMmps2 <= 0.0f)
+    if (profile == NULL || accelerationMmps2 <= 0.0f || decelerationMmps2 <= 0.0f)
     {
         return false;
     }
 
-    if (completionToleranceMm < 0.0f) {
-    		return false;
+    if (completionToleranceMm < 0.0f)
+    {
+        return false;
     }
 
     *profile = (MotionProfile){0};
@@ -54,16 +46,10 @@ bool MotionProfile_Init(
     return true;
 }
 
-bool MotionProfile_Start(
-    MotionProfile *profile,
-    float distanceMm,
-    float maxSpeedMmps)
+bool MotionProfile_Start(MotionProfile *profile, float distanceMm, float maxSpeedMmps)
 {
-    if (profile == NULL ||
-        distanceMm <= 0.0f ||
-        maxSpeedMmps <= 0.0f ||
-        profile->accelerationMmps2 <= 0.0f ||
-        profile->decelerationMmps2 <= 0.0f)
+    if (profile == NULL || distanceMm <= 0.0f || maxSpeedMmps <= 0.0f ||
+        profile->accelerationMmps2 <= 0.0f || profile->decelerationMmps2 <= 0.0f)
     {
         return false;
     }
@@ -76,22 +62,15 @@ bool MotionProfile_Start(
     return true;
 }
 
-float MotionProfile_Update(
-    MotionProfile *profile,
-    float travelledDistanceMm,
-    float dt)
+float MotionProfile_Update(MotionProfile *profile, float travelledDistanceMm, float dt)
 {
-    if (profile == NULL || !profile->active)
-        return 0.0f;
+    if (profile == NULL || !profile->active) return 0.0f;
 
-    if (dt <= 0.0f)
-        return profile->targetSpeedMmps;
+    if (dt <= 0.0f) return profile->targetSpeedMmps;
 
-    if (travelledDistanceMm < 0.0f)
-        travelledDistanceMm = 0.0f;
+    if (travelledDistanceMm < 0.0f) travelledDistanceMm = 0.0f;
 
-    float remainingDistanceMm =
-        profile->targetDistanceMm - travelledDistanceMm;
+    float remainingDistanceMm = profile->targetDistanceMm - travelledDistanceMm;
 
     if (remainingDistanceMm <= profile->completionToleranceMm)
     {
@@ -105,9 +84,7 @@ float MotionProfile_Update(
      * This allows the profile to move away from zero even when
      * traveled distance is initially zero.
      */
-    float accelerationLimitedSpeedMmps =
-        profile->targetSpeedMmps +
-        profile->accelerationMmps2 * dt;
+    float accelerationLimitedSpeedMmps = profile->targetSpeedMmps + profile->accelerationMmps2 * dt;
 
     /*
      * Maximum speed from which zero speed can still be reached
@@ -116,11 +93,7 @@ float MotionProfile_Update(
      *
      *     v^2 = 2 a s
      */
-    float brakingLimitedSpeedMmps =
-        sqrtf(
-            2.0f *
-            profile->decelerationMmps2 *
-            remainingDistanceMm);
+    float brakingLimitedSpeedMmps = sqrtf(2.0f * profile->decelerationMmps2 * remainingDistanceMm);
 
     /*
      * This automatically generates a triangular profile
@@ -128,17 +101,14 @@ float MotionProfile_Update(
      * attain the max speed
      */
     profile->targetSpeedMmps = MotionProfile_Min3(
-        profile->maxSpeedMmps,
-        accelerationLimitedSpeedMmps,
-        brakingLimitedSpeedMmps);
+        profile->maxSpeedMmps, accelerationLimitedSpeedMmps, brakingLimitedSpeedMmps);
 
     return profile->targetSpeedMmps;
 }
 
 void MotionProfile_Stop(MotionProfile *profile)
 {
-    if (profile == NULL)
-        return;
+    if (profile == NULL) return;
 
     profile->targetSpeedMmps = 0.0f;
     profile->active = false;

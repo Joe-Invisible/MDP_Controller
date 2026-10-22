@@ -16,4 +16,3 @@ extern const GP2Y0A21YK_Config sideIRLeftConfig;
 extern const GP2Y0A21YK_Config sideIRRightConfig;
 
 #endif /* INC_SIDEIRSENSORCONFIG_H_ */
-

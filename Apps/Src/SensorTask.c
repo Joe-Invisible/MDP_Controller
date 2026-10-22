@@ -75,7 +75,7 @@ static void SensorTask_PublishIR(IRPairReading reading)
 
 static IRReading SensorTask_ReadIR(GP2Y0A21YK *sensor, bool initialized)
 {
-    IRReading reading = { .status = SENSOR_ERROR };
+    IRReading reading = {.status = SENSOR_ERROR};
 
     /* Init validates fixed configuration. A failed side stays ERROR until reboot. */
     if (initialized)
@@ -86,9 +86,9 @@ static IRReading SensorTask_ReadIR(GP2Y0A21YK *sensor, bool initialized)
         {
             reading.adc = measurement.rawAdc;
             reading.millivolts = (uint16_t)(measurement.voltageV * 1000.0f + 0.5f);
-            reading.status = reading.adc == 0U ||
-                reading.adc >= GP2Y0A21YK_ADC_FULL_SCALE_COUNT
-                ? SENSOR_SATURATED : SENSOR_OK;
+            reading.status = reading.adc == 0U || reading.adc >= GP2Y0A21YK_ADC_FULL_SCALE_COUNT
+                                 ? SENSOR_SATURATED
+                                 : SENSOR_OK;
         }
         else if (result == GP2Y0A21YK_ERROR_ADC_TIMEOUT)
         {
@@ -111,7 +111,7 @@ static void SensorTask_ServiceIR(SensorTaskState *state)
 
     /* Skip missed periods instead of bursting conversions after a delay. */
     state->lastIRMs = now;
-    IRPairReading pair = { .sequence = ++state->irSequence };
+    IRPairReading pair = {.sequence = ++state->irSequence};
     /* Shared ADC1: serial access through the existing driver's bounded reads. */
     pair.left = SensorTask_ReadIR(&state->leftIR, state->leftIRReady);
     pair.right = SensorTask_ReadIR(&state->rightIR, state->rightIRReady);
@@ -123,21 +123,20 @@ static void SensorTask_ServiceUltrasonic(SensorTaskState *state)
     HCSR04_Update(&hcsr04);
     if (state->ultrasonicPending && !HCSR04_IsBusy(&hcsr04))
     {
-        UltrasonicReading reading = {
-            .sequence = ++state->ultrasonicSequence,
-            .capturedMs = HAL_GetTick(),
-            .status = HCSR04_GetState(&hcsr04) == HCSR04_STATE_TIMEOUT
-                ? SENSOR_TIMEOUT : SENSOR_ERROR
-        };
+        UltrasonicReading reading = {.sequence = ++state->ultrasonicSequence,
+                                     .capturedMs = HAL_GetTick(),
+                                     .status = HCSR04_GetState(&hcsr04) == HCSR04_STATE_TIMEOUT
+                                                   ? SENSOR_TIMEOUT
+                                                   : SENSOR_ERROR};
         if (HCSR04_HasMeasurement(&hcsr04))
         {
             reading.capturedMs = hcsr04.measurementTickMs;
             reading.pulseUs = HCSR04_GetPulseWidthUs(&hcsr04);
             reading.distanceMm = HCSR04_GetDistanceMm(&hcsr04);
             float rawMm = (float)reading.pulseUs * HCSR04_MM_PER_US;
-            reading.status = rawMm >= SENSOR_ULTRASONIC_MIN_MM &&
-                rawMm <= SENSOR_ULTRASONIC_MAX_MM
-                ? SENSOR_OK : SENSOR_OUT_OF_RANGE;
+            reading.status = rawMm >= SENSOR_ULTRASONIC_MIN_MM && rawMm <= SENSOR_ULTRASONIC_MAX_MM
+                                 ? SENSOR_OK
+                                 : SENSOR_OUT_OF_RANGE;
         }
         SensorTask_PublishUltrasonic(reading);
         state->ultrasonicPending = false;
@@ -152,10 +151,7 @@ static void SensorTask_ServiceUltrasonic(SensorTaskState *state)
         if (!state->ultrasonicPending)
         {
             UltrasonicReading failed = {
-                .sequence = ++state->ultrasonicSequence,
-                .capturedMs = now,
-                .status = SENSOR_ERROR
-            };
+                .sequence = ++state->ultrasonicSequence, .capturedMs = now, .status = SENSOR_ERROR};
             SensorTask_PublishUltrasonic(failed);
         }
     }
@@ -178,13 +174,11 @@ static void SensorTask_UpdateDisplay(SensorTaskState *state)
         SensorStatus status = SensorReading_Status(&reading, now);
         if (status == SENSOR_OK)
         {
-            (void)OLED_Post(&state->ultrasonicDisplay, "%.0f mm",
-                            (double)reading.distanceMm);
+            (void)OLED_Post(&state->ultrasonicDisplay, "%.0f mm", (double)reading.distanceMm);
         }
         else
         {
-            (void)OLED_Post(&state->ultrasonicDisplay, "%s",
-                            SensorReading_StatusName(status));
+            (void)OLED_Post(&state->ultrasonicDisplay, "%s", SensorReading_StatusName(status));
         }
     }
     if (state->irDisplayReady)
@@ -194,12 +188,13 @@ static void SensorTask_UpdateDisplay(SensorTaskState *state)
         SensorStatus right = SensorReading_IRStatus(&pair.right, now);
         if (left == SENSOR_OK && right == SENSOR_OK)
         {
-            (void)OLED_Post(&state->irDisplay, "L%u R%u",
-                            (unsigned)pair.left.adc, (unsigned)pair.right.adc);
+            (void)OLED_Post(
+                &state->irDisplay, "L%u R%u", (unsigned)pair.left.adc, (unsigned)pair.right.adc);
         }
         else
         {
-            (void)OLED_Post(&state->irDisplay, "L:%s R:%s",
+            (void)OLED_Post(&state->irDisplay,
+                            "L:%s R:%s",
                             SensorReading_StatusName(left),
                             SensorReading_StatusName(right));
         }
@@ -209,12 +204,9 @@ static void SensorTask_UpdateDisplay(SensorTaskState *state)
 
 static void SensorTask_Initialize(SensorTaskState *state)
 {
-    HCSR04_Init(&hcsr04, USS_TRIG_GPIO_Port, USS_TRIG_Pin,
-                &htim12, TIM_CHANNEL_2);
-    state->leftIRReady = GP2Y0A21YK_Init(&state->leftIR, &sideIRLeftConfig)
-        == GP2Y0A21YK_OK;
-    state->rightIRReady = GP2Y0A21YK_Init(&state->rightIR, &sideIRRightConfig)
-        == GP2Y0A21YK_OK;
+    HCSR04_Init(&hcsr04, USS_TRIG_GPIO_Port, USS_TRIG_Pin, &htim12, TIM_CHANNEL_2);
+    state->leftIRReady = GP2Y0A21YK_Init(&state->leftIR, &sideIRLeftConfig) == GP2Y0A21YK_OK;
+    state->rightIRReady = GP2Y0A21YK_Init(&state->rightIR, &sideIRRightConfig) == GP2Y0A21YK_OK;
 
     uint32_t now = HAL_GetTick();
     state->lastTriggerMs = now - SENSOR_ULTRASONIC_PERIOD_MS;
@@ -222,8 +214,7 @@ static void SensorTask_Initialize(SensorTaskState *state)
 #if SENSOR_OLED_DIAGNOSTICS
     state->ultrasonicDisplay.slot = OLED_INVALID_SLOT;
     state->irDisplay.slot = OLED_INVALID_SLOT;
-    state->ultrasonicDisplayReady =
-        OLED_Register(&state->ultrasonicDisplay, "USS") == OLED_OK;
+    state->ultrasonicDisplayReady = OLED_Register(&state->ultrasonicDisplay, "USS") == OLED_OK;
     state->irDisplayReady = OLED_Register(&state->irDisplay, "IR raw") == OLED_OK;
     state->lastDisplayMs = now - SENSOR_OLED_PERIOD_MS;
 #endif

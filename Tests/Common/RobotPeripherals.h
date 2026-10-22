@@ -13,5 +13,4 @@
 /* Runtime owns the instance; standalone tests retain this compatibility include. */
 #include "UltrasonicSensorConfig.h"
 
-
 #endif /* INC_ROBOTPERIPHERALS_H_ */

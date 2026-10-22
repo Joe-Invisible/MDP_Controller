@@ -20,7 +20,8 @@
  */
 #define COMMANDMOTION_STRAIGHT_COMPLETION_TOLERANCE_MM 1.0f
 
-typedef struct {
+typedef struct
+{
     float distanceMm;
     float radiusMm; /* Zero means straight. Positive means left. */
     float speedCps;

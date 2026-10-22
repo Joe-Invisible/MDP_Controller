@@ -34,13 +34,15 @@
 #define TASK2_COURSE_DRY_RUN 1
 #endif
 
-typedef enum {
+typedef enum
+{
     TASK2COURSE_RUNNING,
     TASK2COURSE_DONE,
     TASK2COURSE_FAULT,
 } Task2CourseStatus;
 
-typedef struct {
+typedef struct
+{
     void *context;
     /* Start one stopped primitive; NULL on success, otherwise a static fault token. */
     const char *(*moveStraight)(void *context, float distanceMm, float speedCps);
@@ -53,17 +55,19 @@ typedef struct {
     const char *(*requestSpeed)(void *context, float speedCps);
 } Task2CourseIo;
 
-typedef struct {
+typedef struct
+{
     const Task2CourseIo *io;
     uint32_t stageStartedMs;
-    const char *fault;     /* static token when Update returns TASK2COURSE_FAULT */
+    const char *fault; /* static token when Update returns TASK2COURSE_FAULT */
 } Task2Course;
 
 /* Called once Task2Commands_Begin has run. NULL on success, else a fault token. */
-const char *Task2Course_Start(Task2Course *course, const Task2CourseIo *io,
-                              Task2Commands *commands, uint32_t nowMs);
-Task2CourseStatus Task2Course_Update(Task2Course *course, Task2Commands *commands,
-                                     uint32_t nowMs);
+const char *Task2Course_Start(Task2Course *course,
+                              const Task2CourseIo *io,
+                              Task2Commands *commands,
+                              uint32_t nowMs);
+Task2CourseStatus Task2Course_Update(Task2Course *course, Task2Commands *commands, uint32_t nowMs);
 /* MotionTask has braked (S or fault); forget the run. */
 void Task2Course_Abort(Task2Course *course);
 

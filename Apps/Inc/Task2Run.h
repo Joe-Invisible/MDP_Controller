@@ -21,26 +21,28 @@
  *   - Nothing here changes an earlier run's state when a later batch faults.
  */
 
-typedef enum {
+typedef enum
+{
     TASK2RUN_RUNNING,
-    TASK2RUN_DONE,    /* send events, then complete the batch ("DONE r") */
-    TASK2RUN_FAULT,   /* send events, then fault the batch with the token */
+    TASK2RUN_DONE,  /* send events, then complete the batch ("DONE r") */
+    TASK2RUN_FAULT, /* send events, then fault the batch with the token */
 } Task2RunStatus;
 
-typedef struct {
+typedef struct
+{
     Task2Commands commands;
     Task2Course course;
-    bool active;      /* the T2 command is running */
-    bool stopping;    /* S accepted; STOPPED once stationary */
-    bool finishing;   /* course done; waiting for stationary wheels */
+    bool active;    /* the T2 command is running */
+    bool stopping;  /* S accepted; STOPPED once stationary */
+    bool finishing; /* course done; waiting for stationary wheels */
 } Task2Run;
 
 void Task2Run_Init(Task2Run *r);
 
 /* The batch's T2 command is starting, with arrow 1 from its start line (NONE for plain T2).
  * NULL on success, else a fault token. */
-const char *Task2Run_Start(Task2Run *r, uint8_t run, Task2CommandArrow arrow1,
-                           const Task2CourseIo *io, uint32_t nowMs);
+const char *Task2Run_Start(
+    Task2Run *r, uint8_t run, Task2CommandArrow arrow1, const Task2CourseIo *io, uint32_t nowMs);
 
 /* Every control tick while active. On TASK2RUN_FAULT, *fault is a static token. */
 Task2RunStatus Task2Run_Update(Task2Run *r, bool busy, uint32_t nowMs, const char **fault);
